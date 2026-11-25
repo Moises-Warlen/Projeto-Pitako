@@ -670,17 +670,26 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            setter.SetTenant(tenantId, TenantResolutionSource.AuthenticatedSession);
-            var res = await userAuth.CreateEstablishmentUserAsync(
-                user!,
-                tenantId,
-                req.FullName,
-                req.Email,
-                req.Password,
-                EstablishmentRole.Administrator,
-                http.Connection.RemoteIpAddress?.ToString(),
-                ct);
-            return ToHttp(res, StatusCodes.Status201Created);
+            setter.Clear();
+            setter.SetTenant(tenantId, TenantResolutionSource.BackgroundJob);
+            try
+            {
+                var res = await userAuth.CreateEstablishmentUserAsync(
+                    user!,
+                    tenantId,
+                    req.FullName,
+                    req.Email,
+                    req.Password,
+                    EstablishmentRole.Administrator,
+                    http.Connection.RemoteIpAddress?.ToString(),
+                    ct);
+                return ToHttp(res, StatusCodes.Status201Created);
+            }
+            finally
+            {
+                setter.Clear();
+                setter.SetMasterScope();
+            }
         });
     }
 

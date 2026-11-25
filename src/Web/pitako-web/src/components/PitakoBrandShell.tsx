@@ -21,15 +21,12 @@ export function PitakoBrandShell({
       <header className="border-b border-zinc-800 bg-zinc-950/95">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-3">
+            <Link href="/" className="flex items-center">
               <img
                 src="/pitako-logo.jpg"
                 alt="Logo Oficial PITAKO"
                 className="h-10 w-auto rounded-lg object-contain shadow-sm"
               />
-              <span className="text-lg font-bold tracking-tight text-white">
-                PITAKO <span className="text-red-500">SaaS</span>
-              </span>
             </Link>
           </div>
           <nav className="flex flex-wrap items-center gap-3 text-sm">

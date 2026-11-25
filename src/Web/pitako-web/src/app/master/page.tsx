@@ -83,7 +83,19 @@ export default function MasterPanelPage() {
     segments: []
   });
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"stores" | "segments" | "customers" | "plans">("stores");
+
+  function copyPortalLink(slug: string) {
+    const url = typeof window !== "undefined" ? `${window.location.origin}/portal/${slug}` : `/portal/${slug}`;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => {
+        setFeedback(`Link do Portal copiado: ${url}`);
+      });
+    } else {
+      setFeedback(`Link do Portal: ${url}`);
+    }
+  }
 
   // 1. Lojas (Criar / Editar)
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
@@ -206,13 +218,39 @@ export default function MasterPanelPage() {
         },
         session.accessToken
       );
-      if (res.ok) {
-        setFeedback(`Loja '${storeTradeName}' atualizada!`);
-        resetStoreForm();
-        refreshAll();
-      } else {
+      if (!res.ok) {
         setFeedback(res.errorMessage || "Erro ao atualizar loja.");
+        return;
       }
+
+      if (storeAdminEmail.trim() && storeAdminPassword.trim()) {
+        const adminRes = await apiFetch(
+          `/api/v1/master/establishments/${editingStoreId}/admin-user`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              fullName: storeAdminName || `Admin ${storeTradeName}`,
+              email: storeAdminEmail.trim(),
+              password: storeAdminPassword,
+              role: 1
+            })
+          },
+          session.accessToken
+        );
+        if (!adminRes.ok) {
+          setFeedback(`Loja '${storeTradeName}' atualizada, mas erro ao criar usuário: ${adminRes.errorMessage}`);
+          refreshAll();
+          return;
+        }
+        setPortalCreatedSlug(cleanSlug);
+        setFeedback(`Loja '${storeTradeName}' atualizada e usuário '${storeAdminEmail}' criado! Portal: /portal/${cleanSlug}`);
+      } else {
+        setPortalCreatedSlug(cleanSlug);
+        setFeedback(`Loja '${storeTradeName}' atualizada! Portal: /portal/${cleanSlug}`);
+      }
+
+      resetStoreForm();
+      refreshAll();
       return;
     }
 
@@ -238,7 +276,7 @@ export default function MasterPanelPage() {
     }
 
     if (storeAdminEmail && storeAdminPassword) {
-      await apiFetch(
+      const adminRes = await apiFetch(
         `/api/v1/master/establishments/${estRes.data.tenant.id}/admin-user`,
         {
           method: "POST",
@@ -251,9 +289,19 @@ export default function MasterPanelPage() {
         },
         session.accessToken
       );
+      if (!adminRes.ok) {
+        setPortalCreatedSlug(cleanSlug);
+        setFeedback(
+          `Loja '${cleanSlug}' criada, mas o login '${storeAdminEmail}' falhou: ${adminRes.errorMessage}. Clique em Editar na loja para criar o usuário.`
+        );
+        resetStoreForm();
+        refreshAll();
+        return;
+      }
     }
 
-    setFeedback(`Loja '${cleanSlug}' criada com sucesso!`);
+    setPortalCreatedSlug(cleanSlug);
+    setFeedback(`Loja '${cleanSlug}' e login '${storeAdminEmail}' criados! Link do Portal do Cliente: /portal/${cleanSlug}`);
     resetStoreForm();
     refreshAll();
   }
@@ -301,7 +349,7 @@ export default function MasterPanelPage() {
 
     const cleanCode = (editingSegCode || segCode).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
     const method = editingSegCode ? "PUT" : "POST";
-    const url = editingSegCode ? `/api/v1/master/segments/${cleanCode}` : "/api/v1/master/segments";
+    const url = editingSegCode ? `/api/v1/master/segments/${encodeURIComponent(cleanCode)}` : "/api/v1/master/segments";
 
     const res = await apiFetch(
       url,
@@ -332,7 +380,7 @@ export default function MasterPanelPage() {
     if (!window.confirm(`Excluir a modalidade "${seg.displayName}"?`)) return;
     const session = loadSession();
     if (!session) return;
-    const res = await apiFetch(`/api/v1/master/segments/${seg.code}`, { method: "DELETE" }, session.accessToken);
+    const res = await apiFetch(`/api/v1/master/segments/${encodeURIComponent(seg.code)}`, { method: "DELETE" }, session.accessToken);
     if (res.ok) {
       setFeedback(`Modalidade '${seg.displayName}' removida.`);
       if (editingSegCode === seg.code) resetSegmentForm();
@@ -508,8 +556,25 @@ export default function MasterPanelPage() {
       subtitle="Gerencie criação, edição e exclusão completa de Lojas, Modalidades, Clientes/Donos e Planos/Módulos."
     >
       {feedback && (
-        <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm text-amber-100">
-          {feedback}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm text-amber-100">
+          <span>{feedback}</span>
+          {portalCreatedSlug && (
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/portal/${portalCreatedSlug}`}
+                className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-amber-400"
+              >
+                Abrir Portal (/portal/{portalCreatedSlug})
+              </Link>
+              <button
+                type="button"
+                onClick={() => copyPortalLink(portalCreatedSlug)}
+                className="rounded-lg border border-amber-400/60 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-900/60"
+              >
+                Copiar Link
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -547,8 +612,27 @@ export default function MasterPanelPage() {
                         Modalidade: <strong className="uppercase text-red-400">{est.segmentCode}</strong> · Slug:{" "}
                         <code>{est.slug}</code> · CNPJ: {est.cnpj} · Status: <strong>{est.status}</strong>
                       </p>
+                      <p className="mt-1 text-xs text-zinc-400">
+                        Portal do Cliente (Login da Loja):{" "}
+                        <Link href={`/portal/${est.slug}`} className="font-mono text-sky-400 hover:underline">
+                          /portal/{est.slug}
+                        </Link>
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={`/portal/${est.slug}`}
+                        className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
+                      >
+                        Abrir Portal
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => copyPortalLink(est.slug)}
+                        className="rounded-lg border border-sky-500/50 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-950"
+                      >
+                        Copiar Link Portal
+                      </button>
                       <Link
                         href={`/loja/${est.slug}`}
                         className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
@@ -624,20 +708,24 @@ export default function MasterPanelPage() {
               <input value={storeSlug} onChange={(e) => setStoreSlug(e.target.value)} required placeholder="Slug da URL (ex: bela-massa)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={storeCnpj} onChange={(e) => setStoreCnpj(e.target.value)} required placeholder="CNPJ (14 dígitos)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
 
-              {editingStoreId ? (
+              {editingStoreId && (
                 <select value={storeStatus} onChange={(e) => setStoreStatus(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
                   <option value="2">Ativa</option>
                   <option value="1">Trial</option>
                   <option value="3">Suspensa</option>
                 </select>
-              ) : (
-                <div className="border-t border-zinc-800 pt-3">
-                  <p className="mb-2 text-xs font-semibold text-zinc-300">Login Inicial do Dono da Loja</p>
-                  <input value={storeAdminName} onChange={(e) => setStoreAdminName(e.target.value)} placeholder="Nome do Administrador" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
-                  <input type="email" value={storeAdminEmail} onChange={(e) => setStoreAdminEmail(e.target.value)} required placeholder="E-mail de acesso" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
-                  <input type="text" value={storeAdminPassword} onChange={(e) => setStoreAdminPassword(e.target.value)} required placeholder="Senha" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
-                </div>
               )}
+
+              <div className="border-t border-zinc-800 pt-3">
+                <p className="mb-2 text-xs font-semibold text-zinc-300">
+                  {editingStoreId
+                    ? "Adicionar Novo Login do Dono/Admin (opcional)"
+                    : "Login Inicial do Dono da Loja (usará no Portal da Loja)"}
+                </p>
+                <input value={storeAdminName} onChange={(e) => setStoreAdminName(e.target.value)} placeholder="Nome do Administrador" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                <input type="email" value={storeAdminEmail} onChange={(e) => setStoreAdminEmail(e.target.value)} required={!editingStoreId} placeholder="E-mail de acesso" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                <input type="text" value={storeAdminPassword} onChange={(e) => setStoreAdminPassword(e.target.value)} required={!editingStoreId} placeholder="Senha forte (ex: Loja@12345)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              </div>
 
               <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
                 {editingStoreId ? "Salvar Alterações da Loja" : "Criar Loja e Liberar Acesso"}

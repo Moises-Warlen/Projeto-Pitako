@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PitakoBrandShell } from "@/components/PitakoBrandShell";
 import { apiFetch, saveSession } from "@/lib/api";
@@ -19,6 +19,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const loja = params.get("loja");
+    if (loja && loja.trim()) {
+      setMode("store");
+      setStoreSlug(loja.trim().toLowerCase());
+      setEmail("");
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

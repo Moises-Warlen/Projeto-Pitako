@@ -181,7 +181,7 @@ public sealed class PitakoApiEndToEndIntegrationTests : IAsyncLifetime
             trialDays = 10,
             isUnlimited = false,
             maxEstablishments = 3,
-            enabledModules = new[] { "Catalog", "Orders" },
+            enabledModules = new[] { "tenants", "catalog", "orders" },
             isActive = true
         });
         var editPlanRes = await _client.SendAsync(editPlanReq);
@@ -248,6 +248,33 @@ public sealed class PitakoApiEndToEndIntegrationTests : IAsyncLifetime
         });
         var editStoreRes = await _client.SendAsync(editStoreReq);
         Assert.Equal(HttpStatusCode.OK, editStoreRes.StatusCode);
+
+        // Create Admin User for the new store and verify login via store portal flow
+        var createStoreAdminReq = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/master/establishments/{createdStoreId}/admin-user");
+        createStoreAdminReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        createStoreAdminReq.Content = JsonContent.Create(new
+        {
+            fullName = "Dono Temakeria CRUD",
+            email = "dono@temakeriacrud.com.br",
+            password = "Loja@12345",
+            role = 1
+        });
+        var createStoreAdminRes = await _client.SendAsync(createStoreAdminReq);
+        Assert.Equal(HttpStatusCode.Created, createStoreAdminRes.StatusCode);
+
+        var newStoreLogin = await _client.PostAsJsonAsync("/api/v1/auth/login-store", new
+        {
+            storeSlug = "temakeria-crud",
+            email = "dono@temakeriacrud.com.br",
+            password = "Loja@12345"
+        });
+        Assert.Equal(HttpStatusCode.OK, newStoreLogin.StatusCode);
+        var newStoreToken = (await newStoreLogin.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString()!;
+
+        using var newStoreBrandReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/store/branding");
+        newStoreBrandReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", newStoreToken);
+        var newStoreBrandRes = await _client.SendAsync(newStoreBrandReq);
+        Assert.Equal(HttpStatusCode.OK, newStoreBrandRes.StatusCode);
 
         // Delete in safe order: Store -> Customer -> Plan -> Segment
         var delStoreReq = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/master/establishments/{createdStoreId}");
