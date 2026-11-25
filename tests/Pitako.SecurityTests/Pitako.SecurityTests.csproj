@@ -24,5 +24,6 @@
     <ProjectReference Include="..\..\src\Modules\Weighing\Pitako.Modules.Weighing.Infrastructure\Pitako.Modules.Weighing.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Coupons\Pitako.Modules.Coupons.Infrastructure\Pitako.Modules.Coupons.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Orders\Pitako.Modules.Orders.Infrastructure\Pitako.Modules.Orders.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Infrastructure\Pitako.Modules.DeliveryLogistics.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

@@ -33,5 +33,7 @@
     <ProjectReference Include="..\..\src\Modules\Coupons\Pitako.Modules.Coupons.Application\Pitako.Modules.Coupons.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Orders\Pitako.Modules.Orders.Domain\Pitako.Modules.Orders.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Orders\Pitako.Modules.Orders.Application\Pitako.Modules.Orders.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Domain\Pitako.Modules.DeliveryLogistics.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Application\Pitako.Modules.DeliveryLogistics.Application.csproj" />
   </ItemGroup>
 </Project>

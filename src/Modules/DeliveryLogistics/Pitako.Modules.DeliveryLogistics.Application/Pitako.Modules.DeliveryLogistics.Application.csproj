@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.DeliveryLogistics.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.DeliveryLogistics.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.DeliveryLogistics.Domain\Pitako.Modules.DeliveryLogistics.Domain.csproj" />
+  </ItemGroup>
+</Project>

@@ -25,3 +25,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 9 (Módulo especializado de açaí):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-09-relatorio.md)).
 - **Fase 10 (Pesagem e balança):** Concluída com parser Toledo validado, contingência manual e pendência registrada de balança física ([Relatório](docs/relatorios/fase-10-relatorio.md)).
 - **Fase 11 (Carrinho de compras e cupons):** Concluída com preservação por item, recálculo integral no backend e módulo de cupons com RLS ([Relatório](docs/relatorios/fase-11-relatorio.md)).
+- **Fase 12 (Delivery próprio e frete):** Concluída com cálculo Haversine, faixas/zonas, raio máximo, pedido mínimo, isenção e RLS ([Relatório](docs/relatorios/fase-12-relatorio.md)).

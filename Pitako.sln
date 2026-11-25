@@ -95,6 +95,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Orders.Appli
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Orders.Infrastructure", "src\Modules\Orders\Pitako.Modules.Orders.Infrastructure\Pitako.Modules.Orders.Infrastructure.csproj", "{12E5DCF4-118E-4EE6-8D3F-103C26B9B428}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DeliveryLogistics", "DeliveryLogistics", "{3E1B595B-0BD7-48CF-A3C2-88248CA935E3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.DeliveryLogistics.Domain", "src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Domain\Pitako.Modules.DeliveryLogistics.Domain.csproj", "{95674C64-5175-4BCD-A723-9EF4CEA4ABCC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.DeliveryLogistics.Application", "src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Application\Pitako.Modules.DeliveryLogistics.Application.csproj", "{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.DeliveryLogistics.Infrastructure", "src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Infrastructure\Pitako.Modules.DeliveryLogistics.Infrastructure.csproj", "{0B3196B3-0648-404F-BD9B-645909A7E52B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -236,6 +244,18 @@ Global
 		{12E5DCF4-118E-4EE6-8D3F-103C26B9B428}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{12E5DCF4-118E-4EE6-8D3F-103C26B9B428}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{12E5DCF4-118E-4EE6-8D3F-103C26B9B428}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95674C64-5175-4BCD-A723-9EF4CEA4ABCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95674C64-5175-4BCD-A723-9EF4CEA4ABCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95674C64-5175-4BCD-A723-9EF4CEA4ABCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95674C64-5175-4BCD-A723-9EF4CEA4ABCC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0B3196B3-0648-404F-BD9B-645909A7E52B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0B3196B3-0648-404F-BD9B-645909A7E52B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0B3196B3-0648-404F-BD9B-645909A7E52B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0B3196B3-0648-404F-BD9B-645909A7E52B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
@@ -282,5 +302,9 @@ Global
 		{FE9B021F-D595-425B-B8C4-7708A671CABC} = {1A56E7E8-62E2-49AA-991D-D3E19925BE66}
 		{00B020E3-246B-4921-B617-A3D0ACB5FF29} = {1A56E7E8-62E2-49AA-991D-D3E19925BE66}
 		{12E5DCF4-118E-4EE6-8D3F-103C26B9B428} = {1A56E7E8-62E2-49AA-991D-D3E19925BE66}
+		{3E1B595B-0BD7-48CF-A3C2-88248CA935E3} = {857C3F19-1BE8-43E0-B21E-27C33584B25C}
+		{95674C64-5175-4BCD-A723-9EF4CEA4ABCC} = {3E1B595B-0BD7-48CF-A3C2-88248CA935E3}
+		{9C2F46DA-9DEC-431E-9CAF-B8200D867DD3} = {3E1B595B-0BD7-48CF-A3C2-88248CA935E3}
+		{0B3196B3-0648-404F-BD9B-645909A7E52B} = {3E1B595B-0BD7-48CF-A3C2-88248CA935E3}
 	EndGlobalSection
 EndGlobal
