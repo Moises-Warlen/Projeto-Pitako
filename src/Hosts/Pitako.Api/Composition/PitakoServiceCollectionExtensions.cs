@@ -1,3 +1,4 @@
+
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -88,11 +89,24 @@ public static class PitakoServiceCollectionExtensions
         DbConnection? sharedSqliteConnection = null)
     {
         var provider = configuration["DatabaseProvider"] ?? "PostgreSql";
-        var rawPostgres = configuration.GetConnectionString("PitakoPostgres")
-            ?? Environment.GetEnvironmentVariable("DATABASE_URL");
+
+        // PostgreSQL: tenta obter a conexão pelos caminhos disponíveis.
+        var rawPostgres = configuration.GetConnectionString("PitakoPostgres");
+
+        if (string.IsNullOrWhiteSpace(rawPostgres))
+            rawPostgres = configuration["DATABASE_URL"];
+
+        if (string.IsNullOrWhiteSpace(rawPostgres))
+            rawPostgres = Environment.GetEnvironmentVariable("DATABASE_URL");
+
         var postgresConn = NormalizePostgresConnectionString(rawPostgres);
-        var sqliteConn = configuration.GetConnectionString("PitakoSqlite") ?? "Data Source=pitako_local.db";
-        var useSqlite = string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase) || sharedSqliteConnection is not null;
+
+        var sqliteConn = configuration.GetConnectionString("PitakoSqlite")
+            ?? "Data Source=pitako_local.db";
+
+        var useSqlite =
+            string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase)
+            || sharedSqliteConnection is not null;
 
         if (!useSqlite && string.IsNullOrWhiteSpace(postgresConn))
         {
@@ -100,24 +114,44 @@ public static class PitakoServiceCollectionExtensions
                 "ConnectionStrings:PitakoPostgres (ou DATABASE_URL) não configurada e DatabaseProvider não definido como Sqlite.");
         }
 
-        var jwtSigningKey = configuration["Security:JwtSigningKey"]
-            ?? Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
+        // JWT: tenta obter a chave por todos os caminhos possíveis.
+        var jwtSigningKey = configuration["Security:JwtSigningKey"];
+
+        if (string.IsNullOrWhiteSpace(jwtSigningKey))
+            jwtSigningKey = configuration["JWT_SIGNING_KEY"];
+
+        if (string.IsNullOrWhiteSpace(jwtSigningKey))
+            jwtSigningKey = Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
+
+        jwtSigningKey = jwtSigningKey?.Trim();
+
         if (string.IsNullOrWhiteSpace(jwtSigningKey) || jwtSigningKey.Length < 32)
         {
             if (environment.IsDevelopment() || sharedSqliteConnection is not null)
                 jwtSigningKey = "pitako-dev-only-jwt-signing-key-32bytes!";
             else
-                throw new InvalidOperationException("Security:JwtSigningKey obrigatória (>= 32 caracteres) em produção.");
+                throw new InvalidOperationException(
+                    "Security:JwtSigningKey obrigatória (>= 32 caracteres) em produção.");
         }
 
-        var encPassphrase = configuration["Security:DataEncryptionPassphrase"]
-            ?? Environment.GetEnvironmentVariable("DATA_ENCRYPTION_PASSPHRASE");
+        // Criptografia: tenta obter a chave por todos os caminhos possíveis.
+        var encPassphrase = configuration["Security:DataEncryptionPassphrase"];
+
+        if (string.IsNullOrWhiteSpace(encPassphrase))
+            encPassphrase = configuration["DATA_ENCRYPTION_PASSPHRASE"];
+
+        if (string.IsNullOrWhiteSpace(encPassphrase))
+            encPassphrase = Environment.GetEnvironmentVariable("DATA_ENCRYPTION_PASSPHRASE");
+
+        encPassphrase = encPassphrase?.Trim();
+
         if (string.IsNullOrWhiteSpace(encPassphrase))
         {
             if (environment.IsDevelopment() || sharedSqliteConnection is not null)
                 encPassphrase = "pitako-dev-only-aes-gcm-passphrase";
             else
-                throw new InvalidOperationException("Security:DataEncryptionPassphrase obrigatória em produção.");
+                throw new InvalidOperationException(
+                    "Security:DataEncryptionPassphrase obrigatória em produção.");
         }
 
         // BuildingBlocks
@@ -142,7 +176,8 @@ public static class PitakoServiceCollectionExtensions
                 else
                 {
                     options.UseNpgsql(postgresConn);
-                    options.AddInterceptors(sp.GetRequiredService<PostgresTenantRlsInterceptor>());
+                    options.AddInterceptors(
+                        sp.GetRequiredService<PostgresTenantRlsInterceptor>());
                 }
             });
         }
@@ -225,18 +260,21 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IPromotionRepository, EfPromotionRepository>();
         services.AddScoped<IProductHistoryReferenceChecker, OrderProductHistoryReferenceChecker>();
         services.AddScoped<CatalogManagementService>();
-        services.AddScoped<ICatalogItemPricingService>(sp => sp.GetRequiredService<CatalogManagementService>());
+        services.AddScoped<ICatalogItemPricingService>(
+            sp => sp.GetRequiredService<CatalogManagementService>());
 
         services.AddScoped<IAcaiCupSizeRepository, EfAcaiCupSizeRepository>();
         services.AddScoped<IAcaiBaseFlavorRepository, EfAcaiBaseFlavorRepository>();
         services.AddScoped<IAcaiFreeToppingRepository, EfAcaiFreeToppingRepository>();
         services.AddScoped<IAcaiPaidAddonRepository, EfAcaiPaidAddonRepository>();
         services.AddScoped<AcaiBuilderManagementService>();
-        services.AddScoped<IAcaiAssemblyPricingService>(sp => sp.GetRequiredService<AcaiBuilderManagementService>());
+        services.AddScoped<IAcaiAssemblyPricingService>(
+            sp => sp.GetRequiredService<AcaiBuilderManagementService>());
 
         services.AddScoped<ICouponRepository, EfCouponRepository>();
         services.AddScoped<CouponsManagementService>();
-        services.AddScoped<ICouponValidationService>(sp => sp.GetRequiredService<CouponsManagementService>());
+        services.AddScoped<ICouponValidationService>(
+            sp => sp.GetRequiredService<CouponsManagementService>());
 
         services.AddScoped<ITenantCustomUnitRepository, EfTenantCustomUnitRepository>();
         services.AddScoped<ISupplyItemRepository, EfSupplyItemRepository>();
@@ -246,14 +284,16 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IProductionOrderRepository, EfProductionOrderRepository>();
         services.AddScoped<SuppliesAndTechnicalSheetService>();
         services.AddScoped<InventoryStockAndProductionService>();
-        services.AddScoped<IInventoryOrderDeductionService>(sp => sp.GetRequiredService<InventoryStockAndProductionService>());
+        services.AddScoped<IInventoryOrderDeductionService>(
+            sp => sp.GetRequiredService<InventoryStockAndProductionService>());
 
         services.AddScoped<IScaleDeviceRepository, EfScaleDeviceRepository>();
         services.AddScoped<ITarePresetRepository, EfTarePresetRepository>();
         services.AddScoped<IWeighingRecordRepository, EfWeighingRecordRepository>();
         services.AddSingleton<IScaleTransport, UnavailablePhysicalScaleTransport>();
         services.AddScoped<WeighingService>();
-        services.AddScoped<IWeighingOrderAttachmentService>(sp => sp.GetRequiredService<WeighingService>());
+        services.AddScoped<IWeighingOrderAttachmentService>(
+            sp => sp.GetRequiredService<WeighingService>());
 
         // DeliveryLogistics, Orders, PdvCashier, DiningHall, Printing
         services.AddScoped<IDeliveryPolicyRepository, EfDeliveryPolicyRepository>();
@@ -261,7 +301,8 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IDeliveryDispatchRunRepository, EfDeliveryDispatchRunRepository>();
         services.AddScoped<ICourierGpsPingRepository, EfCourierGpsPingRepository>();
         services.AddScoped<DeliveryPolicyAndFreightService>();
-        services.AddScoped<IDeliveryFreightQuoteService>(sp => sp.GetRequiredService<DeliveryPolicyAndFreightService>());
+        services.AddScoped<IDeliveryFreightQuoteService>(
+            sp => sp.GetRequiredService<DeliveryPolicyAndFreightService>());
         services.AddScoped<CourierDispatchAndGpsService>();
 
         services.AddScoped<IShoppingCartRepository, EfShoppingCartRepository>();
@@ -297,7 +338,8 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IMarketplaceInboundEventRepository, EfMarketplaceInboundEventRepository>();
         services.AddScoped<IMarketplaceCatalogMappingRepository, EfMarketplaceCatalogMappingRepository>();
         services.AddScoped<IMarketplaceBulkJobRepository, EfMarketplaceBulkJobRepository>();
-        services.AddSingleton<ISecretProtector>(_ => AesGcmSecretProtector.FromPassphrase(encPassphrase));
+        services.AddSingleton<ISecretProtector>(
+            _ => AesGcmSecretProtector.FromPassphrase(encPassphrase));
         services.AddSingleton<IMarketplaceRemoteGateway, UnavailableExternalMarketplaceGateway>();
         services.AddSingleton<IMarketplaceConnector, IFoodConnector>();
         services.AddSingleton<IMarketplaceConnector, RappiConnector>();
@@ -313,7 +355,8 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IWhatsAppChannelConfigRepository, EfWhatsAppChannelConfigRepository>();
         services.AddScoped<ITraditionalMenuBotRuleRepository, EfTraditionalMenuBotRuleRepository>();
         services.AddScoped<IWhatsAppConversationRepository, EfWhatsAppConversationRepository>();
-        services.AddSingleton<IWhatsAppSecretProtector>(_ => WhatsAppAesGcmSecretProtector.FromPassphrase(encPassphrase));
+        services.AddSingleton<IWhatsAppSecretProtector>(
+            _ => WhatsAppAesGcmSecretProtector.FromPassphrase(encPassphrase));
         services.AddSingleton<IWhatsAppCloudGateway, UnavailableWhatsAppCloudGateway>();
         services.AddSingleton<IAiAssistantGateway, UnavailableExternalAiGateway>();
         services.AddScoped<WhatsAppSupportService>();
@@ -325,7 +368,8 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IDataMigrationJobRepository, EfDataMigrationJobRepository>();
         services.AddScoped<ITenantBackupRepository, EfTenantBackupRepository>();
         services.AddScoped<ILgpdDataRequestRepository, EfLgpdDataRequestRepository>();
-        services.AddSingleton<IBackupEncryptionProvider>(_ => BackupAesGcmEncryptionProvider.FromPassphrase(encPassphrase));
+        services.AddSingleton<IBackupEncryptionProvider>(
+            _ => BackupAesGcmEncryptionProvider.FromPassphrase(encPassphrase));
         services.AddScoped<DataLifecycleService>();
 
         services.AddScoped<IOfflineTerminalRepository, EfOfflineTerminalRepository>();
@@ -337,20 +381,27 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IPaymentGatewayConfigRepository, EfPaymentGatewayConfigRepository>();
         services.AddScoped<IPaymentTransactionRepository, EfPaymentTransactionRepository>();
         services.AddScoped<IReconciliationBatchRepository, EfReconciliationBatchRepository>();
-        services.AddSingleton<IFinanceSecretProtector>(_ => FinanceAesGcmSecretProtector.FromPassphrase(encPassphrase));
+        services.AddSingleton<IFinanceSecretProtector>(
+            _ => FinanceAesGcmSecretProtector.FromPassphrase(encPassphrase));
         services.AddSingleton<IPaymentGatewayClient, UnavailablePaymentGatewayClient>();
         services.AddScoped<FinanceManagementService>();
 
         // Cross-Module Composition Adapters
         services.AddScoped<SignalRRealtimeNotifiers>();
-        services.AddScoped<IOrderRealtimeNotifier>(sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
-        services.AddScoped<ICourierGpsRealtimeNotifier>(sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
-        services.AddScoped<IWaiterCallRealtimeNotifier>(sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
-        services.AddScoped<IInboxRealtimeNotifier>(sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
+        services.AddScoped<IOrderRealtimeNotifier>(
+            sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
+        services.AddScoped<ICourierGpsRealtimeNotifier>(
+            sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
+        services.AddScoped<IWaiterCallRealtimeNotifier>(
+            sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
+        services.AddScoped<IInboxRealtimeNotifier>(
+            sp => sp.GetRequiredService<SignalRRealtimeNotifiers>());
 
         services.AddScoped<TenantStoreBrandingAndPrintAdapter>();
-        services.AddScoped<ISelfServiceBrandingProvider>(sp => sp.GetRequiredService<TenantStoreBrandingAndPrintAdapter>());
-        services.AddScoped<IStorePrintIdentityProvider>(sp => sp.GetRequiredService<TenantStoreBrandingAndPrintAdapter>());
+        services.AddScoped<ISelfServiceBrandingProvider>(
+            sp => sp.GetRequiredService<TenantStoreBrandingAndPrintAdapter>());
+        services.AddScoped<IStorePrintIdentityProvider>(
+            sp => sp.GetRequiredService<TenantStoreBrandingAndPrintAdapter>());
 
         services.AddScoped<ISelfServiceOrderDispatcher, SelfServiceOrderDispatcherAdapter>();
         services.AddScoped<ITenantKnowledgeProvider, TenantKnowledgeProviderAdapter>();
@@ -365,7 +416,10 @@ public static class PitakoServiceCollectionExtensions
     /// Inicializa tabelas em desenvolvimento/testes SQLite para todos os 19 DbContexts isolados.
     /// Em PostgreSQL utiliza Migrations versionadas oficiais com RLS.
     /// </summary>
-    public static async Task EnsureDatabaseInitializedAsync(this IServiceProvider services, bool useSqlite, CancellationToken ct = default)
+    public static async Task EnsureDatabaseInitializedAsync(
+        this IServiceProvider services,
+        bool useSqlite,
+        CancellationToken ct = default)
     {
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
@@ -398,6 +452,7 @@ public static class PitakoServiceCollectionExtensions
         foreach (var dbType in dbTypes)
         {
             var db = (DbContext)sp.GetRequiredService(dbType);
+
             if (!useSqlite)
             {
                 await db.Database.MigrateAsync(ct);
@@ -405,29 +460,36 @@ public static class PitakoServiceCollectionExtensions
             }
 
             var creator = db.GetService<IRelationalDatabaseCreator>();
+
             if (!await creator.ExistsAsync(ct))
                 await creator.CreateAsync(ct);
 
-            var firstTable = db.Model.GetEntityTypes().Select(e => e.GetTableName()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+            var firstTable = db.Model.GetEntityTypes()
+                .Select(e => e.GetTableName())
+                .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+
             if (firstTable is null)
                 continue;
 
             var conn = (SqliteConnection)db.Database.GetDbConnection();
+
             if (conn.State != System.Data.ConnectionState.Open)
                 await conn.OpenAsync(ct);
 
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
+            cmd.CommandText =
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
             cmd.Parameters.AddWithValue("$name", firstTable);
+
             var exists = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) > 0;
+
             if (!exists)
                 await creator.CreateTablesAsync(ct);
         }
     }
 
     /// <summary>
-    /// Converte URIs no formato Neon/Render (postgresql://user:pass@host/db?sslmode=require)
-    /// para connection string Npgsql padrão.
+    /// Converte URIs no formato Neon/Render para connection string Npgsql padrão.
     /// </summary>
     public static string? NormalizePostgresConnectionString(string? raw)
     {
@@ -435,6 +497,7 @@ public static class PitakoServiceCollectionExtensions
             return raw;
 
         var trimmed = raw.Trim();
+
         if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
             !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
         {
@@ -443,8 +506,12 @@ public static class PitakoServiceCollectionExtensions
 
         var uri = new Uri(trimmed);
         var userInfo = uri.UserInfo.Split(':', 2);
+
         var username = Uri.UnescapeDataString(userInfo[0]);
-        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+        var password = userInfo.Length > 1
+            ? Uri.UnescapeDataString(userInfo[1])
+            : string.Empty;
+
         var database = uri.AbsolutePath.TrimStart('/');
         var port = uri.Port > 0 ? uri.Port : 5432;
 
