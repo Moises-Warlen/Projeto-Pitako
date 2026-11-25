@@ -20,5 +20,6 @@
     <ProjectReference Include="..\..\src\Modules\MasterPanel\Pitako.Modules.MasterPanel.Infrastructure\Pitako.Modules.MasterPanel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Infrastructure\Pitako.Modules.Catalog.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Inventory\Pitako.Modules.Inventory.Infrastructure\Pitako.Modules.Inventory.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\AcaiBuilder\Pitako.Modules.AcaiBuilder.Infrastructure\Pitako.Modules.AcaiBuilder.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

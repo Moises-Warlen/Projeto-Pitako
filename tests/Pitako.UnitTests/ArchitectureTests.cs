@@ -1,3 +1,5 @@
+using Pitako.Modules.AcaiBuilder.Application.Services;
+using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
 using Pitako.Modules.Inventory.Application.Services;
@@ -30,7 +32,9 @@ public sealed class ArchitectureTests
             typeof(Product).Assembly,
             typeof(CatalogManagementService).Assembly,
             typeof(SupplyItem).Assembly,
-            typeof(SuppliesAndTechnicalSheetService).Assembly
+            typeof(SuppliesAndTechnicalSheetService).Assembly,
+            typeof(AcaiCupSize).Assembly,
+            typeof(AcaiBuilderManagementService).Assembly
         };
 
         foreach (var assembly in assemblies)

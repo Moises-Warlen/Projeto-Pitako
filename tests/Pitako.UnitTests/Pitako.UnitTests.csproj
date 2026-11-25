@@ -25,5 +25,7 @@
     <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Application\Pitako.Modules.Catalog.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Inventory\Pitako.Modules.Inventory.Domain\Pitako.Modules.Inventory.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Inventory\Pitako.Modules.Inventory.Application\Pitako.Modules.Inventory.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\AcaiBuilder\Pitako.Modules.AcaiBuilder.Domain\Pitako.Modules.AcaiBuilder.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\AcaiBuilder\Pitako.Modules.AcaiBuilder.Application\Pitako.Modules.AcaiBuilder.Application.csproj" />
   </ItemGroup>
 </Project>
