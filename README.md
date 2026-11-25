@@ -20,3 +20,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 4 (Painel Master, planos e assinaturas):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-04-relatorio.md)).
 - **Fase 5 (Estabelecimentos, unidades e personalização):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-05-relatorio.md)).
 - **Fase 6 (Produtos e categorias):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-06-relatorio.md)).
+- **Fase 7 (Insumos, fichas técnicas e formação de preços):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-07-relatorio.md)).

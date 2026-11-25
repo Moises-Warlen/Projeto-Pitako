@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.Inventory.Domain</RootNamespace>
+    <AssemblyName>Pitako.Modules.Inventory.Domain</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Pitako.MultiTenancy\Pitako.MultiTenancy.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Pitako.SharedKernel\Pitako.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

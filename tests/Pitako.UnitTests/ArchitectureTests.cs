@@ -1,5 +1,7 @@
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.Inventory.Application.Services;
+using Pitako.Modules.Inventory.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Services;
@@ -26,7 +28,9 @@ public sealed class ArchitectureTests
             typeof(CommercialPlan).Assembly,
             typeof(MasterPlanAndSubscriptionService).Assembly,
             typeof(Product).Assembly,
-            typeof(CatalogManagementService).Assembly
+            typeof(CatalogManagementService).Assembly,
+            typeof(SupplyItem).Assembly,
+            typeof(SuppliesAndTechnicalSheetService).Assembly
         };
 
         foreach (var assembly in assemblies)

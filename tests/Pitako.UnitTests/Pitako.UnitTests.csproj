@@ -23,5 +23,7 @@
     <ProjectReference Include="..\..\src\Modules\Tenants\Pitako.Modules.Tenants.Application\Pitako.Modules.Tenants.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Domain\Pitako.Modules.Catalog.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Application\Pitako.Modules.Catalog.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Pitako.Modules.Inventory.Domain\Pitako.Modules.Inventory.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Pitako.Modules.Inventory.Application\Pitako.Modules.Inventory.Application.csproj" />
   </ItemGroup>
 </Project>
