@@ -28,3 +28,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 12 (Delivery próprio e frete):** Concluída com cálculo Haversine, faixas/zonas, raio máximo, pedido mínimo, isenção e RLS ([Relatório](docs/relatorios/fase-12-relatorio.md)).
 - **Fase 13 (Pedidos e Kanban em tempo real):** Concluída com checkout multi-módulo, Kanban, estorno automático de estoque/cupons e RLS ([Relatório](docs/relatorios/fase-13-relatorio.md)).
 - **Fase 14 (PDV e caixa):** Concluída com abertura/fechamento, sangria, suprimento, múltiplos pagamentos, aprovação de descontos e RLS ([Relatório](docs/relatorios/fase-14-relatorio.md)).
+- **Fase 15 (Entregadores, logística e GPS):** Concluída com entregadores, agrupamento e otimização de rotas, telemetria GPS, relatório de corridas e RLS ([Relatório](docs/relatorios/fase-15-relatorio.md)).

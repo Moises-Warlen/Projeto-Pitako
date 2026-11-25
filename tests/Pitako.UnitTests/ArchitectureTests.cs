@@ -55,6 +55,8 @@ public sealed class ArchitectureTests
             typeof(OrderManagementService).Assembly,
             typeof(DeliveryPolicy).Assembly,
             typeof(DeliveryPolicyAndFreightService).Assembly,
+            typeof(DeliveryCourier).Assembly,
+            typeof(CourierDispatchAndGpsService).Assembly,
             typeof(CashRegisterSession).Assembly,
             typeof(PdvCashierService).Assembly
         };

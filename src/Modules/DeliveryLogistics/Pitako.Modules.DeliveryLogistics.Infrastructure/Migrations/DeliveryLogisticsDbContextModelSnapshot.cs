@@ -23,6 +23,192 @@ namespace Pitako.Modules.DeliveryLogistics.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.CourierGpsPing", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActiveDispatchRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("active_dispatch_run_id");
+
+                    b.Property<Guid>("CourierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("courier_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latitude");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("longitude");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc");
+
+                    b.Property<decimal?>("SpeedKmh")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("speed_kmh");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CourierId", "RecordedAtUtc");
+
+                    b.ToTable("courier_gps_pings", "delivery");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryCourier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Availability")
+                        .HasColumnType("integer")
+                        .HasColumnName("availability");
+
+                    b.Property<int>("CommissionMode")
+                        .HasColumnType("integer")
+                        .HasColumnName("commission_mode");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<decimal>("FreightCommissionPercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("freight_commission_percentage");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("full_name");
+
+                    b.Property<double?>("LastKnownLatitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("last_known_latitude");
+
+                    b.Property<double?>("LastKnownLongitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("last_known_longitude");
+
+                    b.Property<DateTimeOffset?>("LastLocationAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_location_at_utc");
+
+                    b.Property<string>("LicensePlate")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("license_plate");
+
+                    b.Property<Guid?>("LinkedUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linked_user_id");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("phone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<int>("VehicleType")
+                        .HasColumnType("integer")
+                        .HasColumnName("vehicle_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Availability");
+
+                    b.ToTable("delivery_couriers", "delivery");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDispatchRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AssignedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at_utc");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<Guid>("CourierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("courier_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset?>("DispatchedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dispatched_at_utc");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("notes");
+
+                    b.Property<string>("RunCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("run_code");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("TotalEstimatedDistanceKm")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("total_estimated_distance_km");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CourierId", "AssignedAtUtc");
+
+                    b.ToTable("delivery_dispatch_runs", "delivery");
+                });
+
             modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDistanceTier", b =>
                 {
                     b.Property<Guid>("Id")
@@ -132,6 +318,81 @@ namespace Pitako.Modules.DeliveryLogistics.Infrastructure.Migrations
                     b.ToTable("delivery_policies", "delivery");
                 });
 
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryRunStop", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<string>("CustomerNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("customer_name_snapshot");
+
+                    b.Property<Guid>("DeliveryDispatchRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivery_dispatch_run_id");
+
+                    b.Property<string>("DestinationAddress")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("destination_address");
+
+                    b.Property<double>("DestinationLatitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("destination_latitude");
+
+                    b.Property<double>("DestinationLongitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("destination_longitude");
+
+                    b.Property<decimal>("LegDistanceKm")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("leg_distance_km");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<string>("OrderNumberSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("order_number_snapshot");
+
+                    b.Property<string>("ResolutionNotes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("resolution_notes");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<int>("StopSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("stop_sequence");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryDispatchRunId");
+
+                    b.HasIndex("TenantId", "DeliveryDispatchRunId", "StopSequence");
+
+                    b.ToTable("delivery_run_stops", "delivery");
+                });
+
             modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryZoneRule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -172,6 +433,66 @@ namespace Pitako.Modules.DeliveryLogistics.Infrastructure.Migrations
                     b.HasIndex("TenantId", "DeliveryPolicyId", "ZoneName");
 
                     b.ToTable("delivery_zone_rules", "delivery");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryCourier", b =>
+                {
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "FixedCommission", b1 =>
+                        {
+                            b1.Property<Guid>("DeliveryCourierId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("fixed_commission_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("fixed_commission_currency");
+
+                            b1.HasKey("DeliveryCourierId");
+
+                            b1.ToTable("delivery_couriers", "delivery");
+
+                            b1.WithOwner()
+                                .HasForeignKey("DeliveryCourierId");
+                        });
+
+                    b.Navigation("FixedCommission")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDispatchRun", b =>
+                {
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "TotalCommission", b1 =>
+                        {
+                            b1.Property<Guid>("DeliveryDispatchRunId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("total_commission_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("total_commission_currency");
+
+                            b1.HasKey("DeliveryDispatchRunId");
+
+                            b1.ToTable("delivery_dispatch_runs", "delivery");
+
+                            b1.WithOwner()
+                                .HasForeignKey("DeliveryDispatchRunId");
+                        });
+
+                    b.Navigation("TotalCommission")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDistanceTier", b =>
@@ -320,6 +641,69 @@ namespace Pitako.Modules.DeliveryLogistics.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryRunStop", b =>
+                {
+                    b.HasOne("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDispatchRun", null)
+                        .WithMany("Stops")
+                        .HasForeignKey("DeliveryDispatchRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CourierCommission", b1 =>
+                        {
+                            b1.Property<Guid>("DeliveryRunStopId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("courier_commission_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("courier_commission_currency");
+
+                            b1.HasKey("DeliveryRunStopId");
+
+                            b1.ToTable("delivery_run_stops", "delivery");
+
+                            b1.WithOwner()
+                                .HasForeignKey("DeliveryRunStopId");
+                        });
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "DeliveryFeeSnapshot", b1 =>
+                        {
+                            b1.Property<Guid>("DeliveryRunStopId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("delivery_fee_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("delivery_fee_currency");
+
+                            b1.HasKey("DeliveryRunStopId");
+
+                            b1.ToTable("delivery_run_stops", "delivery");
+
+                            b1.WithOwner()
+                                .HasForeignKey("DeliveryRunStopId");
+                        });
+
+                    b.Navigation("CourierCommission")
+                        .IsRequired();
+
+                    b.Navigation("DeliveryFeeSnapshot")
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryZoneRule", b =>
                 {
                     b.HasOne("Pitako.Modules.DeliveryLogistics.Domain.DeliveryPolicy", null)
@@ -354,6 +738,11 @@ namespace Pitako.Modules.DeliveryLogistics.Infrastructure.Migrations
 
                     b.Navigation("Fee")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryDispatchRun", b =>
+                {
+                    b.Navigation("Stops");
                 });
 
             modelBuilder.Entity("Pitako.Modules.DeliveryLogistics.Domain.DeliveryPolicy", b =>
