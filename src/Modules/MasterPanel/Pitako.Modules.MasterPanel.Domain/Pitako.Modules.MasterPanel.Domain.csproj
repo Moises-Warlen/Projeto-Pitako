@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.MasterPanel.Domain</RootNamespace>
+    <AssemblyName>Pitako.Modules.MasterPanel.Domain</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Pitako.SharedKernel\Pitako.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

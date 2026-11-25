@@ -1,3 +1,5 @@
+using Pitako.Modules.MasterPanel.Application.Services;
+using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Domain;
@@ -16,7 +18,9 @@ public sealed class ArchitectureTests
             typeof(Result).Assembly,
             typeof(Tenant).Assembly,
             typeof(User).Assembly,
-            typeof(AuthenticationService).Assembly
+            typeof(AuthenticationService).Assembly,
+            typeof(CommercialPlan).Assembly,
+            typeof(MasterPlanAndSubscriptionService).Assembly
         };
 
         foreach (var assembly in assemblies)
