@@ -1,0 +1,39 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+.vs/
+TestResults/
+coverage*/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+appsettings.Development.json
+*.pfx
+*.key
+*.pem
+
+# Storage / Logs / Uploads locais
+logs/
+uploads/
+backups/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
