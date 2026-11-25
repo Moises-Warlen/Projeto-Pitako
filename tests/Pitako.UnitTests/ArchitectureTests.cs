@@ -10,6 +10,8 @@ using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.DiningHall.Domain;
 using Pitako.Modules.Inventory.Application.Services;
 using Pitako.Modules.Inventory.Domain;
+using Pitako.Modules.Marketplaces.Application.Services;
+using Pitako.Modules.Marketplaces.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Orders.Application.Services;
@@ -69,7 +71,9 @@ public sealed class ArchitectureTests
             typeof(QrTableSelfServiceService).Assembly,
             typeof(TotemSelfServiceService).Assembly,
             typeof(PrintJob).Assembly,
-            typeof(PrintingManagementService).Assembly
+            typeof(PrintingManagementService).Assembly,
+            typeof(MarketplacePartnerAccount).Assembly,
+            typeof(MarketplaceHubService).Assembly
         };
 
         foreach (var assembly in assemblies)

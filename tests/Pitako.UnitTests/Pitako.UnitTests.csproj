@@ -40,5 +40,6 @@
     <ProjectReference Include="..\..\src\Modules\DiningHall\Pitako.Modules.DiningHall.Domain\Pitako.Modules.DiningHall.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\DiningHall\Pitako.Modules.DiningHall.Application\Pitako.Modules.DiningHall.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Printing\Pitako.Modules.Printing.Application\Pitako.Modules.Printing.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Marketplaces\Pitako.Modules.Marketplaces.Application\Pitako.Modules.Marketplaces.Application.csproj" />
   </ItemGroup>
 </Project>
