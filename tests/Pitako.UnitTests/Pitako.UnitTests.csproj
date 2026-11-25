@@ -21,5 +21,7 @@
     <ProjectReference Include="..\..\src\Modules\MasterPanel\Pitako.Modules.MasterPanel.Domain\Pitako.Modules.MasterPanel.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\MasterPanel\Pitako.Modules.MasterPanel.Application\Pitako.Modules.MasterPanel.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Tenants\Pitako.Modules.Tenants.Application\Pitako.Modules.Tenants.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Domain\Pitako.Modules.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Application\Pitako.Modules.Catalog.Application.csproj" />
   </ItemGroup>
 </Project>

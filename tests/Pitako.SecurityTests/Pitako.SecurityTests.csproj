@@ -18,5 +18,6 @@
     <ProjectReference Include="..\..\src\Modules\Tenants\Pitako.Modules.Tenants.Infrastructure\Pitako.Modules.Tenants.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Security\Pitako.Modules.Security.Infrastructure\Pitako.Modules.Security.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\MasterPanel\Pitako.Modules.MasterPanel.Infrastructure\Pitako.Modules.MasterPanel.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Catalog\Pitako.Modules.Catalog.Infrastructure\Pitako.Modules.Catalog.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
