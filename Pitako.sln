@@ -1,0 +1,87 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{33C03C42-0E80-46AF-94FD-1F31312CDABD}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BuildingBlocks", "BuildingBlocks", "{250686B8-0919-4579-BA74-3ABA9A4A6AE6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.SharedKernel", "src\BuildingBlocks\Pitako.SharedKernel\Pitako.SharedKernel.csproj", "{9D0ABE49-D74F-4658-A793-57DC23DEEC8C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.MultiTenancy", "src\BuildingBlocks\Pitako.MultiTenancy\Pitako.MultiTenancy.csproj", "{BFF4F92E-88AF-492B-896B-E053134C85EE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Persistence", "src\BuildingBlocks\Pitako.Persistence\Pitako.Persistence.csproj", "{CE6C7175-681A-44B7-B349-0F85D929D4B0}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Modules", "Modules", "{857C3F19-1BE8-43E0-B21E-27C33584B25C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tenants", "Tenants", "{5071452D-58A6-410B-869C-AB060709C6C2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Tenants.Domain", "src\Modules\Tenants\Pitako.Modules.Tenants.Domain\Pitako.Modules.Tenants.Domain.csproj", "{6E25AF12-DA5C-4D28-8D07-7949E4586D39}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Tenants.Infrastructure", "src\Modules\Tenants\Pitako.Modules.Tenants.Infrastructure\Pitako.Modules.Tenants.Infrastructure.csproj", "{9D483157-5118-40C8-9504-032301977B44}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{3A5A7386-482E-4483-9C84-98A7119BE424}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.UnitTests", "tests\Pitako.UnitTests\Pitako.UnitTests.csproj", "{9A3A95D8-C351-40BE-B196-6FB78C9161B3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.IntegrationTests", "tests\Pitako.IntegrationTests\Pitako.IntegrationTests.csproj", "{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.SecurityTests", "tests\Pitako.SecurityTests\Pitako.SecurityTests.csproj", "{154FD7AA-0AB6-4544-939B-1D83E5AF0298}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9D0ABE49-D74F-4658-A793-57DC23DEEC8C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D0ABE49-D74F-4658-A793-57DC23DEEC8C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D0ABE49-D74F-4658-A793-57DC23DEEC8C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D0ABE49-D74F-4658-A793-57DC23DEEC8C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFF4F92E-88AF-492B-896B-E053134C85EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFF4F92E-88AF-492B-896B-E053134C85EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFF4F92E-88AF-492B-896B-E053134C85EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFF4F92E-88AF-492B-896B-E053134C85EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE6C7175-681A-44B7-B349-0F85D929D4B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE6C7175-681A-44B7-B349-0F85D929D4B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE6C7175-681A-44B7-B349-0F85D929D4B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE6C7175-681A-44B7-B349-0F85D929D4B0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E25AF12-DA5C-4D28-8D07-7949E4586D39}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E25AF12-DA5C-4D28-8D07-7949E4586D39}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E25AF12-DA5C-4D28-8D07-7949E4586D39}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E25AF12-DA5C-4D28-8D07-7949E4586D39}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D483157-5118-40C8-9504-032301977B44}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D483157-5118-40C8-9504-032301977B44}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D483157-5118-40C8-9504-032301977B44}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D483157-5118-40C8-9504-032301977B44}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9A3A95D8-C351-40BE-B196-6FB78C9161B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9A3A95D8-C351-40BE-B196-6FB78C9161B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9A3A95D8-C351-40BE-B196-6FB78C9161B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9A3A95D8-C351-40BE-B196-6FB78C9161B3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
+		{9D0ABE49-D74F-4658-A793-57DC23DEEC8C} = {250686B8-0919-4579-BA74-3ABA9A4A6AE6}
+		{BFF4F92E-88AF-492B-896B-E053134C85EE} = {250686B8-0919-4579-BA74-3ABA9A4A6AE6}
+		{CE6C7175-681A-44B7-B349-0F85D929D4B0} = {250686B8-0919-4579-BA74-3ABA9A4A6AE6}
+		{857C3F19-1BE8-43E0-B21E-27C33584B25C} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
+		{5071452D-58A6-410B-869C-AB060709C6C2} = {857C3F19-1BE8-43E0-B21E-27C33584B25C}
+		{6E25AF12-DA5C-4D28-8D07-7949E4586D39} = {5071452D-58A6-410B-869C-AB060709C6C2}
+		{9D483157-5118-40C8-9504-032301977B44} = {5071452D-58A6-410B-869C-AB060709C6C2}
+		{9A3A95D8-C351-40BE-B196-6FB78C9161B3} = {3A5A7386-482E-4483-9C84-98A7119BE424}
+		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6} = {3A5A7386-482E-4483-9C84-98A7119BE424}
+		{154FD7AA-0AB6-4544-939B-1D83E5AF0298} = {3A5A7386-482E-4483-9C84-98A7119BE424}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.SharedKernel</RootNamespace>
+    <AssemblyName>Pitako.SharedKernel</AssemblyName>
+  </PropertyGroup>
+</Project>

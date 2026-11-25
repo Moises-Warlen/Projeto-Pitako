@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.MultiTenancy</RootNamespace>
+    <AssemblyName>Pitako.MultiTenancy</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Pitako.SharedKernel\Pitako.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

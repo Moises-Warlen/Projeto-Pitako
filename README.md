@@ -14,4 +14,5 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 
 ## Status do Desenvolvimento
 
-- **Fase 1 (Análise do projeto e arquitetura):** Em andamento.
+- **Fase 1 (Análise do projeto e arquitetura):** Concluída ([Relatório](docs/relatorios/fase-01-relatorio.md)).
+- **Fase 2 (Domínio, banco e multi-tenancy):** Concluída com pendência de execução ao vivo no PostgreSQL local por falta de credenciais ([Relatório](docs/relatorios/fase-02-relatorio.md)).
