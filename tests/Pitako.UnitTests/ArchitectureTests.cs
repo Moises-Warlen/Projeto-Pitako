@@ -16,6 +16,8 @@ using Pitako.Modules.Marketplaces.Application.Services;
 using Pitako.Modules.Marketplaces.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
+using Pitako.Modules.OfflineSync.Application.Services;
+using Pitako.Modules.OfflineSync.Domain;
 using Pitako.Modules.Orders.Application.Services;
 using Pitako.Modules.Orders.Domain;
 using Pitako.Modules.PdvCashier.Application.Services;
@@ -87,7 +89,9 @@ public sealed class ArchitectureTests
             typeof(ReportExportAuditLog).Assembly,
             typeof(ReportingManagementService).Assembly,
             typeof(DataMigrationJob).Assembly,
-            typeof(DataLifecycleService).Assembly
+            typeof(DataLifecycleService).Assembly,
+            typeof(OfflineTerminalRegistration).Assembly,
+            typeof(OfflineSynchronizationService).Assembly
         };
 
         foreach (var assembly in assemblies)

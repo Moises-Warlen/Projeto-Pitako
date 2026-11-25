@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.OfflineSync.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.OfflineSync.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.OfflineSync.Domain\Pitako.Modules.OfflineSync.Domain.csproj" />
+  </ItemGroup>
+</Project>

@@ -32,5 +32,6 @@
     <ProjectReference Include="..\..\src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Infrastructure\Pitako.Modules.WhatsAppSupport.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Reports\Pitako.Modules.Reports.Infrastructure\Pitako.Modules.Reports.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\DataLifecycle\Pitako.Modules.DataLifecycle.Infrastructure\Pitako.Modules.DataLifecycle.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\OfflineSync\Pitako.Modules.OfflineSync.Infrastructure\Pitako.Modules.OfflineSync.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
