@@ -503,7 +503,7 @@ public sealed class InventoryStockAndProductionService : IInventoryOrderDeductio
         IEnumerable<OrderStockLineInput> orderLines,
         CancellationToken cancellationToken = default)
     {
-        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        var guard = ValidateOrderTriggeredActor(actor, isCancellation: false);
         if (guard.IsFailure)
             return Result.Failure<StockOrderDeductionSummary>(guard.Error);
 
@@ -606,7 +606,7 @@ public sealed class InventoryStockAndProductionService : IInventoryOrderDeductio
         string reason,
         CancellationToken cancellationToken = default)
     {
-        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        var guard = ValidateOrderTriggeredActor(actor, isCancellation: true);
         if (guard.IsFailure)
             return Result.Failure<int>(guard.Error);
 
@@ -728,6 +728,24 @@ public sealed class InventoryStockAndProductionService : IInventoryOrderDeductio
     {
         var oneStockUnitCost = supply.CalculateCostForUsage(1m, stockUnitCode, customUnits);
         return oneStockUnitCost.IsSuccess ? oneStockUnitCost.Value : 0m;
+    }
+
+    private Result<Guid> ValidateOrderTriggeredActor(User actor, bool isCancellation)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        var currentTenantId = TenantGuard.EnsureResolved(_tenantContext);
+
+        if (actor.Scope == UserScope.Establishment && actor.TenantId != currentTenantId)
+            throw new CrossTenantAccessException(actor.TenantId, currentTenantId, "Tentativa de operar estoque via pedido de outro estabelecimento.");
+
+        var allowed = actor.HasPermission(SystemModules.Inventory, PermissionAction.Edit) ||
+                      (isCancellation
+                          ? actor.HasPermission(SystemModules.Orders, PermissionAction.Cancel)
+                          : actor.HasPermission(SystemModules.Orders, PermissionAction.Create) || actor.HasPermission(SystemModules.Orders, PermissionAction.Edit));
+
+        return allowed
+            ? Result.Success(currentTenantId)
+            : Result.Failure<Guid>(Error.Forbidden("Inventory.Forbidden", "Permissão insuficiente para movimentação automática de estoque via pedido."));
     }
 
     private Result<Guid> ValidateTenantActor(User actor, PermissionAction action)

@@ -49,6 +49,8 @@ public sealed class ArchitectureTests
             typeof(CouponsManagementService).Assembly,
             typeof(ShoppingCart).Assembly,
             typeof(ShoppingCartService).Assembly,
+            typeof(Order).Assembly,
+            typeof(OrderManagementService).Assembly,
             typeof(DeliveryPolicy).Assembly,
             typeof(DeliveryPolicyAndFreightService).Assembly
         };

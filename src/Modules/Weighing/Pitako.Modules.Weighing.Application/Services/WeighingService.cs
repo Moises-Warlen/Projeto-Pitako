@@ -236,9 +236,16 @@ public sealed class WeighingService : IWeighingOrderAttachmentService
         Guid orderId,
         CancellationToken cancellationToken = default)
     {
-        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
-        if (guard.IsFailure)
-            return Result.Failure<WeighingRecord>(guard.Error);
+        ArgumentNullException.ThrowIfNull(actor);
+        var currentTenantId = TenantGuard.EnsureResolved(_tenantContext);
+        if (actor.Scope == UserScope.Establishment && actor.TenantId != currentTenantId)
+            throw new CrossTenantAccessException(actor.TenantId, currentTenantId, "Tentativa de vincular pesagem de outro estabelecimento.");
+
+        var allowed = actor.HasPermission(SystemModules.Weighing, PermissionAction.Edit) ||
+                      actor.HasPermission(SystemModules.Orders, PermissionAction.Create) ||
+                      actor.HasPermission(SystemModules.Orders, PermissionAction.Edit);
+        if (!allowed)
+            return Result.Failure<WeighingRecord>(Error.Forbidden("Weighing.Forbidden", "Permissão insuficiente para vincular pesagem ao pedido."));
 
         var record = await _recordRepo.FindByIdAsync(weighingRecordId, cancellationToken);
         if (record is null)
