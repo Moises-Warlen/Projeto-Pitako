@@ -20,6 +20,8 @@ using Pitako.Modules.PdvCashier.Application.Services;
 using Pitako.Modules.PdvCashier.Domain;
 using Pitako.Modules.Printing.Application.Services;
 using Pitako.Modules.Printing.Domain;
+using Pitako.Modules.Reports.Application.Services;
+using Pitako.Modules.Reports.Domain;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Services;
@@ -79,7 +81,9 @@ public sealed class ArchitectureTests
             typeof(MarketplaceHubService).Assembly,
             typeof(MarketplaceBulkSyncService).Assembly,
             typeof(WhatsAppChannelConfig).Assembly,
-            typeof(WhatsAppSupportService).Assembly
+            typeof(WhatsAppSupportService).Assembly,
+            typeof(ReportExportAuditLog).Assembly,
+            typeof(ReportingManagementService).Assembly
         };
 
         foreach (var assembly in assemblies)

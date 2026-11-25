@@ -42,5 +42,6 @@
     <ProjectReference Include="..\..\src\Modules\Printing\Pitako.Modules.Printing.Application\Pitako.Modules.Printing.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Marketplaces\Pitako.Modules.Marketplaces.Application\Pitako.Modules.Marketplaces.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Application\Pitako.Modules.WhatsAppSupport.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reports\Pitako.Modules.Reports.Application\Pitako.Modules.Reports.Application.csproj" />
   </ItemGroup>
 </Project>
