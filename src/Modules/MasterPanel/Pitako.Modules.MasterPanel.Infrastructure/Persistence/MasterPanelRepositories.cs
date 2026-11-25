@@ -27,6 +27,9 @@ public sealed class EfCommercialPlanRepository(MasterPanelDbContext db) : IComme
     public async Task AddAsync(CommercialPlan plan, CancellationToken cancellationToken = default) =>
         await db.CommercialPlans.AddAsync(plan, cancellationToken);
 
+    public void Remove(CommercialPlan plan) =>
+        db.CommercialPlans.Remove(plan);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -41,6 +44,9 @@ public sealed class EfMasterCustomerRepository(MasterPanelDbContext db) : IMaste
 
     public async Task AddAsync(MasterCustomerAccount customer, CancellationToken cancellationToken = default) =>
         await db.Customers.AddAsync(customer, cancellationToken);
+
+    public void Remove(MasterCustomerAccount customer) =>
+        db.Customers.Remove(customer);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
@@ -68,6 +74,9 @@ public sealed class EfSubscriptionRepository(MasterPanelDbContext db) : ISubscri
 
     public async Task AddAsync(Subscription subscription, CancellationToken cancellationToken = default) =>
         await db.Subscriptions.AddAsync(subscription, cancellationToken);
+
+    public void Remove(Subscription subscription) =>
+        db.Subscriptions.Remove(subscription);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

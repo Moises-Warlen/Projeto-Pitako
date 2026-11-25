@@ -96,6 +96,38 @@ public sealed class MasterCustomerAccount : AggregateRoot<Guid>, IAuditableEntit
             phone?.Trim()));
     }
 
+    public Result UpdateDetails(
+        string name,
+        string documentNumber,
+        string billingEmail,
+        string? phone,
+        CustomerAccountStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Customer.NameRequired", "Nome do cliente SaaS é obrigatório."));
+
+        var digits = new string((documentNumber ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digits.Length is not (11 or 14))
+            return Result.Failure(Error.Validation("Customer.InvalidDocument", "Documento deve ser CPF (11) ou CNPJ (14) válido."));
+
+        if (digits.Length == 14)
+        {
+            var cnpj = Cnpj.Create(digits);
+            if (cnpj.IsFailure)
+                return Result.Failure(cnpj.Error);
+        }
+
+        if (string.IsNullOrWhiteSpace(billingEmail) || !billingEmail.Contains('@'))
+            return Result.Failure(Error.Validation("Customer.InvalidEmail", "E-mail financeiro inválido."));
+
+        Name = name.Trim();
+        DocumentNumber = digits;
+        BillingEmail = billingEmail.Trim().ToLowerInvariant();
+        Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+        Status = status;
+        return Result.Success();
+    }
+
     public void Suspend() => Status = CustomerAccountStatus.Suspended;
     public void Activate() => Status = CustomerAccountStatus.Active;
     public void Cancel() => Status = CustomerAccountStatus.Cancelled;

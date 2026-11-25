@@ -22,12 +22,11 @@ export function PitakoBrandShell({
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center gap-3">
-              <div
-                className="flex h-10 items-center justify-center rounded border border-dashed border-red-600/70 bg-red-600/10 px-3 text-xs font-bold tracking-wider text-red-400"
-                title="Espaço reservado para a logo oficial PITAKO"
-              >
-                LOGO PITAKO [Aguardando arquivo oficial]
-              </div>
+              <img
+                src="/pitako-logo.jpg"
+                alt="Logo Oficial PITAKO"
+                className="h-10 w-auto rounded-lg object-contain shadow-sm"
+              />
               <span className="text-lg font-bold tracking-tight text-white">
                 PITAKO <span className="text-red-500">SaaS</span>
               </span>

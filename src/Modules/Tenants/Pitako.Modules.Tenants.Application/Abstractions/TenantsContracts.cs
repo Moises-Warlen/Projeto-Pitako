@@ -10,6 +10,7 @@ public interface ITenantRepository
     Task<IReadOnlyList<Tenant>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<int> CountByCustomerAccountAsync(Guid customerAccountId, CancellationToken cancellationToken = default);
     Task AddAsync(Tenant tenant, CancellationToken cancellationToken = default);
+    Task RemoveWithChildrenAsync(Tenant tenant, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

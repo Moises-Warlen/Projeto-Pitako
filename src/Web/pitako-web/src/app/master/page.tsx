@@ -21,6 +21,9 @@ interface CustomerRow {
   customerName: string;
   document: string;
   billingEmail: string;
+  phone?: string;
+  status: string;
+  planId?: string;
   planName: string;
   subscriptionStatus: string;
 }
@@ -33,6 +36,7 @@ interface EstablishmentRow {
   slug: string;
   segmentCode: string;
   cnpj: string;
+  cnpjDigits: string;
   status: string;
 }
 
@@ -79,38 +83,53 @@ export default function MasterPanelPage() {
     segments: []
   });
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"stores" | "customers" | "plans">("stores");
+  const [activeTab, setActiveTab] = useState<"stores" | "segments" | "customers" | "plans">("stores");
 
-  // Form Passo 1 — Plano
-  const [planCode, setPlanCode] = useState("");
-  const [planName, setPlanName] = useState("");
-  const [planPrice, setPlanPrice] = useState("299.90");
-  const [isUnlimited, setIsUnlimited] = useState(true);
-  const [maxStores, setMaxStores] = useState("1");
-  const [selectedModules, setSelectedModules] = useState<string[]>(ALL_MODULES.map((m) => m.code));
-
-  // Form Passo 2 — Cliente + Assinatura
-  const [customerName, setCustomerName] = useState("");
-  const [customerDoc, setCustomerDoc] = useState("11222333000181");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("11999998888");
-  const [customerPlanId, setCustomerPlanId] = useState("");
-
-  // Form Passo 3 — Nova Loja + Modalidade + Admin inicial
+  // 1. Lojas (Criar / Editar)
+  const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [storeCustomerId, setStoreCustomerId] = useState("");
   const [storeLegalName, setStoreLegalName] = useState("");
   const [storeTradeName, setStoreTradeName] = useState("");
   const [storeSlug, setStoreSlug] = useState("");
   const [storeCnpj, setStoreCnpj] = useState("11222333000181");
-  const [storeSegment, setStoreSegment] = useState("pizzaria");
+  const [storeSegment, setStoreSegment] = useState("acaiteria");
+  const [storeStatus, setStoreStatus] = useState("2");
   const [storeAdminName, setStoreAdminName] = useState("");
   const [storeAdminEmail, setStoreAdminEmail] = useState("");
   const [storeAdminPassword, setStoreAdminPassword] = useState("Loja@12345");
 
+  // 2. Modalidades (Criar / Editar)
+  const [editingSegCode, setEditingSegCode] = useState<string | null>(null);
+  const [segCode, setSegCode] = useState("");
+  const [segName, setSegName] = useState("");
+  const [segAcai, setSegAcai] = useState(false);
+  const [segWeight, setSegWeight] = useState(false);
+  const [segTables, setSegTables] = useState(true);
+  const [segFractional, setSegFractional] = useState(false);
+
+  // 3. Clientes / Donos (Criar / Editar)
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerDoc, setCustomerDoc] = useState("11222333000181");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("11999998888");
+  const [customerPlanId, setCustomerPlanId] = useState("");
+  const [customerStatus, setCustomerStatus] = useState("1");
+
+  // 4. Planos & Módulos (Criar / Editar)
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planCode, setPlanCode] = useState("");
+  const [planName, setPlanName] = useState("");
+  const [planPrice, setPlanPrice] = useState("299.90");
+  const [planActive, setPlanActive] = useState(true);
+  const [isUnlimited, setIsUnlimited] = useState(true);
+  const [maxStores, setMaxStores] = useState("1");
+  const [selectedModules, setSelectedModules] = useState<string[]>(ALL_MODULES.map((m) => m.code));
+
   async function refreshAll() {
     const session = loadSession();
     if (!session || session.scope !== "Saas") {
-      setFeedback("Entre como Administrador Master SaaS em /login (master@pitako.com.br / Master@12345) para gerenciar planos, clientes e lojas.");
+      setFeedback("Entre como Administrador Master SaaS em /login para criar, editar e excluir lojas, modalidades, clientes e planos.");
       return;
     }
 
@@ -126,11 +145,10 @@ export default function MasterPanelPage() {
     if (custRes.ok && custRes.data) {
       setOverview(custRes.data);
       if (!storeCustomerId && custRes.data.customers[0]) setStoreCustomerId(custRes.data.customers[0].id);
+      if (!storeSegment && custRes.data.segments[0]) setStoreSegment(custRes.data.segments[0].code);
     }
     if (!plansRes.ok) {
       setFeedback(plansRes.errorMessage || "Erro ao carregar Painel Master.");
-    } else {
-      setFeedback(null);
     }
   }
 
@@ -142,77 +160,63 @@ export default function MasterPanelPage() {
     setSelectedModules((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   }
 
-  async function handleCreatePlan(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-
-    const res = await apiFetch(
-      "/api/v1/master/plans",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          code: planCode,
-          name: planName,
-          priceAmount: Number(planPrice),
-          isUnlimited,
-          maxEstablishments: isUnlimited ? null : Number(maxStores),
-          enabledModules: selectedModules
-        })
-      },
-      session.accessToken
-    );
-
-    if (res.ok) {
-      setPlanCode("");
-      setPlanName("");
-      setFeedback("Plano criado! Agora você já pode vincular clientes a ele.");
-      refreshAll();
-    } else {
-      setFeedback(res.errorMessage || "Erro ao criar plano.");
-    }
+  // --- Ações Lojas ---
+  function startEditStore(est: EstablishmentRow) {
+    setEditingStoreId(est.id);
+    setStoreTradeName(est.tradeName);
+    setStoreLegalName(est.legalName);
+    setStoreSlug(est.slug);
+    setStoreCnpj(est.cnpjDigits);
+    setStoreSegment(est.segmentCode);
+    setStoreStatus(est.status === "Trial" ? "1" : est.status === "Suspended" ? "3" : "2");
+    setActiveTab("stores");
   }
 
-  async function handleCreateCustomer(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-
-    const res = await apiFetch<{ customerId: string }>(
-      "/api/v1/master/customers-subscriptions",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          customerName,
-          documentNumber: customerDoc,
-          billingEmail: customerEmail,
-          phone: customerPhone,
-          planId: customerPlanId,
-          startWithTrial: false
-        })
-      },
-      session.accessToken
-    );
-
-    if (res.ok && res.data) {
-      setCustomerName("");
-      setCustomerEmail("");
-      setStoreCustomerId(res.data.customerId);
-      setActiveTab("stores");
-      setFeedback("Cliente cadastrado com assinatura ativa! Agora crie a loja dele no formulário ao lado.");
-      refreshAll();
-    } else {
-      setFeedback(res.errorMessage || "Erro ao cadastrar cliente.");
-    }
+  function resetStoreForm() {
+    setEditingStoreId(null);
+    setStoreLegalName("");
+    setStoreTradeName("");
+    setStoreSlug("");
+    setStoreCnpj("11222333000181");
+    setStoreStatus("2");
+    setStoreAdminName("");
+    setStoreAdminEmail("");
   }
 
-  async function handleCreateEstablishment(e: React.FormEvent) {
+  async function handleSubmitStore(e: React.FormEvent) {
     e.preventDefault();
     const session = loadSession();
     if (!session) return;
 
     const cleanSlug = storeSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    const estRes = await apiFetch<{ tenant: { id: string; slug: string; tradeName: string } }>(
+
+    if (editingStoreId) {
+      const res = await apiFetch(
+        `/api/v1/master/establishments/${editingStoreId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            legalName: storeLegalName,
+            tradeName: storeTradeName,
+            slug: cleanSlug,
+            cnpj: storeCnpj,
+            segmentCode: storeSegment,
+            status: Number(storeStatus)
+          })
+        },
+        session.accessToken
+      );
+      if (res.ok) {
+        setFeedback(`Loja '${storeTradeName}' atualizada!`);
+        resetStoreForm();
+        refreshAll();
+      } else {
+        setFeedback(res.errorMessage || "Erro ao atualizar loja.");
+      }
+      return;
+    }
+
+    const estRes = await apiFetch<{ tenant: { id: string } }>(
       "/api/v1/store/establishments",
       {
         method: "POST",
@@ -233,10 +237,9 @@ export default function MasterPanelPage() {
       return;
     }
 
-    const newTenantId = estRes.data.tenant.id;
     if (storeAdminEmail && storeAdminPassword) {
-      const userRes = await apiFetch(
-        `/api/v1/master/establishments/${newTenantId}/admin-user`,
+      await apiFetch(
+        `/api/v1/master/establishments/${estRes.data.tenant.id}/admin-user`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -248,26 +251,261 @@ export default function MasterPanelPage() {
         },
         session.accessToken
       );
-      if (!userRes.ok) {
-        setFeedback(`Loja '${cleanSlug}' criada, mas houve erro ao criar o login do dono: ${userRes.errorMessage}`);
-        refreshAll();
-        return;
-      }
     }
 
-    setStoreLegalName("");
-    setStoreTradeName("");
-    setStoreSlug("");
-    setStoreAdminName("");
-    setStoreAdminEmail("");
-    setFeedback(`Loja criada com sucesso! Acesse o cardápio em /loja/${cleanSlug} ou entre no /login com slug '${cleanSlug}'.`);
+    setFeedback(`Loja '${cleanSlug}' criada com sucesso!`);
+    resetStoreForm();
     refreshAll();
+  }
+
+  async function handleDeleteStore(est: EstablishmentRow) {
+    if (!window.confirm(`Tem certeza que deseja excluir a loja "${est.tradeName}" (${est.slug})?`)) return;
+    const session = loadSession();
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/master/establishments/${est.id}`, { method: "DELETE" }, session.accessToken);
+    if (res.ok) {
+      setFeedback(`Loja '${est.tradeName}' excluída.`);
+      if (editingStoreId === est.id) resetStoreForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao excluir loja.");
+    }
+  }
+
+  // --- Ações Modalidades ---
+  function startEditSegment(seg: SegmentOption) {
+    setEditingSegCode(seg.code);
+    setSegCode(seg.code);
+    setSegName(seg.displayName);
+    setSegAcai(seg.supportsAcaiBuilder);
+    setSegWeight(seg.supportsWeightScale);
+    setSegTables(seg.supportsTableService);
+    setSegFractional(seg.supportsFractionalItems);
+    setActiveTab("segments");
+  }
+
+  function resetSegmentForm() {
+    setEditingSegCode(null);
+    setSegCode("");
+    setSegName("");
+    setSegAcai(false);
+    setSegWeight(false);
+    setSegTables(true);
+    setSegFractional(false);
+  }
+
+  async function handleSubmitSegment(e: React.FormEvent) {
+    e.preventDefault();
+    const session = loadSession();
+    if (!session) return;
+
+    const cleanCode = (editingSegCode || segCode).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const method = editingSegCode ? "PUT" : "POST";
+    const url = editingSegCode ? `/api/v1/master/segments/${cleanCode}` : "/api/v1/master/segments";
+
+    const res = await apiFetch(
+      url,
+      {
+        method,
+        body: JSON.stringify({
+          code: cleanCode,
+          displayName: segName,
+          supportsAcaiBuilder: segAcai,
+          supportsWeightScale: segWeight,
+          supportsTableService: segTables,
+          supportsFractionalItems: segFractional
+        })
+      },
+      session.accessToken
+    );
+
+    if (res.ok) {
+      setFeedback(`Modalidade '${segName}' salva!`);
+      resetSegmentForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao salvar modalidade.");
+    }
+  }
+
+  async function handleDeleteSegment(seg: SegmentOption) {
+    if (!window.confirm(`Excluir a modalidade "${seg.displayName}"?`)) return;
+    const session = loadSession();
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/master/segments/${seg.code}`, { method: "DELETE" }, session.accessToken);
+    if (res.ok) {
+      setFeedback(`Modalidade '${seg.displayName}' removida.`);
+      if (editingSegCode === seg.code) resetSegmentForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao excluir modalidade.");
+    }
+  }
+
+  // --- Ações Clientes / Donos ---
+  function startEditCustomer(c: CustomerRow) {
+    setEditingCustomerId(c.id);
+    setCustomerName(c.customerName);
+    setCustomerDoc(c.document);
+    setCustomerEmail(c.billingEmail);
+    setCustomerPhone(c.phone || "");
+    if (c.planId) setCustomerPlanId(c.planId);
+    setCustomerStatus(c.status === "Suspended" ? "2" : c.status === "Cancelled" ? "3" : "1");
+    setActiveTab("customers");
+  }
+
+  function resetCustomerForm() {
+    setEditingCustomerId(null);
+    setCustomerName("");
+    setCustomerDoc("11222333000181");
+    setCustomerEmail("");
+    setCustomerPhone("11999998888");
+    setCustomerStatus("1");
+  }
+
+  async function handleSubmitCustomer(e: React.FormEvent) {
+    e.preventDefault();
+    const session = loadSession();
+    if (!session) return;
+
+    if (editingCustomerId) {
+      const res = await apiFetch(
+        `/api/v1/master/customers/${editingCustomerId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            customerName,
+            documentNumber: customerDoc,
+            billingEmail: customerEmail,
+            phone: customerPhone,
+            status: Number(customerStatus),
+            planId: customerPlanId || null
+          })
+        },
+        session.accessToken
+      );
+      if (res.ok) {
+        setFeedback(`Cliente '${customerName}' atualizado!`);
+        resetCustomerForm();
+        refreshAll();
+      } else {
+        setFeedback(res.errorMessage || "Erro ao editar cliente.");
+      }
+      return;
+    }
+
+    const res = await apiFetch<{ customerId: string }>(
+      "/api/v1/master/customers-subscriptions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          customerName,
+          documentNumber: customerDoc,
+          billingEmail: customerEmail,
+          phone: customerPhone,
+          planId: customerPlanId,
+          startWithTrial: false
+        })
+      },
+      session.accessToken
+    );
+
+    if (res.ok && res.data) {
+      setStoreCustomerId(res.data.customerId);
+      setFeedback("Cliente cadastrado com sucesso!");
+      resetCustomerForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao cadastrar cliente.");
+    }
+  }
+
+  async function handleDeleteCustomer(c: CustomerRow) {
+    if (!window.confirm(`Excluir o cliente "${c.customerName}"?`)) return;
+    const session = loadSession();
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/master/customers/${c.id}`, { method: "DELETE" }, session.accessToken);
+    if (res.ok) {
+      setFeedback(`Cliente '${c.customerName}' excluído.`);
+      if (editingCustomerId === c.id) resetCustomerForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao excluir cliente.");
+    }
+  }
+
+  // --- Ações Planos & Módulos ---
+  function startEditPlan(p: PlanItem) {
+    setEditingPlanId(p.id);
+    setPlanCode(p.code);
+    setPlanName(p.name);
+    setPlanPrice(String(p.price));
+    setPlanActive(p.isActive);
+    setIsUnlimited(p.unlimitedEstablishments);
+    setMaxStores(String(p.maxEstablishments ?? 1));
+    setSelectedModules(p.modules);
+    setActiveTab("plans");
+  }
+
+  function resetPlanForm() {
+    setEditingPlanId(null);
+    setPlanCode("");
+    setPlanName("");
+    setPlanPrice("299.90");
+    setPlanActive(true);
+    setIsUnlimited(true);
+    setMaxStores("1");
+    setSelectedModules(ALL_MODULES.map((m) => m.code));
+  }
+
+  async function handleSubmitPlan(e: React.FormEvent) {
+    e.preventDefault();
+    const session = loadSession();
+    if (!session) return;
+
+    const payload = {
+      code: planCode,
+      name: planName,
+      priceAmount: Number(planPrice),
+      isUnlimited,
+      maxEstablishments: isUnlimited ? null : Number(maxStores),
+      enabledModules: selectedModules,
+      isActive: planActive
+    };
+
+    const res = await apiFetch(
+      editingPlanId ? `/api/v1/master/plans/${editingPlanId}` : "/api/v1/master/plans",
+      { method: editingPlanId ? "PUT" : "POST", body: JSON.stringify(payload) },
+      session.accessToken
+    );
+
+    if (res.ok) {
+      setFeedback(editingPlanId ? `Plano '${planName}' atualizado!` : `Plano '${planName}' criado!`);
+      resetPlanForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao salvar plano.");
+    }
+  }
+
+  async function handleDeletePlan(p: PlanItem) {
+    if (!window.confirm(`Excluir o plano "${p.name}"?`)) return;
+    const session = loadSession();
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/master/plans/${p.id}`, { method: "DELETE" }, session.accessToken);
+    if (res.ok) {
+      setFeedback(`Plano '${p.name}' excluído.`);
+      if (editingPlanId === p.id) resetPlanForm();
+      refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao excluir plano.");
+    }
   }
 
   return (
     <PitakoBrandShell
-      title="Painel Master PITAKO — Clientes, Planos, Lojas e Modalidades"
-      subtitle="Aqui você controla o SaaS: 1) configura Planos e Módulos, 2) cadastra Clientes, 3) cria as Lojas escolhendo a Modalidade (Pizzaria, Açaíteria, Hamburgueria, etc.)."
+      title="Painel Master PITAKO — Lojas, Modalidades, Clientes e Planos"
+      subtitle="Gerencie criação, edição e exclusão completa de Lojas, Modalidades, Clientes/Donos e Planos/Módulos."
     >
       {feedback && (
         <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm text-amber-100">
@@ -276,39 +514,29 @@ export default function MasterPanelPage() {
       )}
 
       <div className="mb-6 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab("stores")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-            activeTab === "stores" ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-          }`}
-        >
-          1. Lojas & Modalidades ({overview.establishments.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("customers")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-            activeTab === "customers" ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-          }`}
-        >
-          2. Clientes / Donos ({overview.customers.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("plans")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-            activeTab === "plans" ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-          }`}
-        >
-          3. Planos & Módulos ({plans.length})
-        </button>
+        {[
+          { key: "stores", label: `1. Lojas (${overview.establishments.length})` },
+          { key: "segments", label: `2. Modalidades (${overview.segments.length})` },
+          { key: "customers", label: `3. Clientes / Donos (${overview.customers.length})` },
+          { key: "plans", label: `4. Planos & Módulos (${plans.length})` }
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setActiveTab(t.key as typeof activeTab)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+              activeTab === t.key ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "stores" && (
         <div className="grid gap-8 lg:grid-cols-3">
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
-            <h2 className="mb-4 text-lg font-semibold text-white">Lojas Cadastradas na Plataforma</h2>
+            <h2 className="mb-4 text-lg font-semibold text-white">Lojas Cadastradas</h2>
             <div className="space-y-3">
               {overview.establishments.map((est) => (
                 <div key={est.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
@@ -317,16 +545,30 @@ export default function MasterPanelPage() {
                       <p className="text-base font-bold text-white">{est.tradeName}</p>
                       <p className="text-xs text-zinc-400">
                         Modalidade: <strong className="uppercase text-red-400">{est.segmentCode}</strong> · Slug:{" "}
-                        <code>{est.slug}</code> · CNPJ: {est.cnpj}
+                        <code>{est.slug}</code> · CNPJ: {est.cnpj} · Status: <strong>{est.status}</strong>
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Link
                         href={`/loja/${est.slug}`}
                         className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                       >
-                        Abrir Cardápio /loja/{est.slug}
+                        Abrir Cardápio
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => startEditStore(est)}
+                        className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStore(est)}
+                        className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
+                      >
+                        Excluir
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -335,24 +577,34 @@ export default function MasterPanelPage() {
           </section>
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-            <h2 className="mb-1 text-lg font-semibold text-white">Criar Nova Loja</h2>
-            <p className="mb-4 text-xs text-zinc-400">Escolha o cliente dono, a modalidade do negócio e já crie a senha do administrador.</p>
-            <form onSubmit={handleCreateEstablishment} className="space-y-3 text-sm">
-              <div>
-                <label className="mb-1 block text-xs text-zinc-400">Cliente Dono da Loja</label>
-                <select
-                  value={storeCustomerId}
-                  onChange={(e) => setStoreCustomerId(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                >
-                  {overview.customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.customerName} ({c.planName})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">
+                {editingStoreId ? "Editar Loja" : "Criar Nova Loja"}
+              </h2>
+              {editingStoreId && (
+                <button type="button" onClick={resetStoreForm} className="text-xs text-zinc-400 underline">
+                  Cancelar edição
+                </button>
+              )}
+            </div>
+            <form onSubmit={handleSubmitStore} className="space-y-3 text-sm">
+              {!editingStoreId && (
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-400">Cliente Dono da Loja</label>
+                  <select
+                    value={storeCustomerId}
+                    onChange={(e) => setStoreCustomerId(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                  >
+                    {overview.customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.customerName} ({c.planName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-xs text-zinc-400">Modalidade / Segmento</label>
                 <select
@@ -360,75 +612,80 @@ export default function MasterPanelPage() {
                   onChange={(e) => setStoreSegment(e.target.value)}
                   className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
                 >
-                  {(overview.segments.length > 0
-                    ? overview.segments
-                    : [
-                        { code: "acaiteria", displayName: "Açaíteria", supportsAcaiBuilder: true, supportsWeightScale: true, supportsTableService: true, supportsFractionalItems: false },
-                        { code: "pizzaria", displayName: "Pizzaria", supportsAcaiBuilder: false, supportsWeightScale: false, supportsTableService: true, supportsFractionalItems: true },
-                        { code: "hamburgueria", displayName: "Hamburgueria", supportsAcaiBuilder: false, supportsWeightScale: false, supportsTableService: true, supportsFractionalItems: false }
-                      ]
-                  ).map((seg) => (
+                  {overview.segments.map((seg) => (
                     <option key={seg.code} value={seg.code}>
-                      {seg.displayName} {seg.supportsAcaiBuilder ? "(c/ Açaí)" : ""} {seg.supportsWeightScale ? "(c/ Balança)" : ""} {seg.supportsFractionalItems ? "(c/ Meia-a-Meia)" : ""}
+                      {seg.displayName}
                     </option>
                   ))}
                 </select>
               </div>
-              <input
-                value={storeTradeName}
-                onChange={(e) => setStoreTradeName(e.target.value)}
-                required
-                placeholder="Nome Fantasia (ex: Pizzaria Bela Massa)"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={storeLegalName}
-                onChange={(e) => setStoreLegalName(e.target.value)}
-                required
-                placeholder="Razão Social"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={storeSlug}
-                onChange={(e) => setStoreSlug(e.target.value)}
-                required
-                placeholder="Slug da URL (ex: bela-massa)"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={storeCnpj}
-                onChange={(e) => setStoreCnpj(e.target.value)}
-                required
-                placeholder="CNPJ (14 dígitos válidos)"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <div className="border-t border-zinc-800 pt-3">
-                <p className="mb-2 text-xs font-semibold text-zinc-300">Login Inicial do Dono da Loja</p>
-                <input
-                  value={storeAdminName}
-                  onChange={(e) => setStoreAdminName(e.target.value)}
-                  placeholder="Nome do Administrador"
-                  className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                />
-                <input
-                  type="email"
-                  value={storeAdminEmail}
-                  onChange={(e) => setStoreAdminEmail(e.target.value)}
-                  required
-                  placeholder="E-mail de acesso"
-                  className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                />
-                <input
-                  type="text"
-                  value={storeAdminPassword}
-                  onChange={(e) => setStoreAdminPassword(e.target.value)}
-                  required
-                  placeholder="Senha (mín 8 chars, Maiús/Minús/Número)"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                />
-              </div>
+              <input value={storeTradeName} onChange={(e) => setStoreTradeName(e.target.value)} required placeholder="Nome Fantasia" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={storeLegalName} onChange={(e) => setStoreLegalName(e.target.value)} required placeholder="Razão Social" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={storeSlug} onChange={(e) => setStoreSlug(e.target.value)} required placeholder="Slug da URL (ex: bela-massa)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={storeCnpj} onChange={(e) => setStoreCnpj(e.target.value)} required placeholder="CNPJ (14 dígitos)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+
+              {editingStoreId ? (
+                <select value={storeStatus} onChange={(e) => setStoreStatus(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+                  <option value="2">Ativa</option>
+                  <option value="1">Trial</option>
+                  <option value="3">Suspensa</option>
+                </select>
+              ) : (
+                <div className="border-t border-zinc-800 pt-3">
+                  <p className="mb-2 text-xs font-semibold text-zinc-300">Login Inicial do Dono da Loja</p>
+                  <input value={storeAdminName} onChange={(e) => setStoreAdminName(e.target.value)} placeholder="Nome do Administrador" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                  <input type="email" value={storeAdminEmail} onChange={(e) => setStoreAdminEmail(e.target.value)} required placeholder="E-mail de acesso" className="mb-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                  <input type="text" value={storeAdminPassword} onChange={(e) => setStoreAdminPassword(e.target.value)} required placeholder="Senha" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                </div>
+              )}
+
               <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
-                Criar Loja e Liberar Acesso
+                {editingStoreId ? "Salvar Alterações da Loja" : "Criar Loja e Liberar Acesso"}
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "segments" && (
+        <div className="grid gap-8 lg:grid-cols-3">
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
+            <h2 className="mb-4 text-lg font-semibold text-white">Modalidades / Segmentos Disponíveis</h2>
+            <div className="space-y-3">
+              {overview.segments.map((seg) => (
+                <div key={seg.code} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                  <div>
+                    <p className="font-bold text-white">{seg.displayName} <span className="text-xs font-normal text-zinc-400">({seg.code})</span></p>
+                    <p className="text-xs text-zinc-400">
+                      {seg.supportsAcaiBuilder ? "Açaí · " : ""}
+                      {seg.supportsWeightScale ? "Balança · " : ""}
+                      {seg.supportsTableService ? "Salão/Mesas · " : ""}
+                      {seg.supportsFractionalItems ? "Meia-a-Meia" : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => startEditSegment(seg)} className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800">Editar</button>
+                    <button type="button" onClick={() => handleDeleteSegment(seg)} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800">Excluir</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">{editingSegCode ? "Editar Modalidade" : "Nova Modalidade"}</h2>
+              {editingSegCode && <button type="button" onClick={resetSegmentForm} className="text-xs text-zinc-400 underline">Cancelar</button>}
+            </div>
+            <form onSubmit={handleSubmitSegment} className="space-y-3 text-sm">
+              <input value={segCode} onChange={(e) => setSegCode(e.target.value)} disabled={!!editingSegCode} required placeholder="Código (ex: sushi)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white disabled:opacity-50" />
+              <input value={segName} onChange={(e) => setSegName(e.target.value)} required placeholder="Nome (ex: Sushi Bar)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segAcai} onChange={(e) => setSegAcai(e.target.checked)} /> Usa Montador de Açaí</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segWeight} onChange={(e) => setSegWeight(e.target.checked)} /> Usa Balança por Quilo</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segTables} onChange={(e) => setSegTables(e.target.checked)} /> Usa Salão / Mesas</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segFractional} onChange={(e) => setSegFractional(e.target.checked)} /> Permite Fracionado (Meia-a-Meia)</label>
+              <button type="submit" className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700">
+                {editingSegCode ? "Salvar Modalidade" : "Criar Modalidade"}
               </button>
             </form>
           </section>
@@ -438,67 +695,52 @@ export default function MasterPanelPage() {
       {activeTab === "customers" && (
         <div className="grid gap-8 lg:grid-cols-3">
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
-            <h2 className="mb-4 text-lg font-semibold text-white">Clientes Contratantes</h2>
+            <h2 className="mb-4 text-lg font-semibold text-white">Clientes / Donos Contratantes</h2>
             <div className="space-y-3">
               {overview.customers.map((c) => (
-                <div key={c.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm">
-                  <p className="font-bold text-white">{c.customerName}</p>
-                  <p className="text-xs text-zinc-400">
-                    Doc: {c.document} · E-mail: {c.billingEmail} · Plano: <strong className="text-red-400">{c.planName}</strong> ({c.subscriptionStatus})
-                  </p>
+                <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm">
+                  <div>
+                    <p className="font-bold text-white">{c.customerName} <span className="text-xs font-normal text-zinc-400">({c.status})</span></p>
+                    <p className="text-xs text-zinc-400">
+                      Doc: {c.document} · E-mail: {c.billingEmail} · Plano: <strong className="text-red-400">{c.planName}</strong>
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => startEditCustomer(c)} className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800">Editar</button>
+                    <button type="button" onClick={() => handleDeleteCustomer(c)} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800">Excluir</button>
+                  </div>
                 </div>
               ))}
             </div>
           </section>
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-            <h2 className="mb-3 text-lg font-semibold text-white">Novo Cliente + Assinatura</h2>
-            <form onSubmit={handleCreateCustomer} className="space-y-3 text-sm">
-              <input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                required
-                placeholder="Nome / Empresa Cliente"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={customerDoc}
-                onChange={(e) => setCustomerDoc(e.target.value)}
-                required
-                placeholder="CPF ou CNPJ"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                required
-                placeholder="E-mail de cobrança"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="Telefone / WhatsApp"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">{editingCustomerId ? "Editar Cliente / Dono" : "Novo Cliente + Assinatura"}</h2>
+              {editingCustomerId && <button type="button" onClick={resetCustomerForm} className="text-xs text-zinc-400 underline">Cancelar</button>}
+            </div>
+            <form onSubmit={handleSubmitCustomer} className="space-y-3 text-sm">
+              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} required placeholder="Nome / Empresa Cliente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={customerDoc} onChange={(e) => setCustomerDoc(e.target.value)} required placeholder="CPF ou CNPJ" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} required placeholder="E-mail" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Telefone" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              {editingCustomerId && (
+                <select value={customerStatus} onChange={(e) => setCustomerStatus(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
+                  <option value="1">Ativo</option>
+                  <option value="2">Suspenso</option>
+                  <option value="3">Cancelado</option>
+                </select>
+              )}
               <div>
                 <label className="mb-1 block text-xs text-zinc-400">Plano Contratado</label>
-                <select
-                  value={customerPlanId}
-                  onChange={(e) => setCustomerPlanId(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                >
+                <select value={customerPlanId} onChange={(e) => setCustomerPlanId(e.target.value)} required className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
                   {plans.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} (R$ {p.price.toFixed(2)})
-                    </option>
+                    <option key={p.id} value={p.id}>{p.name} (R$ {p.price.toFixed(2)})</option>
                   ))}
                 </select>
               </div>
               <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
-                Cadastrar Cliente
+                {editingCustomerId ? "Salvar Cliente" : "Cadastrar Cliente"}
               </button>
             </form>
           </section>
@@ -508,23 +750,23 @@ export default function MasterPanelPage() {
       {activeTab === "plans" && (
         <div className="grid gap-8 lg:grid-cols-3">
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
-            <h2 className="mb-4 text-lg font-semibold text-white">Planos Comerciais Configurados</h2>
+            <h2 className="mb-4 text-lg font-semibold text-white">Planos & Módulos</h2>
             <div className="space-y-3">
               {plans.map((p) => (
                 <div key={p.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-base font-bold text-white">{p.name}</span>{" "}
-                      <span className="text-xs text-zinc-400">({p.code})</span>
+                      <span className="text-xs text-zinc-400">({p.code}) · {p.isActive ? "Ativo" : "Inativo"}</span>
                     </div>
-                    <span className="rounded-full bg-red-600/20 px-3 py-1 text-xs font-semibold text-red-400">
-                      R$ {p.price.toFixed(2)} / mês
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-red-600/20 px-3 py-1 text-xs font-semibold text-red-400">R$ {p.price.toFixed(2)}</span>
+                      <button type="button" onClick={() => startEditPlan(p)} className="rounded-lg border border-zinc-600 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-800">Editar</button>
+                      <button type="button" onClick={() => handleDeletePlan(p)} className="rounded-lg bg-rose-700 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-800">Excluir</button>
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-zinc-300">
-                    Limite Lojas:{" "}
-                    <strong>{p.unlimitedEstablishments ? "Ilimitado (sem teto artificial)" : `${p.maxEstablishments}`}</strong> ·
-                    Módulos: {p.modules.join(", ")}
+                    Limite Lojas: <strong>{p.unlimitedEstablishments ? "Ilimitado" : `${p.maxEstablishments}`}</strong> · Módulos: {p.modules.join(", ")}
                   </p>
                 </div>
               ))}
@@ -532,59 +774,32 @@ export default function MasterPanelPage() {
           </section>
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-            <h2 className="mb-4 text-lg font-semibold text-white">Criar Plano & Escolher Módulos</h2>
-            <form onSubmit={handleCreatePlan} className="space-y-3 text-sm">
-              <input
-                value={planCode}
-                onChange={(e) => setPlanCode(e.target.value)}
-                required
-                placeholder="Código (ex: pizzaria-plus)"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                value={planName}
-                onChange={(e) => setPlanName(e.target.value)}
-                required
-                placeholder="Nome comercial"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <input
-                type="number"
-                step="0.01"
-                value={planPrice}
-                onChange={(e) => setPlanPrice(e.target.value)}
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-              />
-              <label className="flex items-center gap-2 text-xs text-zinc-200">
-                <input type="checkbox" checked={isUnlimited} onChange={(e) => setIsUnlimited(e.target.checked)} />
-                Plano Ilimitado Real (sem teto numérico)
-              </label>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">{editingPlanId ? "Editar Plano" : "Criar Plano & Módulos"}</h2>
+              {editingPlanId && <button type="button" onClick={resetPlanForm} className="text-xs text-zinc-400 underline">Cancelar</button>}
+            </div>
+            <form onSubmit={handleSubmitPlan} className="space-y-3 text-sm">
+              <input value={planCode} onChange={(e) => setPlanCode(e.target.value)} disabled={!!editingPlanId} required placeholder="Código (ex: pizzaria-plus)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white disabled:opacity-50" />
+              <input value={planName} onChange={(e) => setPlanName(e.target.value)} required placeholder="Nome comercial" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input type="number" step="0.01" value={planPrice} onChange={(e) => setPlanPrice(e.target.value)} required className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              {editingPlanId && (
+                <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={planActive} onChange={(e) => setPlanActive(e.target.checked)} /> Plano Ativo</label>
+              )}
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={isUnlimited} onChange={(e) => setIsUnlimited(e.target.checked)} /> Plano Ilimitado Real</label>
               {!isUnlimited && (
-                <input
-                  type="number"
-                  min={1}
-                  value={maxStores}
-                  onChange={(e) => setMaxStores(e.target.value)}
-                  placeholder="Máximo de lojas"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
-                />
+                <input type="number" min={1} value={maxStores} onChange={(e) => setMaxStores(e.target.value)} placeholder="Máximo de lojas" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               )}
               <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3">
                 <p className="text-xs font-semibold text-zinc-300">Módulos Liberados neste Plano:</p>
                 {ALL_MODULES.map((m) => (
                   <label key={m.code} className="flex items-center gap-2 text-xs text-zinc-300">
-                    <input
-                      type="checkbox"
-                      checked={selectedModules.includes(m.code)}
-                      onChange={() => toggleModule(m.code)}
-                    />
+                    <input type="checkbox" checked={selectedModules.includes(m.code)} onChange={() => toggleModule(m.code)} />
                     {m.label}
                   </label>
                 ))}
               </div>
               <button type="submit" className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700">
-                Salvar Plano
+                {editingPlanId ? "Salvar Alterações do Plano" : "Salvar Plano"}
               </button>
             </form>
           </section>

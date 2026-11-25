@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pitako.Api.Security;
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
@@ -273,6 +274,85 @@ public static class PitakoV1Endpoints
             return ToHttp(res, StatusCodes.Status201Created);
         });
 
+        master.MapPut("/plans/{id:guid}", async (
+            Guid id,
+            CreateMasterPlanReq req,
+            ApiSecurityGuard guard,
+            MasterPlanAndSubscriptionService planSvc,
+            ICommercialPlanRepository planRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var quotas = new PlanQuotaConfiguration(
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxEstablishments ?? 1).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxUnits ?? 1).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxMarketplaces ?? 2).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxUsers ?? 10).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxDevices ?? 5).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxSessions ?? 5).Value,
+                req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxMonthlyOrders ?? 2000).Value);
+
+            var res = await planSvc.UpdatePlanAsync(
+                user!,
+                id,
+                new CreatePlanCommand(
+                    req.Code,
+                    req.Name,
+                    req.Description ?? req.Name,
+                    req.PriceAmount,
+                    "BRL",
+                    BillingCycle.Monthly,
+                    req.TrialDays,
+                    quotas,
+                    req.EnabledModules ?? SystemModules.EstablishmentModules),
+                ct);
+
+            if (res.IsSuccess && req.IsActive.HasValue)
+            {
+                if (req.IsActive.Value) res.Value.Activate();
+                else res.Value.Deactivate();
+                await planRepo.SaveChangesAsync(ct);
+            }
+            return ToHttp(res);
+        });
+
+        master.MapDelete("/plans/{id:guid}", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            ICommercialPlanRepository planRepo,
+            ISubscriptionRepository subRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Delete);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var plan = await planRepo.FindByIdAsync(id, ct);
+            if (plan is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Plan.NotFound", "Plano não encontrado."));
+
+            var subs = await subRepo.ListAllAsync(ct);
+            if (subs.Any(s => s.PlanId == id))
+            {
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict(
+                    "Plan.InUse",
+                    "Existem clientes/assinaturas vinculados a este plano. Altere o plano dos clientes antes de excluir."));
+            }
+
+            planRepo.Remove(plan);
+            await planRepo.SaveChangesAsync(ct);
+            return Results.Ok(new { success = true });
+        });
+
         master.MapPost("/customers-subscriptions", async (
             CreateCustomerSubReq req,
             ApiSecurityGuard guard,
@@ -310,6 +390,7 @@ public static class PitakoV1Endpoints
             ISubscriptionRepository subRepo,
             ICommercialPlanRepository planRepo,
             ITenantRepository tenantRepo,
+            IGlobalSettingRepository settingRepo,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -321,20 +402,24 @@ public static class PitakoV1Endpoints
             var subs = await subRepo.ListAllAsync(ct);
             var plans = (await planRepo.ListAllAsync(false, ct)).ToDictionary(p => p.Id, p => p);
             var tenants = await tenantRepo.ListAllAsync(ct);
+            var segments = await MasterSegmentCatalogStore.GetEffectiveSegmentsAsync(settingRepo, ct);
 
             return Results.Ok(new
             {
                 customers = customers.Select(c =>
                 {
                     var latestSub = subs.Where(s => s.CustomerAccountId == c.Id).OrderByDescending(s => s.StartedAtUtc).FirstOrDefault();
-                    var planName = latestSub is not null && plans.TryGetValue(latestSub.PlanId, out var pl) ? pl.Name : "—";
+                    var plan = latestSub is not null && plans.TryGetValue(latestSub.PlanId, out var pl) ? pl : null;
                     return new
                     {
                         c.Id,
                         customerName = c.Name,
                         document = c.DocumentNumber,
                         c.BillingEmail,
-                        planName,
+                        c.Phone,
+                        status = c.Status.ToString(),
+                        planId = plan?.Id,
+                        planName = plan?.Name ?? "—",
                         subscriptionStatus = latestSub?.Status.ToString() ?? "None"
                     };
                 }),
@@ -347,10 +432,229 @@ public static class PitakoV1Endpoints
                     t.Slug,
                     t.SegmentCode,
                     cnpj = t.Cnpj.Formatted,
+                    cnpjDigits = t.Cnpj.Digits,
                     status = t.Status.ToString()
                 }),
-                segments = BusinessSegmentCatalog.AllBuiltIn
+                segments
             });
+        });
+
+        master.MapPut("/customers/{id:guid}", async (
+            Guid id,
+            UpdateMasterCustomerReq req,
+            ApiSecurityGuard guard,
+            IMasterCustomerRepository customerRepo,
+            ISubscriptionRepository subRepo,
+            ICommercialPlanRepository planRepo,
+            ITenantRepository tenantRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Edit);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var customer = await customerRepo.FindByIdAsync(id, ct);
+            if (customer is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Customer.NotFound", "Cliente não encontrado."));
+
+            var updRes = customer.UpdateDetails(req.CustomerName, req.DocumentNumber, req.BillingEmail, req.Phone, req.Status);
+            if (updRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(updRes.Error);
+
+            if (req.PlanId.HasValue && req.PlanId.Value != Guid.Empty)
+            {
+                var sub = await subRepo.FindLatestByCustomerIdAsync(customer.Id, ct);
+                var plan = await planRepo.FindByIdAsync(req.PlanId.Value, ct);
+                if (plan is null)
+                    return ApiSecurityGuard.ProblemFromError(Error.NotFound("Plan.NotFound", "Plano informado não encontrado."));
+
+                if (sub is null)
+                {
+                    await subRepo.AddAsync(Subscription.Create(customer.Id, plan, clock.UtcNow, startWithTrial: false), ct);
+                }
+                else if (sub.PlanId != plan.Id)
+                {
+                    var linkedCount = (await tenantRepo.ListAllAsync(ct)).Count(t => t.CustomerAccountId == customer.Id);
+                    var chRes = sub.ChangePlan(plan, new CurrentUsageSnapshot(linkedCount, 0, 0, 0, 0, 0), clock.UtcNow);
+                    if (chRes.IsFailure)
+                        return ApiSecurityGuard.ProblemFromError(chRes.Error);
+                }
+            }
+
+            await customerRepo.SaveChangesAsync(ct);
+            await subRepo.SaveChangesAsync(ct);
+            return Results.Ok(new { customer.Id, customerName = customer.Name });
+        });
+
+        master.MapDelete("/customers/{id:guid}", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            IMasterCustomerRepository customerRepo,
+            ISubscriptionRepository subRepo,
+            ITenantRepository tenantRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Delete);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var customer = await customerRepo.FindByIdAsync(id, ct);
+            if (customer is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Customer.NotFound", "Cliente não encontrado."));
+
+            var linkedStores = (await tenantRepo.ListAllAsync(ct)).Where(t => t.CustomerAccountId == id).ToList();
+            if (linkedStores.Count > 0)
+            {
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict(
+                    "Customer.HasStores",
+                    $"Existem {linkedStores.Count} loja(s) vinculadas a este cliente. Exclua as lojas primeiro antes de excluir o cliente."));
+            }
+
+            var subs = (await subRepo.ListAllAsync(ct)).Where(s => s.CustomerAccountId == id).ToList();
+            foreach (var sub in subs)
+                subRepo.Remove(sub);
+
+            customerRepo.Remove(customer);
+            await subRepo.SaveChangesAsync(ct);
+            await customerRepo.SaveChangesAsync(ct);
+            return Results.Ok(new { success = true });
+        });
+
+        master.MapPut("/establishments/{id:guid}", async (
+            Guid id,
+            UpdateEstablishmentMasterReq req,
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Edit, SystemModules.Tenants);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var tenant = await tenantRepo.FindByIdAsync(id, ct);
+            if (tenant is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Tenant.NotFound", "Loja não encontrada."));
+
+            var existingSlugOwner = await tenantRepo.FindBySlugAsync(req.Slug, ct);
+            if (existingSlugOwner is not null && existingSlugOwner.Id != tenant.Id)
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict("Tenant.SlugAlreadyExists", $"O slug '{req.Slug}' já está em uso por outra loja."));
+
+            var res = tenant.UpdateMasterConfiguration(req.LegalName, req.TradeName, req.Slug, req.Cnpj, req.SegmentCode, req.Status);
+            if (res.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            await tenantRepo.SaveChangesAsync(ct);
+            return Results.Ok(new { tenant.Id, tenant.TradeName, tenant.Slug, tenant.SegmentCode, status = tenant.Status.ToString() });
+        });
+
+        master.MapDelete("/establishments/{id:guid}", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            ITenantContextSetter setter,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Delete, SystemModules.Tenants);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var tenant = await tenantRepo.FindByIdAsync(id, ct);
+            if (tenant is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Tenant.NotFound", "Loja não encontrada."));
+
+            setter.Clear();
+            setter.SetTenant(tenant.Id, TenantResolutionSource.BackgroundJob);
+            try
+            {
+                await tenantRepo.RemoveWithChildrenAsync(tenant, ct);
+            }
+            finally
+            {
+                setter.Clear();
+                setter.SetMasterScope();
+            }
+
+            return Results.Ok(new { success = true });
+        });
+
+        master.MapGet("/segments", async (
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            return Results.Ok(await MasterSegmentCatalogStore.GetEffectiveSegmentsAsync(settingRepo, ct));
+        });
+
+        master.MapPost("/segments", async (
+            UpsertSegmentReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            MasterOperationsAndDashboardService ops,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req, settingRepo, ops, ct);
+        });
+
+        master.MapPut("/segments/{code}", async (
+            string code,
+            UpsertSegmentReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            MasterOperationsAndDashboardService ops,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req with { Code = code }, settingRepo, ops, ct);
+        });
+
+        master.MapDelete("/segments/{code}", async (
+            string code,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            MasterOperationsAndDashboardService ops,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            return await MasterSegmentCatalogStore.DeleteSegmentAsync(user!, code, settingRepo, ops, ct);
         });
 
         master.MapPost("/establishments/{tenantId:guid}/admin-user", async (
@@ -451,7 +755,8 @@ public static class PitakoV1Endpoints
             return ToHttp(await brandingSvc.PublishBrandingAsync(user!, user!.TenantId!.Value, ct));
         });
 
-        store.MapGet("/segments", () => Results.Ok(BusinessSegmentCatalog.AllBuiltIn));
+        store.MapGet("/segments", async (IGlobalSettingRepository settingRepo, CancellationToken ct) =>
+            Results.Ok(await MasterSegmentCatalogStore.GetEffectiveSegmentsAsync(settingRepo, ct)));
 
         store.MapGet("/users", async (
             ApiSecurityGuard guard,
@@ -1062,8 +1367,115 @@ public static class PitakoV1Endpoints
 public sealed record SaasLoginReq(string Email, string Password);
 public sealed record StoreLoginReq(string StoreSlug, string Email, string Password);
 public sealed record PasswordRecoveryReq(string Email, string? StoreSlug = null);
-public sealed record CreateMasterPlanReq(string Code, string Name, decimal PriceAmount, string? Description = null, int TrialDays = 14, bool IsUnlimited = false, int? MaxEstablishments = null, int? MaxUnits = null, int? MaxMarketplaces = null, int? MaxUsers = null, int? MaxDevices = null, int? MaxSessions = null, int? MaxMonthlyOrders = null, IReadOnlyList<string>? EnabledModules = null);
+public sealed record CreateMasterPlanReq(string Code, string Name, decimal PriceAmount, string? Description = null, int TrialDays = 14, bool IsUnlimited = false, int? MaxEstablishments = null, int? MaxUnits = null, int? MaxMarketplaces = null, int? MaxUsers = null, int? MaxDevices = null, int? MaxSessions = null, int? MaxMonthlyOrders = null, IReadOnlyList<string>? EnabledModules = null, bool? IsActive = null);
 public sealed record CreateCustomerSubReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, Guid PlanId, bool StartWithTrial = false);
+public sealed record UpdateMasterCustomerReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, CustomerAccountStatus Status, Guid? PlanId = null);
+public sealed record UpdateEstablishmentMasterReq(string LegalName, string TradeName, string Slug, string Cnpj, string SegmentCode, TenantStatus Status);
+public sealed record UpsertSegmentReq(string Code, string DisplayName, bool SupportsAcaiBuilder, bool SupportsWeightScale, bool SupportsTableService, bool SupportsFractionalItems);
+
+internal static class MasterSegmentCatalogStore
+{
+    private const string CustomKey = "master.custom_segments";
+    private const string HiddenKey = "master.hidden_segments";
+
+    public static async Task<IReadOnlyList<BusinessSegmentProfile>> GetEffectiveSegmentsAsync(
+        IGlobalSettingRepository settingRepo,
+        CancellationToken ct)
+    {
+        var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
+        var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
+
+        var hidden = string.IsNullOrWhiteSpace(hiddenSetting?.Value)
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
+            ? []
+            : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
+
+        var map = new Dictionary<string, BusinessSegmentProfile>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in BusinessSegmentCatalog.AllBuiltIn)
+        {
+            if (!hidden.Contains(item.Code))
+                map[item.Code] = item;
+        }
+        foreach (var item in customList)
+        {
+            if (!hidden.Contains(item.Code))
+                map[item.Code] = item;
+        }
+        return map.Values.OrderBy(v => v.DisplayName).ToList();
+    }
+
+    public static async Task<IResult> UpsertSegmentAsync(
+        User actor,
+        UpsertSegmentReq req,
+        IGlobalSettingRepository settingRepo,
+        MasterOperationsAndDashboardService ops,
+        CancellationToken ct)
+    {
+        var check = BusinessSegmentCatalog.Resolve(req.Code);
+        if (check.IsFailure)
+            return ApiSecurityGuard.ProblemFromError(check.Error);
+        if (string.IsNullOrWhiteSpace(req.DisplayName))
+            return ApiSecurityGuard.ProblemFromError(Error.Validation("Segment.DisplayNameRequired", "Nome da modalidade é obrigatório."));
+
+        var normalizedCode = BusinessSegmentCatalog.Normalize(req.Code);
+        var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
+        var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
+            ? []
+            : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
+
+        customList.RemoveAll(s => s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase));
+        var saved = new BusinessSegmentProfile(
+            normalizedCode,
+            req.DisplayName.Trim(),
+            req.SupportsAcaiBuilder,
+            req.SupportsWeightScale,
+            req.SupportsTableService,
+            req.SupportsFractionalItems);
+        customList.Add(saved);
+
+        var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
+        if (hiddenSetting is not null && !string.IsNullOrWhiteSpace(hiddenSetting.Value))
+        {
+            var hidden = JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? [];
+            if (hidden.Remove(normalizedCode))
+                await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
+        }
+
+        await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
+        return Results.Ok(saved);
+    }
+
+    public static async Task<IResult> DeleteSegmentAsync(
+        User actor,
+        string code,
+        IGlobalSettingRepository settingRepo,
+        MasterOperationsAndDashboardService ops,
+        CancellationToken ct)
+    {
+        var normalized = BusinessSegmentCatalog.Normalize(code);
+        var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
+        var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
+            ? []
+            : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
+        customList.RemoveAll(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
+
+        if (BusinessSegmentCatalog.AllBuiltIn.Any(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+        {
+            var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
+            var hidden = string.IsNullOrWhiteSpace(hiddenSetting?.Value)
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : (JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            hidden.Add(normalized);
+            await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
+        }
+
+        return Results.Ok(new { success = true });
+    }
+}
 public sealed record CreateStoreUserReq(string FullName, string Email, string Password, EstablishmentRole Role);
 public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, string? Notes = null);
 public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null);

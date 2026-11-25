@@ -123,5 +123,147 @@ public sealed class PitakoApiEndToEndIntegrationTests : IAsyncLifetime
         var csv = await reportRes.Content.ReadAsStringAsync();
         Assert.Contains("Tropical", csv);
         Assert.Contains("11.222.333/0001-81", csv);
+
+        // 5. Master CRUD: Modalidades (segments), Planos, Clientes e Lojas (Create -> Edit -> Delete)
+        var createSegReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/master/segments");
+        createSegReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        createSegReq.Content = JsonContent.Create(new
+        {
+            code = "temakeria",
+            displayName = "Temakeria Express",
+            supportsAcaiBuilder = false,
+            supportsWeightScale = true,
+            supportsTableService = true,
+            supportsFractionalItems = false
+        });
+        var createSegRes = await _client.SendAsync(createSegReq);
+        Assert.Equal(HttpStatusCode.OK, createSegRes.StatusCode);
+
+        var editSegReq = new HttpRequestMessage(HttpMethod.Put, "/api/v1/master/segments/temakeria");
+        editSegReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        editSegReq.Content = JsonContent.Create(new
+        {
+            code = "temakeria",
+            displayName = "Temakeria Premium",
+            supportsAcaiBuilder = false,
+            supportsWeightScale = false,
+            supportsTableService = true,
+            supportsFractionalItems = false
+        });
+        var editSegRes = await _client.SendAsync(editSegReq);
+        Assert.Equal(HttpStatusCode.OK, editSegRes.StatusCode);
+
+        var createPlanReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/master/plans");
+        createPlanReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        createPlanReq.Content = JsonContent.Create(new
+        {
+            code = "teste-crud",
+            name = "Plano Teste CRUD",
+            priceAmount = 199.90m,
+            description = "Plano temporário",
+            trialDays = 7,
+            isUnlimited = false,
+            maxEstablishments = 2,
+            enabledModules = new[] { "Catalog", "Orders", "Finance" }
+        });
+        var createPlanRes = await _client.SendAsync(createPlanReq);
+        Assert.Equal(HttpStatusCode.Created, createPlanRes.StatusCode);
+        var createdPlanId = (await createPlanRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var editPlanReq = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/master/plans/{createdPlanId}");
+        editPlanReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        editPlanReq.Content = JsonContent.Create(new
+        {
+            code = "teste-crud",
+            name = "Plano Teste CRUD Editado",
+            priceAmount = 249.90m,
+            description = "Plano editado",
+            trialDays = 10,
+            isUnlimited = false,
+            maxEstablishments = 3,
+            enabledModules = new[] { "Catalog", "Orders" },
+            isActive = true
+        });
+        var editPlanRes = await _client.SendAsync(editPlanReq);
+        Assert.Equal(HttpStatusCode.OK, editPlanRes.StatusCode);
+
+        var createCustReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/master/customers-subscriptions");
+        createCustReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        createCustReq.Content = JsonContent.Create(new
+        {
+            customerName = "Cliente CRUD Temp",
+            documentNumber = "11444777000161",
+            billingEmail = "crud@cliente.com.br",
+            phone = "11999990000",
+            planId = createdPlanId,
+            startWithTrial = false
+        });
+        var createCustRes = await _client.SendAsync(createCustReq);
+        Assert.Equal(HttpStatusCode.Created, createCustRes.StatusCode);
+        var createdCustId = (await createCustRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("customerId").GetGuid();
+
+        var editCustReq = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/master/customers/{createdCustId}");
+        editCustReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        editCustReq.Content = JsonContent.Create(new
+        {
+            customerName = "Cliente CRUD Editado",
+            documentNumber = "11444777000161",
+            billingEmail = "crud-edit@cliente.com.br",
+            phone = "11988887777",
+            status = 1,
+            planId = createdPlanId
+        });
+        var editCustRes = await _client.SendAsync(editCustReq);
+        Assert.Equal(HttpStatusCode.OK, editCustRes.StatusCode);
+
+        // Creating a temp store as SaaS Master via /api/v1/store/establishments
+        var createStoreReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/store/establishments");
+        createStoreReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        createStoreReq.Content = JsonContent.Create(new
+        {
+            customerAccountId = createdCustId,
+            legalName = "Temakeria CRUD LTDA",
+            tradeName = "Temakeria CRUD",
+            slug = "temakeria-crud",
+            cnpj = "22.333.444/0001-81",
+            segmentCode = "temakeria"
+        });
+        var createStoreRes = await _client.SendAsync(createStoreReq);
+        Assert.Equal(HttpStatusCode.Created, createStoreRes.StatusCode);
+        var createdStoreId = (await createStoreRes.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("tenant")
+            .GetProperty("id")
+            .GetGuid();
+
+        var editStoreReq = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/master/establishments/{createdStoreId}");
+        editStoreReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        editStoreReq.Content = JsonContent.Create(new
+        {
+            legalName = "Temakeria CRUD Editada LTDA",
+            tradeName = "Temakeria Express CRUD",
+            slug = "temakeria-crud",
+            cnpj = "22.333.444/0001-81",
+            segmentCode = "temakeria",
+            status = 1
+        });
+        var editStoreRes = await _client.SendAsync(editStoreReq);
+        Assert.Equal(HttpStatusCode.OK, editStoreRes.StatusCode);
+
+        // Delete in safe order: Store -> Customer -> Plan -> Segment
+        var delStoreReq = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/master/establishments/{createdStoreId}");
+        delStoreReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        Assert.Equal(HttpStatusCode.OK, (await _client.SendAsync(delStoreReq)).StatusCode);
+
+        var delCustReq = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/master/customers/{createdCustId}");
+        delCustReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        Assert.Equal(HttpStatusCode.OK, (await _client.SendAsync(delCustReq)).StatusCode);
+
+        var delPlanReq = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/master/plans/{createdPlanId}");
+        delPlanReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        Assert.Equal(HttpStatusCode.OK, (await _client.SendAsync(delPlanReq)).StatusCode);
+
+        var delSegReq = new HttpRequestMessage(HttpMethod.Delete, "/api/v1/master/segments/temakeria");
+        delSegReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        Assert.Equal(HttpStatusCode.OK, (await _client.SendAsync(delSegReq)).StatusCode);
     }
 }

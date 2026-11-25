@@ -127,6 +127,38 @@ public sealed class Tenant : AggregateRoot<Guid>, IAuditableEntity
         return Result.Success();
     }
 
+    public Result UpdateMasterConfiguration(
+        string legalName,
+        string tradeName,
+        string slug,
+        string rawCnpj,
+        string segmentCode,
+        TenantStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(legalName) || string.IsNullOrWhiteSpace(tradeName))
+            return Result.Failure(Error.Validation("Tenant.NamesRequired", "Razão social e nome fantasia são obrigatórios."));
+
+        var normalizedSlug = NormalizeSlug(slug);
+        if (string.IsNullOrWhiteSpace(normalizedSlug))
+            return Result.Failure(Error.Validation("Tenant.SlugRequired", "Slug do estabelecimento é obrigatório."));
+
+        var segRes = BusinessSegmentCatalog.Resolve(segmentCode);
+        if (segRes.IsFailure)
+            return segRes;
+
+        var cnpjRes = Cnpj.Create(rawCnpj);
+        if (cnpjRes.IsFailure)
+            return cnpjRes;
+
+        LegalName = legalName.Trim();
+        TradeName = tradeName.Trim();
+        Slug = normalizedSlug;
+        Cnpj = cnpjRes.Value;
+        SegmentCode = segRes.Value.Code;
+        Status = status;
+        return Result.Success();
+    }
+
     public void Suspend() => Status = TenantStatus.Suspended;
     public void Activate() => Status = TenantStatus.Active;
 

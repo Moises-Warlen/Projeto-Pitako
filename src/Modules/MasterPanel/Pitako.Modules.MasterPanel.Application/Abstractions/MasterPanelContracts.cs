@@ -10,6 +10,7 @@ public interface ICommercialPlanRepository
     Task<CommercialPlan?> FindByCodeAsync(string code, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CommercialPlan>> ListAllAsync(bool onlyActive = false, CancellationToken cancellationToken = default);
     Task AddAsync(CommercialPlan plan, CancellationToken cancellationToken = default);
+    void Remove(CommercialPlan plan);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -18,6 +19,7 @@ public interface IMasterCustomerRepository
     Task<MasterCustomerAccount?> FindByIdAsync(Guid customerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MasterCustomerAccount>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(MasterCustomerAccount customer, CancellationToken cancellationToken = default);
+    void Remove(MasterCustomerAccount customer);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -27,6 +29,7 @@ public interface ISubscriptionRepository
     Task<Subscription?> FindLatestByCustomerIdAsync(Guid customerAccountId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Subscription>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Subscription subscription, CancellationToken cancellationToken = default);
+    void Remove(Subscription subscription);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

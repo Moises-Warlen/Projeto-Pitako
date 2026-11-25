@@ -21,6 +21,16 @@ public sealed class EfTenantRepository(TenantsDbContext db) : ITenantRepository
     public async Task AddAsync(Tenant tenant, CancellationToken cancellationToken = default) =>
         await db.Tenants.AddAsync(tenant, cancellationToken);
 
+    public async Task RemoveWithChildrenAsync(Tenant tenant, CancellationToken cancellationToken = default)
+    {
+        var units = await db.StoreUnits.IgnoreQueryFilters().Where(u => u.TenantId == tenant.Id).ToListAsync(cancellationToken);
+        var identities = await db.StoreVisualIdentities.IgnoreQueryFilters().Include(i => i.Banners).Where(i => i.TenantId == tenant.Id).ToListAsync(cancellationToken);
+        if (units.Count > 0) db.StoreUnits.RemoveRange(units);
+        if (identities.Count > 0) db.StoreVisualIdentities.RemoveRange(identities);
+        db.Tenants.Remove(tenant);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
