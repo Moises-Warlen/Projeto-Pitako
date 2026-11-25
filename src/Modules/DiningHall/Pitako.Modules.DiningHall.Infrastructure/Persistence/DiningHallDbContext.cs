@@ -28,6 +28,11 @@ public sealed class DiningHallDbContext : PitakoDbContextBase
     public DbSet<DiningTab> Tabs => Set<DiningTab>();
     public DbSet<DiningTabItem> TabItems => Set<DiningTabItem>();
     public DbSet<DiningTabAuditEvent> TabAuditEvents => Set<DiningTabAuditEvent>();
+    public DbSet<QrTableSession> QrTableSessions => Set<QrTableSession>();
+    public DbSet<WaiterCall> WaiterCalls => Set<WaiterCall>();
+    public DbSet<TotemTerminal> TotemTerminals => Set<TotemTerminal>();
+    public DbSet<TotemOrderSession> TotemOrderSessions => Set<TotemOrderSession>();
+    public DbSet<TotemOrderLine> TotemOrderLines => Set<TotemOrderLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +44,11 @@ public sealed class DiningHallDbContext : PitakoDbContextBase
         modelBuilder.ApplyConfiguration(new DiningTabConfiguration());
         modelBuilder.ApplyConfiguration(new DiningTabItemConfiguration());
         modelBuilder.ApplyConfiguration(new DiningTabAuditEventConfiguration());
+        modelBuilder.ApplyConfiguration(new QrTableSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new WaiterCallConfiguration());
+        modelBuilder.ApplyConfiguration(new TotemTerminalConfiguration());
+        modelBuilder.ApplyConfiguration(new TotemOrderSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new TotemOrderLineConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }
@@ -130,6 +140,7 @@ internal sealed class DiningTabConfiguration : IEntityTypeConfiguration<DiningTa
         builder.Property(x => x.CustomerName).HasColumnName("customer_name").HasMaxLength(160).IsRequired();
         builder.Property(x => x.GuestCount).HasColumnName("guest_count").IsRequired();
         builder.Property(x => x.ServiceChargePercent).HasColumnName("service_charge_percent").HasPrecision(5, 2).IsRequired();
+        builder.Property(x => x.Origin).HasColumnName("origin").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").IsRequired();
         builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired();
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc");
@@ -190,5 +201,138 @@ internal sealed class DiningTabAuditEventConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.ActorUserId).HasColumnName("actor_user_id");
         builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").IsRequired();
         builder.HasIndex(x => new { x.TenantId, x.DiningTabId, x.OccurredAtUtc });
+    }
+}
+
+internal sealed class QrTableSessionConfiguration : IEntityTypeConfiguration<QrTableSession>
+{
+    public void Configure(EntityTypeBuilder<QrTableSession> builder)
+    {
+        builder.ToTable("qr_table_sessions");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.SessionToken).HasColumnName("session_token").HasMaxLength(80).IsRequired();
+        builder.Property(x => x.DiningTableId).HasColumnName("dining_table_id").IsRequired();
+        builder.Property(x => x.DiningTabId).HasColumnName("dining_tab_id").IsRequired();
+        builder.Property(x => x.TableCode).HasColumnName("table_code").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.CustomerName).HasColumnName("customer_name").HasMaxLength(160).IsRequired();
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired();
+        builder.Property(x => x.LastActivityAtUtc).HasColumnName("last_activity_at_utc").IsRequired();
+        builder.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc").IsRequired();
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.HasIndex(x => new { x.TenantId, x.SessionToken }).IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.DiningTableId, x.Status });
+    }
+}
+
+internal sealed class WaiterCallConfiguration : IEntityTypeConfiguration<WaiterCall>
+{
+    public void Configure(EntityTypeBuilder<WaiterCall> builder)
+    {
+        builder.ToTable("waiter_calls");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.DiningTableId).HasColumnName("dining_table_id").IsRequired();
+        builder.Property(x => x.TableCode).HasColumnName("table_code").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.DiningTabId).HasColumnName("dining_tab_id");
+        builder.Property(x => x.QrTableSessionId).HasColumnName("qr_table_session_id");
+        builder.Property(x => x.CallType).HasColumnName("call_type").IsRequired();
+        builder.Property(x => x.CustomerNotes).HasColumnName("customer_notes").HasMaxLength(300);
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").IsRequired();
+        builder.Property(x => x.AcknowledgedByUserId).HasColumnName("acknowledged_by_user_id");
+        builder.Property(x => x.AcknowledgedAtUtc).HasColumnName("acknowledged_at_utc");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.HasIndex(x => new { x.TenantId, x.Status, x.RequestedAtUtc });
+    }
+}
+
+internal sealed class TotemTerminalConfiguration : IEntityTypeConfiguration<TotemTerminal>
+{
+    public void Configure(EntityTypeBuilder<TotemTerminal> builder)
+    {
+        builder.ToTable("totem_terminals");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.StoreUnitId).HasColumnName("store_unit_id");
+        builder.Property(x => x.TerminalCode).HasColumnName("terminal_code").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(120).IsRequired();
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.DefaultFulfillmentChoice).HasColumnName("default_fulfillment_choice").IsRequired();
+        builder.Property(x => x.RequireCustomerName).HasColumnName("require_customer_name").IsRequired();
+        builder.Property(x => x.RequireTableOrPagerNumber).HasColumnName("require_table_or_pager_number").IsRequired();
+        builder.Property(x => x.IdleTimeoutSeconds).HasColumnName("idle_timeout_seconds").IsRequired();
+        builder.Property(x => x.LastHeartbeatUtc).HasColumnName("last_heartbeat_utc");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.HasIndex(x => new { x.TenantId, x.TerminalCode }).IsUnique();
+    }
+}
+
+internal sealed class TotemOrderSessionConfiguration : IEntityTypeConfiguration<TotemOrderSession>
+{
+    public void Configure(EntityTypeBuilder<TotemOrderSession> builder)
+    {
+        builder.ToTable("totem_order_sessions");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.TotemTerminalId).HasColumnName("totem_terminal_id").IsRequired();
+        builder.Property(x => x.SessionToken).HasColumnName("session_token").HasMaxLength(80).IsRequired();
+        builder.Property(x => x.FulfillmentChoice).HasColumnName("fulfillment_choice").IsRequired();
+        builder.Property(x => x.CustomerName).HasColumnName("customer_name").HasMaxLength(160);
+        builder.Property(x => x.PagerOrTableTag).HasColumnName("pager_or_table_tag").HasMaxLength(40);
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.PaymentChoice).HasColumnName("payment_choice");
+        builder.Property(x => x.PickupCallCode).HasColumnName("pickup_call_code").HasMaxLength(32);
+        builder.Property(x => x.DispatchedOrderNumber).HasColumnName("dispatched_order_number").HasMaxLength(32);
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(120);
+        builder.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").IsRequired();
+        builder.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc").IsRequired();
+        builder.Property(x => x.ConfirmedAtUtc).HasColumnName("confirmed_at_utc");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.OwnsOne(x => x.ItemsSubtotal, m => DiningMoneyMapping.Configure(m, "items_subtotal_amount", "items_subtotal_currency"));
+
+        builder.HasMany(x => x.Lines).WithOne().HasForeignKey(l => l.TotemOrderSessionId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasIndex(x => new { x.TenantId, x.SessionToken }).IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+    }
+}
+
+internal sealed class TotemOrderLineConfiguration : IEntityTypeConfiguration<TotemOrderLine>
+{
+    public void Configure(EntityTypeBuilder<TotemOrderLine> builder)
+    {
+        builder.ToTable("totem_order_lines");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.TotemOrderSessionId).HasColumnName("totem_order_session_id").IsRequired();
+        builder.Property(x => x.ProductId).HasColumnName("product_id");
+        builder.Property(x => x.AcaiCupSizeId).HasColumnName("acai_cup_size_id");
+        builder.Property(x => x.ItemTitle).HasColumnName("item_title").HasMaxLength(200).IsRequired();
+        builder.Property(x => x.CustomizationSummary).HasColumnName("customization_summary").HasMaxLength(600).IsRequired();
+        builder.Property(x => x.CanonicalSelectionsJson).HasColumnName("canonical_selections_json").HasMaxLength(4000).IsRequired();
+        builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired();
+        builder.Property(x => x.CustomerNotes).HasColumnName("customer_notes").HasMaxLength(300);
+
+        builder.OwnsOne(x => x.UnitPrice, m => DiningMoneyMapping.Configure(m, "unit_price_amount", "unit_price_currency"));
+        builder.OwnsOne(x => x.LineSubtotal, m => DiningMoneyMapping.Configure(m, "line_subtotal_amount", "line_subtotal_currency"));
+
+        builder.HasIndex(x => new { x.TenantId, x.TotemOrderSessionId });
     }
 }

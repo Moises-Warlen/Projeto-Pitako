@@ -4,6 +4,8 @@
     <AssemblyName>Pitako.Modules.DiningHall.Application</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\AcaiBuilder\Pitako.Modules.AcaiBuilder.Application\Pitako.Modules.AcaiBuilder.Application.csproj" />
+    <ProjectReference Include="..\..\Catalog\Pitako.Modules.Catalog.Application\Pitako.Modules.Catalog.Application.csproj" />
     <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
     <ProjectReference Include="..\Pitako.Modules.DiningHall.Domain\Pitako.Modules.DiningHall.Domain.csproj" />
   </ItemGroup>

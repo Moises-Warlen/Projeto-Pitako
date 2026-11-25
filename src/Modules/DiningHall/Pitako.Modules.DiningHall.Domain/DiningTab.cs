@@ -5,6 +5,12 @@ using Pitako.SharedKernel.ValueObjects;
 
 namespace Pitako.Modules.DiningHall.Domain;
 
+public enum DiningTabOrigin
+{
+    Waiter = 1,
+    QrCodeTable = 2
+}
+
 public enum DiningTabStatus
 {
     Open = 1,
@@ -163,6 +169,7 @@ public sealed class DiningTab : TenantScopedAggregateRoot
         string customerName,
         int guestCount,
         decimal serviceChargePercent,
+        DiningTabOrigin origin,
         DateTimeOffset openedAtUtc) : base(id, tenantId)
     {
         TabCode = tabCode;
@@ -171,6 +178,7 @@ public sealed class DiningTab : TenantScopedAggregateRoot
         CustomerName = customerName;
         GuestCount = guestCount;
         ServiceChargePercent = decimal.Round(serviceChargePercent, 2, MidpointRounding.ToEven);
+        Origin = origin;
         Status = DiningTabStatus.Open;
         OpenedAtUtc = openedAtUtc;
         ItemsSubtotal = Money.Zero();
@@ -183,8 +191,8 @@ public sealed class DiningTab : TenantScopedAggregateRoot
             tenantId,
             id,
             "TabOpened",
-            $"Comanda '{tabCode}' aberta para {guestCount} pessoa(s).",
-            waiterUserId,
+            $"Comanda '{tabCode}' aberta ({origin}) para {guestCount} pessoa(s).",
+            waiterUserId == Guid.Empty ? null : waiterUserId,
             openedAtUtc));
     }
 
@@ -194,6 +202,7 @@ public sealed class DiningTab : TenantScopedAggregateRoot
     public string CustomerName { get; private set; }
     public int GuestCount { get; private set; }
     public decimal ServiceChargePercent { get; private set; }
+    public DiningTabOrigin Origin { get; private set; }
     public DiningTabStatus Status { get; private set; }
     public Money ItemsSubtotal { get; private set; }
     public Money ServiceChargeAmount { get; private set; }
@@ -240,6 +249,7 @@ public sealed class DiningTab : TenantScopedAggregateRoot
             customerName.Trim(),
             guestCount,
             serviceChargePercent,
+            DiningTabOrigin.Waiter,
             openedAtUtc ?? DateTimeOffset.UtcNow);
 
         if (table is not null)
@@ -253,6 +263,69 @@ public sealed class DiningTab : TenantScopedAggregateRoot
         }
 
         return Result.Success(tab);
+    }
+
+    /// <summary>
+    /// Abre comanda de autoatendimento diretamente pelo QR Code da mesa sem exigir garçom inicial.
+    /// </summary>
+    public static Result<DiningTab> OpenSelfService(
+        Guid tenantId,
+        string tabCode,
+        DiningTable table,
+        string customerName,
+        int guestCount = 1,
+        decimal serviceChargePercent = 10m,
+        DateTimeOffset? openedAtUtc = null)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        if (tenantId == Guid.Empty)
+            return Result.Failure<DiningTab>(Error.Validation("Tab.TenantRequired", "TenantId é obrigatório."));
+        if (string.IsNullOrWhiteSpace(tabCode))
+            return Result.Failure<DiningTab>(Error.Validation("Tab.CodeRequired", "Código da comanda é obrigatório."));
+        if (string.IsNullOrWhiteSpace(customerName))
+            return Result.Failure<DiningTab>(Error.Validation("Tab.CustomerRequired", "Identificação do cliente na comanda é obrigatória."));
+        if (guestCount <= 0)
+            return Result.Failure<DiningTab>(Error.Validation("Tab.InvalidGuests", "Número de pessoas deve ser positivo."));
+        if (serviceChargePercent is < 0m or > 30m)
+            return Result.Failure<DiningTab>(Error.Validation("Tab.InvalidServiceCharge", "Taxa de serviço deve estar entre 0% e 30%."));
+        if (table.TenantId != tenantId)
+            return Result.Failure<DiningTab>(Error.Forbidden("Tab.CrossTenantTable", "Mesa pertence a outro estabelecimento."));
+
+        var tab = new DiningTab(
+            Guid.NewGuid(),
+            tenantId,
+            tabCode.Trim().ToUpperInvariant(),
+            table.Id,
+            Guid.Empty,
+            customerName.Trim(),
+            guestCount,
+            serviceChargePercent,
+            DiningTabOrigin.QrCodeTable,
+            openedAtUtc ?? DateTimeOffset.UtcNow);
+
+        var occupyRes = table.OccupyWithTab(tab.Id);
+        if (occupyRes.IsFailure)
+            return Result.Failure<DiningTab>(occupyRes.Error);
+
+        return Result.Success(tab);
+    }
+
+    public Result RequestClosing(Guid? actorUserId, DiningTable? linkedTable, DateTimeOffset utcNow)
+    {
+        if (Status is DiningTabStatus.Closed or DiningTabStatus.Cancelled)
+            return Result.Failure(Error.Conflict("Tab.AlreadyClosed", "Comanda já encerrada."));
+
+        Status = DiningTabStatus.ClosingRequested;
+        linkedTable?.MarkAwaitingPayment();
+        _auditEvents.Add(new DiningTabAuditEvent(
+            Guid.NewGuid(),
+            TenantId,
+            Id,
+            "ClosingRequested",
+            "Solicitação de fechamento de conta registrada.",
+            actorUserId == Guid.Empty ? null : actorUserId,
+            utcNow));
+        return Result.Success();
     }
 
     public Result<DiningTabItem> AddItem(

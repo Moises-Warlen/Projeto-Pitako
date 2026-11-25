@@ -30,3 +30,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 14 (PDV e caixa):** Concluída com abertura/fechamento, sangria, suprimento, múltiplos pagamentos, aprovação de descontos e RLS ([Relatório](docs/relatorios/fase-14-relatorio.md)).
 - **Fase 15 (Entregadores, logística e GPS):** Concluída com entregadores, agrupamento e otimização de rotas, telemetria GPS, relatório de corridas e RLS ([Relatório](docs/relatorios/fase-15-relatorio.md)).
 - **Fase 16 (Salão, mesas, reservas, comandas e garçons):** Concluída com setores, mesas com QR token, reservas, comandas, transferência, divisão exata em centavos, RBAC e RLS ([Relatório](docs/relatorios/fase-16-relatorio.md)).
+- **Fase 17 (QR Code na mesa e Totem de autoatendimento):** Concluída com sessões QR, chamados de garçom em tempo real, terminais Totem com timeout e senha idempotente, branding exclusivo da loja e RLS ([Relatório](docs/relatorios/fase-17-relatorio.md)).

@@ -98,6 +98,10 @@ namespace Pitako.Modules.DiningHall.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("opened_at_utc");
 
+                    b.Property<int>("Origin")
+                        .HasColumnType("integer")
+                        .HasColumnName("origin");
+
                     b.Property<decimal>("ServiceChargePercent")
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)")
@@ -292,6 +296,76 @@ namespace Pitako.Modules.DiningHall.Infrastructure.Migrations
                     b.ToTable("dining_tables", "dining");
                 });
 
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.QrTableSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<Guid>("DiningTabId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dining_tab_id");
+
+                    b.Property<Guid>("DiningTableId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dining_table_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<DateTimeOffset>("LastActivityAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_activity_at_utc");
+
+                    b.Property<DateTimeOffset>("OpenedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at_utc");
+
+                    b.Property<string>("SessionToken")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("session_token");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TableCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("table_code");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "SessionToken")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "DiningTableId", "Status");
+
+                    b.ToTable("qr_table_sessions", "dining");
+                });
+
             modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TableReservation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -352,6 +426,290 @@ namespace Pitako.Modules.DiningHall.Infrastructure.Migrations
                     b.HasIndex("TenantId", "DiningTableId", "ReservedForUtc");
 
                     b.ToTable("table_reservations", "dining");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemOrderLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AcaiCupSizeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("acai_cup_size_id");
+
+                    b.Property<string>("CanonicalSelectionsJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("canonical_selections_json");
+
+                    b.Property<string>("CustomerNotes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("customer_notes");
+
+                    b.Property<string>("CustomizationSummary")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("customization_summary");
+
+                    b.Property<string>("ItemTitle")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("item_title");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TotemOrderSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("totem_order_session_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TotemOrderSessionId");
+
+                    b.HasIndex("TenantId", "TotemOrderSessionId");
+
+                    b.ToTable("totem_order_lines", "dining");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemOrderSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at_utc");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<string>("DispatchedOrderNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("dispatched_order_number");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<int>("FulfillmentChoice")
+                        .HasColumnType("integer")
+                        .HasColumnName("fulfillment_choice");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("PagerOrTableTag")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("pager_or_table_tag");
+
+                    b.Property<int?>("PaymentChoice")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_choice");
+
+                    b.Property<string>("PickupCallCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("pickup_call_code");
+
+                    b.Property<string>("SessionToken")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("session_token");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TotemTerminalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("totem_terminal_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "SessionToken")
+                        .IsUnique();
+
+                    b.ToTable("totem_order_sessions", "dining");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemTerminal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<int>("DefaultFulfillmentChoice")
+                        .HasColumnType("integer")
+                        .HasColumnName("default_fulfillment_choice");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("display_name");
+
+                    b.Property<int>("IdleTimeoutSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("idle_timeout_seconds");
+
+                    b.Property<DateTimeOffset?>("LastHeartbeatUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_heartbeat_utc");
+
+                    b.Property<bool>("RequireCustomerName")
+                        .HasColumnType("boolean")
+                        .HasColumnName("require_customer_name");
+
+                    b.Property<bool>("RequireTableOrPagerNumber")
+                        .HasColumnType("boolean")
+                        .HasColumnName("require_table_or_pager_number");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("StoreUnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_unit_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TerminalCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("terminal_code");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TerminalCode")
+                        .IsUnique();
+
+                    b.ToTable("totem_terminals", "dining");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.WaiterCall", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("acknowledged_at_utc");
+
+                    b.Property<Guid?>("AcknowledgedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("acknowledged_by_user_id");
+
+                    b.Property<int>("CallType")
+                        .HasColumnType("integer")
+                        .HasColumnName("call_type");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CustomerNotes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("customer_notes");
+
+                    b.Property<Guid?>("DiningTabId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dining_tab_id");
+
+                    b.Property<Guid>("DiningTableId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dining_table_id");
+
+                    b.Property<Guid?>("QrTableSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("qr_table_session_id");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at_utc");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TableCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("table_code");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAtUtc");
+
+                    b.ToTable("waiter_calls", "dining");
                 });
 
             modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.DiningTab", b =>
@@ -537,11 +895,109 @@ namespace Pitako.Modules.DiningHall.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemOrderLine", b =>
+                {
+                    b.HasOne("Pitako.Modules.DiningHall.Domain.TotemOrderSession", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("TotemOrderSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "LineSubtotal", b1 =>
+                        {
+                            b1.Property<Guid>("TotemOrderLineId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("line_subtotal_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("line_subtotal_currency");
+
+                            b1.HasKey("TotemOrderLineId");
+
+                            b1.ToTable("totem_order_lines", "dining");
+
+                            b1.WithOwner()
+                                .HasForeignKey("TotemOrderLineId");
+                        });
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "UnitPrice", b1 =>
+                        {
+                            b1.Property<Guid>("TotemOrderLineId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("unit_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("unit_price_currency");
+
+                            b1.HasKey("TotemOrderLineId");
+
+                            b1.ToTable("totem_order_lines", "dining");
+
+                            b1.WithOwner()
+                                .HasForeignKey("TotemOrderLineId");
+                        });
+
+                    b.Navigation("LineSubtotal")
+                        .IsRequired();
+
+                    b.Navigation("UnitPrice")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemOrderSession", b =>
+                {
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "ItemsSubtotal", b1 =>
+                        {
+                            b1.Property<Guid>("TotemOrderSessionId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("items_subtotal_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("items_subtotal_currency");
+
+                            b1.HasKey("TotemOrderSessionId");
+
+                            b1.ToTable("totem_order_sessions", "dining");
+
+                            b1.WithOwner()
+                                .HasForeignKey("TotemOrderSessionId");
+                        });
+
+                    b.Navigation("ItemsSubtotal")
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.DiningTab", b =>
                 {
                     b.Navigation("AuditEvents");
 
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.DiningHall.Domain.TotemOrderSession", b =>
+                {
+                    b.Navigation("Lines");
                 });
 #pragma warning restore 612, 618
         }

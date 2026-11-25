@@ -62,7 +62,10 @@ public sealed class ArchitectureTests
             typeof(CashRegisterSession).Assembly,
             typeof(PdvCashierService).Assembly,
             typeof(DiningTab).Assembly,
-            typeof(DiningHallManagementService).Assembly
+            typeof(QrTableSession).Assembly,
+            typeof(DiningHallManagementService).Assembly,
+            typeof(QrTableSelfServiceService).Assembly,
+            typeof(TotemSelfServiceService).Assembly
         };
 
         foreach (var assembly in assemblies)
