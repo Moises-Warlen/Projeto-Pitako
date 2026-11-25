@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.WhatsAppSupport.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.WhatsAppSupport.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.WhatsAppSupport.Domain\Pitako.Modules.WhatsAppSupport.Domain.csproj" />
+  </ItemGroup>
+</Project>

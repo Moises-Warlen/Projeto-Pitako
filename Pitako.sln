@@ -135,6 +135,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Marketplaces
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Marketplaces.Infrastructure", "src\Modules\Marketplaces\Pitako.Modules.Marketplaces.Infrastructure\Pitako.Modules.Marketplaces.Infrastructure.csproj", "{4DA84877-81E9-4D74-893F-1FC5F03C1457}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WhatsAppSupport", "WhatsAppSupport", "{03EAB180-C9E8-4EC2-B70D-E56C5A3E3BE4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.WhatsAppSupport.Domain", "src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Domain\Pitako.Modules.WhatsAppSupport.Domain.csproj", "{892705C1-A82E-4914-8A48-EBD7F6EDF98C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.WhatsAppSupport.Application", "src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Application\Pitako.Modules.WhatsAppSupport.Application.csproj", "{BEC6715D-D95E-443C-BADB-FA2625BEEBCD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.WhatsAppSupport.Infrastructure", "src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Infrastructure\Pitako.Modules.WhatsAppSupport.Infrastructure.csproj", "{8BE74418-50DA-4101-983F-2B9115C43F59}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -336,6 +344,18 @@ Global
 		{4DA84877-81E9-4D74-893F-1FC5F03C1457}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4DA84877-81E9-4D74-893F-1FC5F03C1457}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4DA84877-81E9-4D74-893F-1FC5F03C1457}.Release|Any CPU.Build.0 = Release|Any CPU
+		{892705C1-A82E-4914-8A48-EBD7F6EDF98C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{892705C1-A82E-4914-8A48-EBD7F6EDF98C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{892705C1-A82E-4914-8A48-EBD7F6EDF98C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{892705C1-A82E-4914-8A48-EBD7F6EDF98C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BEC6715D-D95E-443C-BADB-FA2625BEEBCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BEC6715D-D95E-443C-BADB-FA2625BEEBCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BEC6715D-D95E-443C-BADB-FA2625BEEBCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BEC6715D-D95E-443C-BADB-FA2625BEEBCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8BE74418-50DA-4101-983F-2B9115C43F59}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BE74418-50DA-4101-983F-2B9115C43F59}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BE74418-50DA-4101-983F-2B9115C43F59}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BE74418-50DA-4101-983F-2B9115C43F59}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
@@ -402,5 +422,9 @@ Global
 		{3B7A55D0-686C-4993-9FDB-EAB55D98CD72} = {C2167FB6-5473-4127-B0D5-99220FC67395}
 		{EF37B913-36DC-45E1-8357-560C46F9C58D} = {C2167FB6-5473-4127-B0D5-99220FC67395}
 		{4DA84877-81E9-4D74-893F-1FC5F03C1457} = {C2167FB6-5473-4127-B0D5-99220FC67395}
+		{03EAB180-C9E8-4EC2-B70D-E56C5A3E3BE4} = {857C3F19-1BE8-43E0-B21E-27C33584B25C}
+		{892705C1-A82E-4914-8A48-EBD7F6EDF98C} = {03EAB180-C9E8-4EC2-B70D-E56C5A3E3BE4}
+		{BEC6715D-D95E-443C-BADB-FA2625BEEBCD} = {03EAB180-C9E8-4EC2-B70D-E56C5A3E3BE4}
+		{8BE74418-50DA-4101-983F-2B9115C43F59} = {03EAB180-C9E8-4EC2-B70D-E56C5A3E3BE4}
 	EndGlobalSection
 EndGlobal

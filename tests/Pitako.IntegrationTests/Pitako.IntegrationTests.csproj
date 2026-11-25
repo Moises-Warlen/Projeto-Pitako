@@ -29,5 +29,6 @@
     <ProjectReference Include="..\..\src\Modules\DiningHall\Pitako.Modules.DiningHall.Infrastructure\Pitako.Modules.DiningHall.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Printing\Pitako.Modules.Printing.Infrastructure\Pitako.Modules.Printing.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Marketplaces\Pitako.Modules.Marketplaces.Infrastructure\Pitako.Modules.Marketplaces.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Infrastructure\Pitako.Modules.WhatsAppSupport.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

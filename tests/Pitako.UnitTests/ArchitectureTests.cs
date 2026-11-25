@@ -26,6 +26,8 @@ using Pitako.Modules.Tenants.Application.Services;
 using Pitako.Modules.Tenants.Domain;
 using Pitako.Modules.Weighing.Application.Services;
 using Pitako.Modules.Weighing.Domain;
+using Pitako.Modules.WhatsAppSupport.Application.Services;
+using Pitako.Modules.WhatsAppSupport.Domain;
 using Pitako.SharedKernel.Results;
 using Xunit;
 
@@ -75,7 +77,9 @@ public sealed class ArchitectureTests
             typeof(MarketplacePartnerAccount).Assembly,
             typeof(MarketplaceBulkJob).Assembly,
             typeof(MarketplaceHubService).Assembly,
-            typeof(MarketplaceBulkSyncService).Assembly
+            typeof(MarketplaceBulkSyncService).Assembly,
+            typeof(WhatsAppChannelConfig).Assembly,
+            typeof(WhatsAppSupportService).Assembly
         };
 
         foreach (var assembly in assemblies)
