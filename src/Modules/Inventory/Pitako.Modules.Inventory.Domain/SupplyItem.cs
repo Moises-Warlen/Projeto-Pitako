@@ -230,6 +230,54 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
         return Result.Success(cost);
     }
 
+    /// <summary>
+    /// Converte uma quantidade informada em <paramref name="sourceUnitCode"/> para <paramref name="targetUnitCode"/>
+    /// respeitando a relação comercial entre embalagem de compra (<see cref="PurchaseUnitCode"/>)
+    /// e conteúdo interno (<see cref="ContentUnitCode"/>).
+    /// </summary>
+    public Result<decimal> ConvertQuantity(
+        decimal quantity,
+        string sourceUnitCode,
+        string targetUnitCode,
+        IReadOnlyDictionary<string, UnitDefinition>? customUnits = null)
+    {
+        if (quantity < 0m)
+            return Result.Failure<decimal>(Error.Validation("Supply.NegativeUsage", "Quantidade não pode ser negativa."));
+
+        var normalizedSource = UnitConverter.NormalizeCode(sourceUnitCode);
+        var normalizedTarget = UnitConverter.NormalizeCode(targetUnitCode);
+
+        if (normalizedSource == normalizedTarget)
+            return Result.Success(decimal.Round(quantity, 4, MidpointRounding.ToEven));
+
+        var hasPackageRatio = ContentUnitCode != PurchaseUnitCode;
+        var packageToContentRatio = ContentQuantityPerPackage / PurchaseQuantity;
+
+        decimal quantityInContentUnit;
+        if (hasPackageRatio && normalizedSource == PurchaseUnitCode)
+        {
+            quantityInContentUnit = quantity * packageToContentRatio;
+        }
+        else
+        {
+            var toContent = UnitConverter.Convert(quantity, normalizedSource, ContentUnitCode, customUnits);
+            if (toContent.IsFailure)
+                return Result.Failure<decimal>(toContent.Error);
+            quantityInContentUnit = toContent.Value;
+        }
+
+        if (hasPackageRatio && normalizedTarget == PurchaseUnitCode)
+        {
+            var inPackages = decimal.Round(quantityInContentUnit / packageToContentRatio, 4, MidpointRounding.ToEven);
+            return Result.Success(inPackages);
+        }
+
+        var converted = UnitConverter.Convert(quantityInContentUnit, ContentUnitCode, normalizedTarget, customUnits);
+        return converted.IsFailure
+            ? Result.Failure<decimal>(converted.Error)
+            : Result.Success(decimal.Round(converted.Value, 4, MidpointRounding.ToEven));
+    }
+
     public void Deactivate() => IsActive = false;
     public void Activate() => IsActive = true;
 }

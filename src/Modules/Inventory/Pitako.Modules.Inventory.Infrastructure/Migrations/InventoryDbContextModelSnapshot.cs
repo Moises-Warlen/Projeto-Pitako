@@ -23,6 +23,494 @@ namespace Pitako.Modules.Inventory.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.ProductionIngredientConsumption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("CalculatedCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("calculated_cost");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<decimal>("QuantityConsumedInStockUnit")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("quantity_consumed_in_stock_unit");
+
+                    b.Property<string>("StockUnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("stock_unit_code");
+
+                    b.Property<Guid>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
+
+                    b.Property<string>("SupplyNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("supply_name_snapshot");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.ToTable("production_consumptions", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.ProductionOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("BatchMultiplier")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("batch_multiplier");
+
+                    b.Property<string>("BatchNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("batch_number");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset>("ExecutedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("executed_at_utc");
+
+                    b.Property<Guid?>("ExecutedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("executed_by_user_id");
+
+                    b.Property<DateTimeOffset?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid?>("OutputSupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("output_supply_item_id");
+
+                    b.Property<decimal>("ProducedQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("produced_quantity");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TechnicalSheetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("technical_sheet_id");
+
+                    b.Property<string>("TechnicalSheetNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("technical_sheet_name_snapshot");
+
+                    b.Property<int>("TechnicalSheetVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("technical_sheet_version");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("TotalProductionCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("total_production_cost");
+
+                    b.Property<decimal>("UnitProductionCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_production_cost");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("YieldUnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("yield_unit_code");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TechnicalSheetId", "ExecutedAtUtc");
+
+                    b.ToTable("production_orders", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.PurchaseReceipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("InvoiceNumber")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("invoice_number");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at_utc");
+
+                    b.Property<Guid?>("ReceivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("received_by_user_id");
+
+                    b.Property<string>("SupplierName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("supplier_name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ReceivedAtUtc");
+
+                    b.ToTable("purchase_receipts", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.PurchaseReceiptItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BatchNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("batch_number");
+
+                    b.Property<decimal>("CreditedStockQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("credited_stock_quantity");
+
+                    b.Property<DateTimeOffset?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<DateTimeOffset?>("ManufacturedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("manufactured_at_utc");
+
+                    b.Property<Guid>("PurchaseReceiptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_receipt_id");
+
+                    b.Property<string>("PurchaseUnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("purchase_unit_code");
+
+                    b.Property<decimal>("PurchasedQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("purchased_quantity");
+
+                    b.Property<string>("StockUnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("stock_unit_code");
+
+                    b.Property<Guid>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
+
+                    b.Property<string>("SupplyNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("supply_name_snapshot");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseReceiptId");
+
+                    b.ToTable("purchase_receipt_items", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockBalance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AllowNegativeStock")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allow_negative_stock");
+
+                    b.Property<bool>("AutoDeductOnOrder")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_deduct_on_order");
+
+                    b.Property<bool>("BlockExpiredLots")
+                        .HasColumnType("boolean")
+                        .HasColumnName("block_expired_lots");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<decimal>("MinimumStockQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("minimum_stock_quantity");
+
+                    b.Property<decimal>("QuantityOnHand")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("quantity_on_hand");
+
+                    b.Property<Guid>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "SupplyItemId")
+                        .IsUnique();
+
+                    b.ToTable("stock_balances", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockLot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("batch_number");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<decimal>("InitialQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("initial_quantity");
+
+                    b.Property<DateTimeOffset?>("ManufacturedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("manufactured_at_utc");
+
+                    b.Property<decimal>("RemainingQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("remaining_quantity");
+
+                    b.Property<Guid>("StockBalanceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_balance_id");
+
+                    b.Property<Guid>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_cost");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StockBalanceId");
+
+                    b.HasIndex("TenantId", "SupplyItemId", "ExpiresAtUtc");
+
+                    b.ToTable("stock_lots", "inventory");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<int>("MovementType")
+                        .HasColumnType("integer")
+                        .HasColumnName("movement_type");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<decimal>("PreviousQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("previous_quantity");
+
+                    b.Property<decimal>("QuantityDelta")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("quantity_delta");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reference_id");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reference_type");
+
+                    b.Property<decimal>("ResultingQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("resulting_quantity");
+
+                    b.Property<Guid>("StockBalanceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_balance_id");
+
+                    b.Property<Guid?>("StockLotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_lot_id");
+
+                    b.Property<Guid>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("TotalCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("total_cost");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_cost");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StockBalanceId");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ReferenceType", "ReferenceId");
+
+                    b.HasIndex("TenantId", "SupplyItemId", "OccurredAtUtc");
+
+                    b.ToTable("stock_movements", "inventory");
+                });
+
             modelBuilder.Entity("Pitako.Modules.Inventory.Domain.SupplyItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -416,6 +904,126 @@ namespace Pitako.Modules.Inventory.Infrastructure.Migrations
                     b.ToTable("custom_units", "inventory");
                 });
 
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.ProductionIngredientConsumption", b =>
+                {
+                    b.HasOne("Pitako.Modules.Inventory.Domain.ProductionOrder", null)
+                        .WithMany("Consumptions")
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.PurchaseReceipt", b =>
+                {
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "TotalAmount", b1 =>
+                        {
+                            b1.Property<Guid>("PurchaseReceiptId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("total_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("total_currency");
+
+                            b1.HasKey("PurchaseReceiptId");
+
+                            b1.ToTable("purchase_receipts", "inventory");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PurchaseReceiptId");
+                        });
+
+                    b.Navigation("TotalAmount")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.PurchaseReceiptItem", b =>
+                {
+                    b.HasOne("Pitako.Modules.Inventory.Domain.PurchaseReceipt", null)
+                        .WithMany("Items")
+                        .HasForeignKey("PurchaseReceiptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "TotalCost", b1 =>
+                        {
+                            b1.Property<Guid>("PurchaseReceiptItemId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("total_cost_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("total_cost_currency");
+
+                            b1.HasKey("PurchaseReceiptItemId");
+
+                            b1.ToTable("purchase_receipt_items", "inventory");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PurchaseReceiptItemId");
+                        });
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "UnitPrice", b1 =>
+                        {
+                            b1.Property<Guid>("PurchaseReceiptItemId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("unit_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("unit_price_currency");
+
+                            b1.HasKey("PurchaseReceiptItemId");
+
+                            b1.ToTable("purchase_receipt_items", "inventory");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PurchaseReceiptItemId");
+                        });
+
+                    b.Navigation("TotalCost")
+                        .IsRequired();
+
+                    b.Navigation("UnitPrice")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockLot", b =>
+                {
+                    b.HasOne("Pitako.Modules.Inventory.Domain.StockBalance", null)
+                        .WithMany("Lots")
+                        .HasForeignKey("StockBalanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockMovement", b =>
+                {
+                    b.HasOne("Pitako.Modules.Inventory.Domain.StockBalance", null)
+                        .WithMany("Movements")
+                        .HasForeignKey("StockBalanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pitako.Modules.Inventory.Domain.SupplyItem", b =>
                 {
                     b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "PurchasePrice", b1 =>
@@ -534,6 +1142,23 @@ namespace Pitako.Modules.Inventory.Infrastructure.Migrations
                         .HasForeignKey("TechnicalSheetId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.ProductionOrder", b =>
+                {
+                    b.Navigation("Consumptions");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.PurchaseReceipt", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Inventory.Domain.StockBalance", b =>
+                {
+                    b.Navigation("Lots");
+
+                    b.Navigation("Movements");
                 });
 
             modelBuilder.Entity("Pitako.Modules.Inventory.Domain.SupplyItem", b =>

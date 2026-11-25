@@ -60,6 +60,9 @@ public sealed class EfTechnicalSheetRepository(InventoryDbContext db) : ITechnic
     public Task<TechnicalSheet?> FindByIdAsync(Guid sheetId, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(t => t.Id == sheetId, cancellationToken);
 
+    public Task<TechnicalSheet?> FindActiveByProductIdAsync(Guid productId, CancellationToken cancellationToken = default) =>
+        FullQuery().FirstOrDefaultAsync(t => t.IsActive && t.ProductId == productId, cancellationToken);
+
     public async Task<IReadOnlyList<TechnicalSheet>> ListUsingSupplyItemAsync(
         Guid supplyItemId,
         CancellationToken cancellationToken = default) =>
@@ -71,6 +74,84 @@ public sealed class EfTechnicalSheetRepository(InventoryDbContext db) : ITechnic
 
     public async Task AddAsync(TechnicalSheet sheet, CancellationToken cancellationToken = default) =>
         await db.TechnicalSheets.AddAsync(sheet, cancellationToken);
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        db.SaveChangesAsync(cancellationToken);
+}
+
+public sealed class EfStockBalanceRepository(InventoryDbContext db) : IStockBalanceRepository
+{
+    private IQueryable<StockBalance> FullQuery() =>
+        db.StockBalances
+            .Include(b => b.Lots)
+            .Include(b => b.Movements);
+
+    public Task<StockBalance?> FindBySupplyItemIdAsync(Guid supplyItemId, CancellationToken cancellationToken = default) =>
+        FullQuery().FirstOrDefaultAsync(b => b.SupplyItemId == supplyItemId, cancellationToken);
+
+    public async Task<IReadOnlyDictionary<Guid, StockBalance>> FindLookupBySupplyItemIdsAsync(
+        IEnumerable<Guid> supplyItemIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = supplyItemIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, StockBalance>();
+
+        var items = await FullQuery()
+            .Where(b => ids.Contains(b.SupplyItemId))
+            .ToListAsync(cancellationToken);
+
+        return items.ToDictionary(b => b.SupplyItemId);
+    }
+
+    public async Task<IReadOnlyList<StockBalance>> ListAllWithLotsAsync(CancellationToken cancellationToken = default) =>
+        await db.StockBalances
+            .Include(b => b.Lots)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<StockMovement>> ListByReferenceAsync(
+        string referenceType,
+        Guid referenceId,
+        CancellationToken cancellationToken = default) =>
+        await db.StockMovements
+            .AsNoTracking()
+            .Where(m => m.ReferenceType == referenceType && m.ReferenceId == referenceId)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddAsync(StockBalance balance, CancellationToken cancellationToken = default) =>
+        await db.StockBalances.AddAsync(balance, cancellationToken);
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        db.SaveChangesAsync(cancellationToken);
+}
+
+public sealed class EfPurchaseReceiptRepository(InventoryDbContext db) : IPurchaseReceiptRepository
+{
+    private IQueryable<PurchaseReceipt> FullQuery() =>
+        db.PurchaseReceipts.Include(r => r.Items);
+
+    public Task<PurchaseReceipt?> FindByIdAsync(Guid receiptId, CancellationToken cancellationToken = default) =>
+        FullQuery().FirstOrDefaultAsync(r => r.Id == receiptId, cancellationToken);
+
+    public Task<PurchaseReceipt?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+        FullQuery().FirstOrDefaultAsync(r => r.IdempotencyKey == idempotencyKey, cancellationToken);
+
+    public async Task AddAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default) =>
+        await db.PurchaseReceipts.AddAsync(receipt, cancellationToken);
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        db.SaveChangesAsync(cancellationToken);
+}
+
+public sealed class EfProductionOrderRepository(InventoryDbContext db) : IProductionOrderRepository
+{
+    public Task<ProductionOrder?> FindByIdAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+        db.ProductionOrders
+            .Include(o => o.Consumptions)
+            .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+
+    public async Task AddAsync(ProductionOrder order, CancellationToken cancellationToken = default) =>
+        await db.ProductionOrders.AddAsync(order, cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
