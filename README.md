@@ -23,3 +23,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 7 (Insumos, fichas técnicas e formação de preços):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-07-relatorio.md)).
 - **Fase 8 (Estoque, compras e produção):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-08-relatorio.md)).
 - **Fase 9 (Módulo especializado de açaí):** Concluída com testes unitários, integração e segurança aprovados ([Relatório](docs/relatorios/fase-09-relatorio.md)).
+- **Fase 10 (Pesagem e balança):** Concluída com parser Toledo validado, contingência manual e pendência registrada de balança física ([Relatório](docs/relatorios/fase-10-relatorio.md)).

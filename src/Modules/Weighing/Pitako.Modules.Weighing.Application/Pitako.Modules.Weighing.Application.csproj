@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.Weighing.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.Weighing.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.Weighing.Domain\Pitako.Modules.Weighing.Domain.csproj" />
+  </ItemGroup>
+</Project>

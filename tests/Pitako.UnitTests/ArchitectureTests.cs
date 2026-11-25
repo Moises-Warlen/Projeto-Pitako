@@ -10,6 +10,8 @@ using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Services;
 using Pitako.Modules.Tenants.Domain;
+using Pitako.Modules.Weighing.Application.Services;
+using Pitako.Modules.Weighing.Domain;
 using Pitako.SharedKernel.Results;
 using Xunit;
 
@@ -34,7 +36,9 @@ public sealed class ArchitectureTests
             typeof(SupplyItem).Assembly,
             typeof(SuppliesAndTechnicalSheetService).Assembly,
             typeof(AcaiCupSize).Assembly,
-            typeof(AcaiBuilderManagementService).Assembly
+            typeof(AcaiBuilderManagementService).Assembly,
+            typeof(WeighingRecord).Assembly,
+            typeof(WeighingService).Assembly
         };
 
         foreach (var assembly in assemblies)
