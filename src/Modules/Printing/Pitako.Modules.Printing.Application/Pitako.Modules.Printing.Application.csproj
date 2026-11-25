@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.Printing.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.Printing.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.Printing.Domain\Pitako.Modules.Printing.Domain.csproj" />
+  </ItemGroup>
+</Project>
