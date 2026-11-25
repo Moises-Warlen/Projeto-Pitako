@@ -6,6 +6,8 @@ using Pitako.Modules.Coupons.Application.Services;
 using Pitako.Modules.Coupons.Domain;
 using Pitako.Modules.DeliveryLogistics.Application.Services;
 using Pitako.Modules.DeliveryLogistics.Domain;
+using Pitako.Modules.DiningHall.Application.Services;
+using Pitako.Modules.DiningHall.Domain;
 using Pitako.Modules.Inventory.Application.Services;
 using Pitako.Modules.Inventory.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
@@ -58,7 +60,9 @@ public sealed class ArchitectureTests
             typeof(DeliveryCourier).Assembly,
             typeof(CourierDispatchAndGpsService).Assembly,
             typeof(CashRegisterSession).Assembly,
-            typeof(PdvCashierService).Assembly
+            typeof(PdvCashierService).Assembly,
+            typeof(DiningTab).Assembly,
+            typeof(DiningHallManagementService).Assembly
         };
 
         foreach (var assembly in assemblies)

@@ -37,5 +37,7 @@
     <ProjectReference Include="..\..\src\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Application\Pitako.Modules.DeliveryLogistics.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\PdvCashier\Pitako.Modules.PdvCashier.Domain\Pitako.Modules.PdvCashier.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\PdvCashier\Pitako.Modules.PdvCashier.Application\Pitako.Modules.PdvCashier.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\DiningHall\Pitako.Modules.DiningHall.Domain\Pitako.Modules.DiningHall.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\DiningHall\Pitako.Modules.DiningHall.Application\Pitako.Modules.DiningHall.Application.csproj" />
   </ItemGroup>
 </Project>
