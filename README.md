@@ -27,3 +27,4 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 11 (Carrinho de compras e cupons):** Concluída com preservação por item, recálculo integral no backend e módulo de cupons com RLS ([Relatório](docs/relatorios/fase-11-relatorio.md)).
 - **Fase 12 (Delivery próprio e frete):** Concluída com cálculo Haversine, faixas/zonas, raio máximo, pedido mínimo, isenção e RLS ([Relatório](docs/relatorios/fase-12-relatorio.md)).
 - **Fase 13 (Pedidos e Kanban em tempo real):** Concluída com checkout multi-módulo, Kanban, estorno automático de estoque/cupons e RLS ([Relatório](docs/relatorios/fase-13-relatorio.md)).
+- **Fase 14 (PDV e caixa):** Concluída com abertura/fechamento, sangria, suprimento, múltiplos pagamentos, aprovação de descontos e RLS ([Relatório](docs/relatorios/fase-14-relatorio.md)).

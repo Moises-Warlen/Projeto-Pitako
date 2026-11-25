@@ -12,6 +12,8 @@ using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Orders.Application.Services;
 using Pitako.Modules.Orders.Domain;
+using Pitako.Modules.PdvCashier.Application.Services;
+using Pitako.Modules.PdvCashier.Domain;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Services;
@@ -52,7 +54,9 @@ public sealed class ArchitectureTests
             typeof(Order).Assembly,
             typeof(OrderManagementService).Assembly,
             typeof(DeliveryPolicy).Assembly,
-            typeof(DeliveryPolicyAndFreightService).Assembly
+            typeof(DeliveryPolicyAndFreightService).Assembly,
+            typeof(CashRegisterSession).Assembly,
+            typeof(PdvCashierService).Assembly
         };
 
         foreach (var assembly in assemblies)
