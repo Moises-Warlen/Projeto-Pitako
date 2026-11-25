@@ -41,6 +41,7 @@ using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Security.Infrastructure.Persistence;
 using Pitako.Modules.Tenants.Application.Abstractions;
 using Pitako.Modules.Tenants.Application.Services;
+using Pitako.Modules.Tenants.Domain;
 using Pitako.Modules.Weighing.Application.Abstractions;
 using Pitako.Modules.Weighing.Application.Services;
 using Pitako.Modules.Weighing.Domain;
@@ -302,6 +303,81 @@ public static class PitakoV1Endpoints
                     status = res.Value.Subscription.Status
                 });
         });
+
+        master.MapGet("/customers", async (
+            ApiSecurityGuard guard,
+            IMasterCustomerRepository customerRepo,
+            ISubscriptionRepository subRepo,
+            ICommercialPlanRepository planRepo,
+            ITenantRepository tenantRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            var customers = await customerRepo.ListAllAsync(ct);
+            var subs = await subRepo.ListAllAsync(ct);
+            var plans = (await planRepo.ListAllAsync(false, ct)).ToDictionary(p => p.Id, p => p);
+            var tenants = await tenantRepo.ListAllAsync(ct);
+
+            return Results.Ok(new
+            {
+                customers = customers.Select(c =>
+                {
+                    var latestSub = subs.Where(s => s.CustomerAccountId == c.Id).OrderByDescending(s => s.StartedAtUtc).FirstOrDefault();
+                    var planName = latestSub is not null && plans.TryGetValue(latestSub.PlanId, out var pl) ? pl.Name : "—";
+                    return new
+                    {
+                        c.Id,
+                        customerName = c.Name,
+                        document = c.DocumentNumber,
+                        c.BillingEmail,
+                        planName,
+                        subscriptionStatus = latestSub?.Status.ToString() ?? "None"
+                    };
+                }),
+                establishments = tenants.Select(t => new
+                {
+                    t.Id,
+                    t.CustomerAccountId,
+                    t.TradeName,
+                    t.LegalName,
+                    t.Slug,
+                    t.SegmentCode,
+                    cnpj = t.Cnpj.Formatted,
+                    status = t.Status.ToString()
+                }),
+                segments = BusinessSegmentCatalog.AllBuiltIn
+            });
+        });
+
+        master.MapPost("/establishments/{tenantId:guid}/admin-user", async (
+            Guid tenantId,
+            CreateStoreUserReq req,
+            ApiSecurityGuard guard,
+            UserAuthorizationService userAuth,
+            ITenantContextSetter setter,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null)
+                return err;
+
+            setter.SetTenant(tenantId, TenantResolutionSource.AuthenticatedSession);
+            var res = await userAuth.CreateEstablishmentUserAsync(
+                user!,
+                tenantId,
+                req.FullName,
+                req.Email,
+                req.Password,
+                EstablishmentRole.Administrator,
+                http.Connection.RemoteIpAddress?.ToString(),
+                ct);
+            return ToHttp(res, StatusCodes.Status201Created);
+        });
     }
 
     private static void MapStoreAndPublicEndpoints(RouteGroupBuilder v1)
@@ -373,6 +449,29 @@ public static class PitakoV1Endpoints
                 return err;
 
             return ToHttp(await brandingSvc.PublishBrandingAsync(user!, user!.TenantId!.Value, ct));
+        });
+
+        store.MapGet("/segments", () => Results.Ok(BusinessSegmentCatalog.AllBuiltIn));
+
+        store.MapGet("/users", async (
+            ApiSecurityGuard guard,
+            IUserRepository userRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Security, ct);
+            if (err is not null)
+                return err;
+
+            var list = await userRepo.ListByTenantAsync(user!.TenantId!.Value, ct);
+            return Results.Ok(list.Select(u => new
+            {
+                u.Id,
+                u.FullName,
+                u.NormalizedEmail,
+                role = u.EstablishmentRole?.ToString() ?? "Unknown",
+                u.IsActive
+            }));
         });
 
         store.MapPost("/users", async (
@@ -631,6 +730,33 @@ public static class PitakoV1Endpoints
                 return err;
 
             return ToHttp(await svc.CreateCupSizeAsync(user!, req.Name, req.VolumeMl, req.BasePrice, req.FreeToppingsLimit, req.MinFreeToppings, cancellationToken: ct), StatusCodes.Status201Created);
+        });
+
+        acai.MapPost("/flavors", async (CreateAcaiFlavorReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null)
+                return err;
+
+            return ToHttp(await svc.CreateBaseFlavorAsync(user!, req.Name, req.ExtraPrice, cancellationToken: ct), StatusCodes.Status201Created);
+        });
+
+        acai.MapPost("/free-toppings", async (CreateAcaiFreeReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null)
+                return err;
+
+            return ToHttp(await svc.CreateFreeToppingAsync(user!, req.Name, req.MaxPortionsPerCup, cancellationToken: ct), StatusCodes.Status201Created);
+        });
+
+        acai.MapPost("/paid-addons", async (CreateAcaiPaidReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null)
+                return err;
+
+            return ToHttp(await svc.CreatePaidAddonAsync(user!, req.Name, req.AdditionalPrice, req.MaxQuantityPerCup, cancellationToken: ct), StatusCodes.Status201Created);
         });
     }
 
@@ -944,6 +1070,9 @@ public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhon
 public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0);
 public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0);
 public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0);
+public sealed record CreateAcaiFlavorReq(string Name, decimal ExtraPrice = 0m);
+public sealed record CreateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1);
+public sealed record CreateAcaiPaidReq(string Name, decimal AdditionalPrice, int MaxQuantityPerCup = 3);
 public sealed record RegisterScaleReq(string Name, ScaleManufacturer Manufacturer, ScaleConnectionType ConnectionType, string EndpointOrPort, bool AllowManualFallback = true);
 public sealed record ManualWeighingReq(string ProductName, decimal PricePerKg, decimal GrossGrams, string Reason, Guid? ScaleDeviceId = null, Guid? ProductId = null, Guid? TarePresetId = null, decimal? ManualTareGrams = null);
 public sealed record TransitionOrderReq(OrderStatus NextStatus, string? Reason = null);

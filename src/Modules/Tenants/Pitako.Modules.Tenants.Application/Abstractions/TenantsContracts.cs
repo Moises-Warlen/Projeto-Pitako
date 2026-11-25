@@ -7,6 +7,7 @@ public interface ITenantRepository
 {
     Task<Tenant?> FindByIdAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<Tenant?> FindBySlugAsync(string slug, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Tenant>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<int> CountByCustomerAccountAsync(Guid customerAccountId, CancellationToken cancellationToken = default);
     Task AddAsync(Tenant tenant, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);

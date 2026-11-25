@@ -49,12 +49,14 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
     secondaryColorHex: "#FAF5FF",
     accentColorHex: "#F59E0B"
   });
+  const [slogan, setSlogan] = useState<string>("");
   const [menu, setMenu] = useState<MenuResponse | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedCupId, setSelectedCupId] = useState<string>("");
   const [selectedFlavorId, setSelectedFlavorId] = useState<string>("");
   const [selectedFreeIds, setSelectedFreeIds] = useState<string[]>([]);
   const [selectedPaidIds, setSelectedPaidIds] = useState<string[]>([]);
+  const [fulfillmentMode, setFulfillmentMode] = useState<1 | 2>(1);
   const [customerName, setCustomerName] = useState("");
   const [address, setAddress] = useState("");
   const [orderNotice, setOrderNotice] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
       apiFetch<MenuResponse>(`/api/v1/public/store/${params.slug}/menu`)
     ]).then(([infoRes, menuRes]) => {
       if (infoRes.ok && infoRes.data) {
+        setSlogan(infoRes.data.branding.slogan || "");
         setTheme({
           tradeName: infoRes.data.tradeName,
           formattedCnpj: infoRes.data.formattedCnpj,
@@ -83,6 +86,7 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
   }, [params.slug]);
 
   const activeCup = menu?.acai.cupSizes.find((c) => c.id === selectedCupId);
+  const cartTotal = cart.reduce((acc, item) => acc + item.unitPrice, 0);
 
   function toggleFreeTopping(id: string) {
     if (!activeCup) return;
@@ -136,8 +140,8 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
         method: "POST",
         body: JSON.stringify({
           customerName,
-          fulfillmentMode: 1,
-          deliveryAddress: address,
+          fulfillmentMode,
+          deliveryAddress: fulfillmentMode === 1 ? address : undefined,
           items: cart
             .filter((i) => i.kind === "product" && i.productId)
             .map((i) => ({ productId: i.productId, quantity: 1 })),
@@ -147,7 +151,7 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
     );
 
     if (res.ok && res.data) {
-      setOrderNotice(`Pedido ${res.data.orderNumber} confirmado (R$ ${res.data.totalAmount.toFixed(2)})!`);
+      setOrderNotice(`Pedido ${res.data.orderNumber} enviado para a cozinha! Total: R$ ${res.data.totalAmount.toFixed(2)}`);
       setCart([]);
     } else {
       setOrderNotice(res.errorMessage || "Erro ao finalizar pedido.");
@@ -156,6 +160,13 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
 
   return (
     <StoreBrandShell theme={theme} hideOpsNav>
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-base font-bold text-slate-900">{slogan || `Bem-vindo à ${theme.tradeName}`}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Esta é a tela do cliente final fazendo um pedido. Para criar lojas, planos ou cadastrar produtos, acesse <code>/login</code> como Dono/Master.
+        </p>
+      </div>
+
       {orderNotice && (
         <div className="mb-6 rounded-xl border border-emerald-400 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
           {orderNotice}
@@ -164,9 +175,9 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
 
       <div className="grid gap-8 lg:grid-cols-3">
         <div className="space-y-8 lg:col-span-2">
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h1 className="text-xl font-bold text-slate-900">Monte seu Açaí Personalizado</h1>
-            {menu && activeCup ? (
+          {menu && activeCup && (
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h1 className="text-xl font-bold text-slate-900">Monte seu Açaí Personalizado</h1>
               <div className="mt-4 space-y-5">
                 <div>
                   <p className="mb-2 text-xs font-semibold uppercase text-slate-500">1. Escolha o Copo</p>
@@ -212,9 +223,7 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
                 </div>
 
                 <div className="border-t pt-4">
-                  <p className="mb-2 text-xs font-semibold uppercase text-amber-700">
-                    3. Adicionais Pagos (Área Separada)
-                  </p>
+                  <p className="mb-2 text-xs font-semibold uppercase text-amber-700">3. Adicionais Pagos (Área Separada)</p>
                   <div className="flex flex-wrap gap-2">
                     {menu.acai.paidAddons.map((a) => (
                       <button
@@ -242,39 +251,39 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
                   Adicionar Copo Individual ao Carrinho
                 </button>
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-slate-500">
-                Conecte a API `Pitako.Api` com semente demo para exibir o cardápio ao vivo de `{params.slug}`.
-              </p>
-            )}
-          </section>
+            </section>
+          )}
 
           {menu && (
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="mb-4 text-lg font-bold text-slate-900">Cardápio da Loja</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {menu.products.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">{p.name}</p>
-                      <p className="text-xs text-slate-500">R$ {p.price.toFixed(2)}</p>
+              {menu.products.length === 0 ? (
+                <p className="text-sm text-slate-500">Esta loja ainda não cadastrou produtos no painel /admin.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {menu.products.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{p.name}</p>
+                        <p className="text-xs text-slate-500">R$ {p.price.toFixed(2)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCart((prev) => [
+                            ...prev,
+                            { key: `${p.id}-${Date.now()}`, kind: "product", productId: p.id, title: p.name, unitPrice: p.price }
+                          ])
+                        }
+                        style={{ backgroundColor: "var(--store-accent)" }}
+                        className="rounded-lg px-3 py-1.5 text-xs font-bold text-white"
+                      >
+                        + Carrinho
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCart((prev) => [
-                          ...prev,
-                          { key: `${p.id}-${Date.now()}`, kind: "product", productId: p.id, title: p.name, unitPrice: p.price }
-                        ])
-                      }
-                      style={{ backgroundColor: "var(--store-accent)" }}
-                      className="rounded-lg px-3 py-1.5 text-xs font-bold text-white"
-                    >
-                      + Carrinho
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
         </div>
@@ -291,7 +300,27 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
             ))}
           </div>
 
-          <form onSubmit={submitCheckout} className="mt-5 space-y-3 border-t pt-4">
+          <p className="mt-4 border-t pt-3 text-sm font-bold text-slate-900">
+            Total: R$ {cartTotal.toFixed(2)}
+          </p>
+
+          <form onSubmit={submitCheckout} className="mt-4 space-y-3">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setFulfillmentMode(1)}
+                className={`rounded-lg border py-2 font-semibold ${fulfillmentMode === 1 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200"}`}
+              >
+                Entrega (Delivery)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFulfillmentMode(2)}
+                className={`rounded-lg border py-2 font-semibold ${fulfillmentMode === 2 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200"}`}
+              >
+                Retirar no Balcão
+              </button>
+            </div>
             <input
               required
               value={customerName}
@@ -299,13 +328,15 @@ export default function StorefrontPage({ params }: { params: { slug: string } })
               placeholder="Seu nome"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <input
-              required
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Endereço de entrega"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
+            {fulfillmentMode === 1 && (
+              <input
+                required
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Endereço de entrega"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            )}
             <button
               type="submit"
               disabled={cart.length === 0}

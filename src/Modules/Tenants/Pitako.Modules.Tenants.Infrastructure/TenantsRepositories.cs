@@ -12,6 +12,9 @@ public sealed class EfTenantRepository(TenantsDbContext db) : ITenantRepository
     public Task<Tenant?> FindBySlugAsync(string slug, CancellationToken cancellationToken = default) =>
         db.Tenants.FirstOrDefaultAsync(t => t.Slug == slug.Trim().ToLowerInvariant(), cancellationToken);
 
+    public async Task<IReadOnlyList<Tenant>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await db.Tenants.OrderBy(t => t.TradeName).ToListAsync(cancellationToken);
+
     public Task<int> CountByCustomerAccountAsync(Guid customerAccountId, CancellationToken cancellationToken = default) =>
         db.Tenants.CountAsync(t => t.CustomerAccountId == customerAccountId && t.Status != TenantStatus.Cancelled, cancellationToken);
 
