@@ -16,5 +16,7 @@
     <ProjectReference Include="..\..\src\BuildingBlocks\Pitako.SharedKernel\Pitako.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks\Pitako.MultiTenancy\Pitako.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Modules\Tenants\Pitako.Modules.Tenants.Domain\Pitako.Modules.Tenants.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Security\Pitako.Modules.Security.Application\Pitako.Modules.Security.Application.csproj" />
   </ItemGroup>
 </Project>

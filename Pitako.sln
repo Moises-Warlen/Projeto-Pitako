@@ -29,6 +29,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.IntegrationTests", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.SecurityTests", "tests\Pitako.SecurityTests\Pitako.SecurityTests.csproj", "{154FD7AA-0AB6-4544-939B-1D83E5AF0298}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Security", "Security", "{6B75F52F-D971-4F7E-8E20-2BC79977A916}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Security.Domain", "src\Modules\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj", "{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Security.Application", "src\Modules\Security\Pitako.Modules.Security.Application\Pitako.Modules.Security.Application.csproj", "{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Security.Infrastructure", "src\Modules\Security\Pitako.Modules.Security.Infrastructure\Pitako.Modules.Security.Infrastructure.csproj", "{98411630-FABE-48D1-AD41-22ECFD0F0F5C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -70,6 +78,18 @@ Global
 		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{154FD7AA-0AB6-4544-939B-1D83E5AF0298}.Release|Any CPU.Build.0 = Release|Any CPU
+		{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98411630-FABE-48D1-AD41-22ECFD0F0F5C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98411630-FABE-48D1-AD41-22ECFD0F0F5C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98411630-FABE-48D1-AD41-22ECFD0F0F5C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98411630-FABE-48D1-AD41-22ECFD0F0F5C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
@@ -83,5 +103,9 @@ Global
 		{9A3A95D8-C351-40BE-B196-6FB78C9161B3} = {3A5A7386-482E-4483-9C84-98A7119BE424}
 		{BA124EDE-0AF5-46A5-B5DF-F7F0FE0A10C6} = {3A5A7386-482E-4483-9C84-98A7119BE424}
 		{154FD7AA-0AB6-4544-939B-1D83E5AF0298} = {3A5A7386-482E-4483-9C84-98A7119BE424}
+		{6B75F52F-D971-4F7E-8E20-2BC79977A916} = {857C3F19-1BE8-43E0-B21E-27C33584B25C}
+		{450EC67A-EA99-4E0E-B556-AB4B52FB3ADB} = {6B75F52F-D971-4F7E-8E20-2BC79977A916}
+		{0D0DD52E-D0BC-48DD-B4EE-6CAE848A15FD} = {6B75F52F-D971-4F7E-8E20-2BC79977A916}
+		{98411630-FABE-48D1-AD41-22ECFD0F0F5C} = {6B75F52F-D971-4F7E-8E20-2BC79977A916}
 	EndGlobalSection
 EndGlobal

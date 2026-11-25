@@ -16,5 +16,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\Pitako.Persistence\Pitako.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Modules\Tenants\Pitako.Modules.Tenants.Infrastructure\Pitako.Modules.Tenants.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Security\Pitako.Modules.Security.Infrastructure\Pitako.Modules.Security.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

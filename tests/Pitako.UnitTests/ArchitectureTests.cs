@@ -1,3 +1,5 @@
+using Pitako.Modules.Security.Application.Services;
+using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Domain;
 using Pitako.SharedKernel.Results;
 using Xunit;
@@ -7,12 +9,14 @@ namespace Pitako.UnitTests;
 public sealed class ArchitectureTests
 {
     [Fact]
-    public void DomainAndSharedKernel_ShouldNotDependOnEntityFrameworkOrNpgsql()
+    public void DomainAndApplicationLayers_ShouldNotDependOnEntityFrameworkOrNpgsql()
     {
         var assemblies = new[]
         {
             typeof(Result).Assembly,
-            typeof(Tenant).Assembly
+            typeof(Tenant).Assembly,
+            typeof(User).Assembly,
+            typeof(AuthenticationService).Assembly
         };
 
         foreach (var assembly in assemblies)
