@@ -19,13 +19,25 @@ public static class PitakoApiHostBuilder
     {
         var builder = WebApplication.CreateBuilder(args);
         if (!string.IsNullOrWhiteSpace(listenUrl))
+        {
             builder.WebHost.UseUrls(listenUrl);
+        }
+        else
+        {
+            var envPort = Environment.GetEnvironmentVariable("PORT");
+            if (!string.IsNullOrWhiteSpace(envPort) && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+                builder.WebHost.UseUrls($"http://0.0.0.0:{envPort}");
+        }
 
         builder.Services.AddProblemDetails();
         builder.Services.AddSignalR();
 
-        var allowedOrigins = builder.Configuration.GetSection("Security:AllowedCorsOrigins").Get<string[]>()
-            ?? ["http://localhost:3000"];
+        var envCors = (Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var configCors = builder.Configuration.GetSection("Security:AllowedCorsOrigins").Get<string[]>() ?? [];
+        var allowedOrigins = envCors.Length > 0
+            ? envCors
+            : (configCors.Length > 0 ? configCors : ["http://localhost:3000"]);
 
         builder.Services.AddCors(options =>
         {
@@ -76,6 +88,8 @@ public partial class Program
         var useSqlite = string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase);
 
         await app.Services.EnsureDatabaseInitializedAsync(useSqlite);
+
+        await PitakoDevDemoSeeder.BootstrapProductionMasterIfConfiguredAsync(app.Services, app.Configuration);
 
         if (app.Configuration.GetValue<bool>("SeedDemoData"))
             await PitakoDevDemoSeeder.SeedIfNeededAsync(app.Services);

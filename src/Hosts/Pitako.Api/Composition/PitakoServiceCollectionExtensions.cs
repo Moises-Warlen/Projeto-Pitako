@@ -88,17 +88,20 @@ public static class PitakoServiceCollectionExtensions
         DbConnection? sharedSqliteConnection = null)
     {
         var provider = configuration["DatabaseProvider"] ?? "PostgreSql";
-        var postgresConn = configuration.GetConnectionString("PitakoPostgres");
+        var rawPostgres = configuration.GetConnectionString("PitakoPostgres")
+            ?? Environment.GetEnvironmentVariable("DATABASE_URL");
+        var postgresConn = NormalizePostgresConnectionString(rawPostgres);
         var sqliteConn = configuration.GetConnectionString("PitakoSqlite") ?? "Data Source=pitako_local.db";
         var useSqlite = string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase) || sharedSqliteConnection is not null;
 
         if (!useSqlite && string.IsNullOrWhiteSpace(postgresConn))
         {
             throw new InvalidOperationException(
-                "ConnectionStrings:PitakoPostgres não configurada e DatabaseProvider não definido como Sqlite.");
+                "ConnectionStrings:PitakoPostgres (ou DATABASE_URL) não configurada e DatabaseProvider não definido como Sqlite.");
         }
 
-        var jwtSigningKey = configuration["Security:JwtSigningKey"];
+        var jwtSigningKey = configuration["Security:JwtSigningKey"]
+            ?? Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
         if (string.IsNullOrWhiteSpace(jwtSigningKey) || jwtSigningKey.Length < 32)
         {
             if (environment.IsDevelopment() || sharedSqliteConnection is not null)
@@ -107,7 +110,8 @@ public static class PitakoServiceCollectionExtensions
                 throw new InvalidOperationException("Security:JwtSigningKey obrigatória (>= 32 caracteres) em produção.");
         }
 
-        var encPassphrase = configuration["Security:DataEncryptionPassphrase"];
+        var encPassphrase = configuration["Security:DataEncryptionPassphrase"]
+            ?? Environment.GetEnvironmentVariable("DATA_ENCRYPTION_PASSPHRASE");
         if (string.IsNullOrWhiteSpace(encPassphrase))
         {
             if (environment.IsDevelopment() || sharedSqliteConnection is not null)
@@ -419,5 +423,31 @@ public static class PitakoServiceCollectionExtensions
             if (!exists)
                 await creator.CreateTablesAsync(ct);
         }
+    }
+
+    /// <summary>
+    /// Converte URIs no formato Neon/Render (postgresql://user:pass@host/db?sslmode=require)
+    /// para connection string Npgsql padrão.
+    /// </summary>
+    public static string? NormalizePostgresConnectionString(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return raw;
+
+        var trimmed = raw.Trim();
+        if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        var uri = new Uri(trimmed);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var username = Uri.UnescapeDataString(userInfo[0]);
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+        var database = uri.AbsolutePath.TrimStart('/');
+        var port = uri.Port > 0 ? uri.Port : 5432;
+
+        return $"Host={uri.Host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true;";
     }
 }

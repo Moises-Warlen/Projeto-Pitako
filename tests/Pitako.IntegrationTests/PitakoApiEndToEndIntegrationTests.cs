@@ -57,6 +57,12 @@ public sealed class PitakoApiEndToEndIntegrationTests : IAsyncLifetime
         var openApiRes = await _client.GetAsync("/openapi/v1.json");
         Assert.Equal(HttpStatusCode.OK, openApiRes.StatusCode);
 
+        var normalizedNeon = PitakoServiceCollectionExtensions.NormalizePostgresConnectionString(
+            "postgresql://neonuser:p%40ss@ep-test.us-east-2.aws.neon.tech/neondb?sslmode=require");
+        Assert.Equal(
+            "Host=ep-test.us-east-2.aws.neon.tech;Port=5432;Database=neondb;Username=neonuser;Password=p@ss;SSL Mode=Require;Trust Server Certificate=true;",
+            normalizedNeon);
+
         // 2. Storefront Whitelabel (zero PITAKO branding)
         var storeRes = await _client.GetAsync("/api/v1/public/store/acai-demo/");
         Assert.Equal(HttpStatusCode.OK, storeRes.StatusCode);

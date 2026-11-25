@@ -24,6 +24,35 @@ namespace Pitako.Api.Bootstrap;
 /// </summary>
 public static class PitakoDevDemoSeeder
 {
+    public static async Task BootstrapProductionMasterIfConfiguredAsync(
+        IServiceProvider services,
+        IConfiguration configuration,
+        CancellationToken ct = default)
+    {
+        var email = configuration["BOOTSTRAP_MASTER_EMAIL"] ?? Environment.GetEnvironmentVariable("BOOTSTRAP_MASTER_EMAIL");
+        var password = configuration["BOOTSTRAP_MASTER_PASSWORD"] ?? Environment.GetEnvironmentVariable("BOOTSTRAP_MASTER_PASSWORD");
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            return;
+
+        using var scope = services.CreateScope();
+        var sp = scope.ServiceProvider;
+        sp.GetRequiredService<ITenantContextSetter>().SetMasterScope();
+        var userRepo = sp.GetRequiredService<IUserRepository>();
+        var existing = await userRepo.FindByEmailAsync(UserScope.Saas, null, User.NormalizeEmail(email), ct);
+        if (existing is not null)
+            return;
+
+        var userAuth = sp.GetRequiredService<UserAuthorizationService>();
+        await userAuth.CreateSaasUserAsync(
+            null,
+            "Administrador Master PITAKO",
+            email.Trim(),
+            password,
+            SaasRole.MasterAdministrator,
+            "127.0.0.1",
+            ct);
+    }
+
     public static async Task SeedIfNeededAsync(IServiceProvider services, CancellationToken ct = default)
     {
         using var scope = services.CreateScope();

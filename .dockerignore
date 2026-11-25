@@ -1,0 +1,16 @@
+**/bin
+**/obj
+**/node_modules
+**/.next
+**/out
+**/TestResults
+.git
+.vs
+*.db
+*.db-shm
+*.db-wal
+*.log
+docs/
+src/Web/
+tests/
+src/Hosts/Pitako.HardwareAgent/
