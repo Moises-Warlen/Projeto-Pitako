@@ -2,10 +2,14 @@ using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.Coupons.Application.Services;
+using Pitako.Modules.Coupons.Domain;
 using Pitako.Modules.Inventory.Application.Services;
 using Pitako.Modules.Inventory.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
+using Pitako.Modules.Orders.Application.Services;
+using Pitako.Modules.Orders.Domain;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Services;
@@ -38,7 +42,11 @@ public sealed class ArchitectureTests
             typeof(AcaiCupSize).Assembly,
             typeof(AcaiBuilderManagementService).Assembly,
             typeof(WeighingRecord).Assembly,
-            typeof(WeighingService).Assembly
+            typeof(WeighingService).Assembly,
+            typeof(Coupon).Assembly,
+            typeof(CouponsManagementService).Assembly,
+            typeof(ShoppingCart).Assembly,
+            typeof(ShoppingCartService).Assembly
         };
 
         foreach (var assembly in assemblies)

@@ -36,10 +36,14 @@ public interface IScaleTransport
 }
 
 /// <summary>
-/// Contrato público para consumo futuro pelo Carrinho e PDV ao vincular pesagens validadas (Fases 11 e 14).
+/// Contrato público para consumo futuro pelo Carrinho e PDV ao validar e vincular pesagens (Fases 11 e 14).
 /// </summary>
 public interface IWeighingOrderAttachmentService
 {
+    Task<Result<WeighingRecord>> GetValidatedRecordAsync(
+        Guid weighingRecordId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<WeighingRecord>> AttachToOrderAsync(
         User actor,
         Guid weighingRecordId,

@@ -29,5 +29,9 @@
     <ProjectReference Include="..\..\src\Modules\AcaiBuilder\Pitako.Modules.AcaiBuilder.Application\Pitako.Modules.AcaiBuilder.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Weighing\Pitako.Modules.Weighing.Domain\Pitako.Modules.Weighing.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Weighing\Pitako.Modules.Weighing.Application\Pitako.Modules.Weighing.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Coupons\Pitako.Modules.Coupons.Domain\Pitako.Modules.Coupons.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Coupons\Pitako.Modules.Coupons.Application\Pitako.Modules.Coupons.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Orders\Pitako.Modules.Orders.Domain\Pitako.Modules.Orders.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Orders\Pitako.Modules.Orders.Application\Pitako.Modules.Orders.Application.csproj" />
   </ItemGroup>
 </Project>

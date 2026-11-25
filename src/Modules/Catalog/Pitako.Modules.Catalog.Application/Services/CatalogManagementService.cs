@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pitako.Modules.Catalog.Application.Abstractions;
 using Pitako.Modules.Catalog.Domain;
 using Pitako.Modules.Security.Domain;
@@ -19,7 +20,7 @@ public sealed record EffectiveProductPrice(
 /// Caso de uso de gestão do catálogo por estabelecimento com isolamento multi-tenant,
 /// controle granular de permissões e preservação histórica (Seção 12).
 /// </summary>
-public sealed class CatalogManagementService
+public sealed class CatalogManagementService : ICatalogItemPricingService
 {
     private readonly ICategoryRepository _categoryRepo;
     private readonly IProductRepository _productRepo;
@@ -407,6 +408,115 @@ public sealed class CatalogManagementService
             bestPrice,
             appliedPromo,
             product.CanReceiveOrders()));
+    }
+
+    public async Task<Result<CatalogProductQuote>> QuoteProductItemAsync(
+        Guid productId,
+        Guid? variationId,
+        IReadOnlyList<CatalogModifierSelection>? modifiers,
+        CancellationToken cancellationToken = default)
+    {
+        TenantGuard.EnsureResolved(_tenantContext);
+
+        var product = await _productRepo.FindByIdAsync(productId, cancellationToken);
+        if (product is null)
+            return Result.Failure<CatalogProductQuote>(Error.NotFound("Product.NotFound", "Produto não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, product);
+        if (!product.CanReceiveOrders())
+            return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.ProductUnavailable", $"Produto '{product.Name}' encontra-se indisponível para pedidos."));
+
+        Money basePrice = product.BasePrice;
+        string? variationName = null;
+        if (variationId.HasValue && variationId.Value != Guid.Empty)
+        {
+            var variation = product.Variations.FirstOrDefault(v => v.Id == variationId.Value && v.IsActive);
+            if (variation is null)
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.VariationUnavailable", "Variação selecionada indisponível."));
+
+            basePrice = variation.Price;
+            variationName = variation.Name;
+        }
+
+        var utcNow = _clock.UtcNow;
+        var promotions = await _promotionRepo.ListActiveCandidatesAsync(cancellationToken);
+        var effectivePrice = basePrice;
+        Promotion? appliedPromo = null;
+
+        foreach (var promo in promotions.Where(p => p.IsActiveAt(utcNow) && p.AppliesTo(product)))
+        {
+            var candidate = promo.CalculatePromotionalPrice(basePrice);
+            if (candidate.Amount < effectivePrice.Amount)
+            {
+                effectivePrice = candidate;
+                appliedPromo = promo;
+            }
+        }
+
+        var selectionList = modifiers ?? [];
+        var linkedGroupIds = product.ModifierLinks.Select(l => l.ModifierGroupId).ToHashSet();
+        var loadedGroups = new Dictionary<Guid, ModifierGroup>();
+        foreach (var groupId in linkedGroupIds)
+        {
+            var g = await _modifierRepo.FindByIdAsync(groupId, cancellationToken);
+            if (g is not null)
+                loadedGroups[g.Id] = g;
+        }
+
+        var modifierCountsByGroup = selectionList
+            .GroupBy(s => s.ModifierGroupId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        foreach (var (groupId, group) in loadedGroups)
+        {
+            var chosenCount = modifierCountsByGroup.GetValueOrDefault(groupId, 0);
+            if (group.IsRequired && chosenCount < group.MinSelections)
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.ModifierMinRequired", $"Selecione pelo menos {group.MinSelections} item(ns) em '{group.Name}'."));
+            if (group.MaxSelections > 0 && chosenCount > group.MaxSelections)
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.ModifierMaxExceeded", $"Grupo '{group.Name}' permite no máximo {group.MaxSelections} seleção(ões)."));
+        }
+
+        var modifierExtra = Money.Zero(basePrice.Currency);
+        var summaryParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(variationName))
+            summaryParts.Add($"Tamanho/Variação: {variationName}");
+
+        var canonicalModifiers = new List<object>();
+        foreach (var sel in selectionList
+            .GroupBy(s => new { s.ModifierGroupId, s.ModifierOptionId })
+            .Select(g => new { g.Key.ModifierGroupId, g.Key.ModifierOptionId, Quantity = g.Sum(x => x.Quantity) })
+            .OrderBy(x => x.ModifierGroupId)
+            .ThenBy(x => x.ModifierOptionId))
+        {
+            if (sel.Quantity <= 0 || !linkedGroupIds.Contains(sel.ModifierGroupId) || !loadedGroups.TryGetValue(sel.ModifierGroupId, out var group))
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.InvalidModifier", "Adicional/complemento inválido para este produto."));
+
+            var option = group.Options.FirstOrDefault(o => o.Id == sel.ModifierOptionId && o.IsAvailable);
+            if (option is null)
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.ModifierOptionUnavailable", "Opção adicional indisponível."));
+
+            if (sel.Quantity > option.MaxQuantity)
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.ModifierOptionMaxExceeded", $"Opção '{option.Name}' permite no máximo {option.MaxQuantity}."));
+
+            modifierExtra = modifierExtra.Add(option.AdditionalPrice.Multiply(sel.Quantity));
+            summaryParts.Add($"{sel.Quantity}x {option.Name}");
+            canonicalModifiers.Add(new { groupId = group.Id, optionId = option.Id, name = option.Name, qty = sel.Quantity, unitPrice = option.AdditionalPrice.Amount });
+        }
+
+        var unitPrice = effectivePrice.Add(modifierExtra);
+        var canonicalJson = JsonSerializer.Serialize(new { variationId, modifiers = canonicalModifiers });
+        var summaryText = summaryParts.Count == 0 ? "Padrão" : string.Join(" | ", summaryParts);
+
+        return Result.Success(new CatalogProductQuote(
+            product.Id,
+            product.CategoryId,
+            product.Name,
+            variationId == Guid.Empty ? null : variationId,
+            variationName,
+            unitPrice,
+            appliedPromo is not null && !appliedPromo.CanCombineWithCoupons,
+            summaryText,
+            canonicalJson));
     }
 
     private Result<Guid> ValidateTenantActor(User actor, PermissionAction action)

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.Coupons.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.Coupons.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.Coupons.Domain\Pitako.Modules.Coupons.Domain.csproj" />
+  </ItemGroup>
+</Project>

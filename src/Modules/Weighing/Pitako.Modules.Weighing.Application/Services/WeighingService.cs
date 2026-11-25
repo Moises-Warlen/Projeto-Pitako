@@ -216,6 +216,20 @@ public sealed class WeighingService : IWeighingOrderAttachmentService
         return recordRes;
     }
 
+    public async Task<Result<WeighingRecord>> GetValidatedRecordAsync(
+        Guid weighingRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        TenantGuard.EnsureResolved(_tenantContext);
+
+        var record = await _recordRepo.FindByIdAsync(weighingRecordId, cancellationToken);
+        if (record is null)
+            return Result.Failure<WeighingRecord>(Error.NotFound("Weighing.NotFound", "Registro de pesagem não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, record);
+        return Result.Success(record);
+    }
+
     public async Task<Result<WeighingRecord>> AttachToOrderAsync(
         User actor,
         Guid weighingRecordId,

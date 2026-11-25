@@ -1,6 +1,34 @@
 using Pitako.Modules.Catalog.Domain;
+using Pitako.SharedKernel.Results;
+using Pitako.SharedKernel.ValueObjects;
 
 namespace Pitako.Modules.Catalog.Application.Abstractions;
+
+public sealed record CatalogModifierSelection(Guid ModifierGroupId, Guid ModifierOptionId, int Quantity = 1);
+
+public sealed record CatalogProductQuote(
+    Guid ProductId,
+    Guid CategoryId,
+    string ProductName,
+    Guid? VariationId,
+    string? VariationName,
+    Money UnitPrice,
+    bool HasNonCombinablePromotion,
+    string CustomizationSummaryText,
+    string CanonicalSelectionsJson);
+
+/// <summary>
+/// Contrato público para cotação autoritativa de produtos, variações, adicionais e promoções
+/// pelo Carrinho e Pedidos (Fases 11 e 13).
+/// </summary>
+public interface ICatalogItemPricingService
+{
+    Task<Result<CatalogProductQuote>> QuoteProductItemAsync(
+        Guid productId,
+        Guid? variationId,
+        IReadOnlyList<CatalogModifierSelection>? modifiers,
+        CancellationToken cancellationToken = default);
+}
 
 public interface ICategoryRepository
 {
