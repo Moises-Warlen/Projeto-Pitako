@@ -38,6 +38,14 @@ public interface IMarketplaceCatalogMappingRepository
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
+public interface IMarketplaceBulkJobRepository
+{
+    Task<MarketplaceBulkJob?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MarketplaceBulkJob>> ListRecentAsync(int limit = 30, CancellationToken cancellationToken = default);
+    Task AddAsync(MarketplaceBulkJob job, CancellationToken cancellationToken = default);
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Cifragem autenticada de credenciais de parceiros (ClientSecret / ApiKey / Tokens) em repouso.
 /// </summary>

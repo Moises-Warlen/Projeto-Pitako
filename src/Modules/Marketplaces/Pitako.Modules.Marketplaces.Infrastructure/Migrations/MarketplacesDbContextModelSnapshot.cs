@@ -23,6 +23,152 @@ namespace Pitako.Modules.Marketplaces.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceBulkJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_count");
+
+                    b.Property<Guid?>("InternalProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("internal_product_id");
+
+                    b.Property<string>("OperationSummary")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("operation_summary");
+
+                    b.Property<int>("OperationType")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_type");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<int>("SucceededCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("succeeded_count");
+
+                    b.Property<bool?>("TargetPausedState")
+                        .HasColumnType("boolean")
+                        .HasColumnName("target_paused_state");
+
+                    b.Property<decimal?>("TargetPriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("target_price_amount");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TotalTargets")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_targets");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Status", "StartedAtUtc");
+
+                    b.ToTable("bulk_jobs", "marketplaces");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceBulkJobItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_count");
+
+                    b.Property<Guid>("BulkJobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bulk_job_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("error_message");
+
+                    b.Property<DateTimeOffset?>("ExecutedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("executed_at_utc");
+
+                    b.Property<string>("ExternalMerchantId")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("external_merchant_id");
+
+                    b.Property<string>("ExternalStoreName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("external_store_name");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("integer")
+                        .HasColumnName("outcome");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("integer")
+                        .HasColumnName("provider");
+
+                    b.Property<Guid>("StoreBindingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_binding_id");
+
+                    b.Property<string>("TargetSkuOrRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("target_sku_or_ref");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BulkJobId");
+
+                    b.HasIndex("TenantId", "BulkJobId");
+
+                    b.ToTable("bulk_job_items", "marketplaces");
+                });
+
             modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceCatalogMapping", b =>
                 {
                     b.Property<Guid>("Id")
@@ -311,6 +457,15 @@ namespace Pitako.Modules.Marketplaces.Infrastructure.Migrations
                     b.ToTable("store_bindings", "marketplaces");
                 });
 
+            modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceBulkJobItem", b =>
+                {
+                    b.HasOne("Pitako.Modules.Marketplaces.Domain.MarketplaceBulkJob", null)
+                        .WithMany("Items")
+                        .HasForeignKey("BulkJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceCatalogMapping", b =>
                 {
                     b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "LastSyncedPrice", b1 =>
@@ -369,6 +524,11 @@ namespace Pitako.Modules.Marketplaces.Infrastructure.Migrations
 
                     b.Navigation("NormalizedTotal")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Marketplaces.Domain.MarketplaceBulkJob", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

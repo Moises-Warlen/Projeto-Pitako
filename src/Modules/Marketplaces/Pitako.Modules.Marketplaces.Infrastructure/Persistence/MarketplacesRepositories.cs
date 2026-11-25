@@ -89,3 +89,31 @@ public sealed class EfMarketplaceCatalogMappingRepository(MarketplacesDbContext 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
+
+public sealed class EfMarketplaceBulkJobRepository(MarketplacesDbContext db) : IMarketplaceBulkJobRepository
+{
+    public Task<MarketplaceBulkJob?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.BulkJobs.Include(j => j.Items).FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<MarketplaceBulkJob>> ListRecentAsync(int limit = 30, CancellationToken cancellationToken = default)
+    {
+        if (db.Database.IsNpgsql())
+        {
+            return await db.BulkJobs
+                .Include(j => j.Items)
+                .AsNoTracking()
+                .OrderByDescending(j => j.StartedAtUtc)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+        }
+
+        var list = await db.BulkJobs.Include(j => j.Items).AsNoTracking().ToListAsync(cancellationToken);
+        return list.OrderByDescending(j => j.StartedAtUtc).Take(limit).ToList();
+    }
+
+    public async Task AddAsync(MarketplaceBulkJob job, CancellationToken cancellationToken = default) =>
+        await db.BulkJobs.AddAsync(job, cancellationToken);
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        db.SaveChangesAsync(cancellationToken);
+}

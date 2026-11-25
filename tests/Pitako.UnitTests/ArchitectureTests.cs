@@ -73,7 +73,9 @@ public sealed class ArchitectureTests
             typeof(PrintJob).Assembly,
             typeof(PrintingManagementService).Assembly,
             typeof(MarketplacePartnerAccount).Assembly,
-            typeof(MarketplaceHubService).Assembly
+            typeof(MarketplaceBulkJob).Assembly,
+            typeof(MarketplaceHubService).Assembly,
+            typeof(MarketplaceBulkSyncService).Assembly
         };
 
         foreach (var assembly in assemblies)

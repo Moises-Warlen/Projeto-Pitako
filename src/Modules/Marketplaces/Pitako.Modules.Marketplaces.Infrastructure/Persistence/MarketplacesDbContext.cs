@@ -25,6 +25,8 @@ public sealed class MarketplacesDbContext : PitakoDbContextBase
     public DbSet<MarketplaceStoreBinding> StoreBindings => Set<MarketplaceStoreBinding>();
     public DbSet<MarketplaceInboundEvent> InboundEvents => Set<MarketplaceInboundEvent>();
     public DbSet<MarketplaceCatalogMapping> CatalogMappings => Set<MarketplaceCatalogMapping>();
+    public DbSet<MarketplaceBulkJob> BulkJobs => Set<MarketplaceBulkJob>();
+    public DbSet<MarketplaceBulkJobItem> BulkJobItems => Set<MarketplaceBulkJobItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +36,8 @@ public sealed class MarketplacesDbContext : PitakoDbContextBase
         modelBuilder.ApplyConfiguration(new MarketplaceStoreBindingConfiguration());
         modelBuilder.ApplyConfiguration(new MarketplaceInboundEventConfiguration());
         modelBuilder.ApplyConfiguration(new MarketplaceCatalogMappingConfiguration());
+        modelBuilder.ApplyConfiguration(new MarketplaceBulkJobConfiguration());
+        modelBuilder.ApplyConfiguration(new MarketplaceBulkJobItemConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }
@@ -147,5 +151,59 @@ internal sealed class MarketplaceCatalogMappingConfiguration : IEntityTypeConfig
         });
 
         builder.HasIndex(x => new { x.TenantId, x.StoreBindingId, x.InternalProductId }).IsUnique();
+    }
+}
+
+internal sealed class MarketplaceBulkJobConfiguration : IEntityTypeConfiguration<MarketplaceBulkJob>
+{
+    public void Configure(EntityTypeBuilder<MarketplaceBulkJob> builder)
+    {
+        builder.ToTable("bulk_jobs");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.OperationType).HasColumnName("operation_type").IsRequired();
+        builder.Property(x => x.OperationSummary).HasColumnName("operation_summary").HasMaxLength(200).IsRequired();
+        builder.Property(x => x.InternalProductId).HasColumnName("internal_product_id");
+        builder.Property(x => x.TargetPriceAmount).HasColumnName("target_price_amount").HasPrecision(18, 2);
+        builder.Property(x => x.TargetPausedState).HasColumnName("target_paused_state");
+        builder.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id").IsRequired();
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.TotalTargets).HasColumnName("total_targets").IsRequired();
+        builder.Property(x => x.SucceededCount).HasColumnName("succeeded_count").IsRequired();
+        builder.Property(x => x.FailedCount).HasColumnName("failed_count").IsRequired();
+        builder.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").IsRequired();
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.HasMany(x => x.Items).WithOne().HasForeignKey(i => i.BulkJobId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Items).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasIndex(x => new { x.TenantId, x.Status, x.StartedAtUtc });
+    }
+}
+
+internal sealed class MarketplaceBulkJobItemConfiguration : IEntityTypeConfiguration<MarketplaceBulkJobItem>
+{
+    public void Configure(EntityTypeBuilder<MarketplaceBulkJobItem> builder)
+    {
+        builder.ToTable("bulk_job_items");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.BulkJobId).HasColumnName("bulk_job_id").IsRequired();
+        builder.Property(x => x.StoreBindingId).HasColumnName("store_binding_id").IsRequired();
+        builder.Property(x => x.Provider).HasColumnName("provider").IsRequired();
+        builder.Property(x => x.ExternalMerchantId).HasColumnName("external_merchant_id").HasMaxLength(120).IsRequired();
+        builder.Property(x => x.ExternalStoreName).HasColumnName("external_store_name").HasMaxLength(160).IsRequired();
+        builder.Property(x => x.TargetSkuOrRef).HasColumnName("target_sku_or_ref").HasMaxLength(120);
+        builder.Property(x => x.Outcome).HasColumnName("outcome").IsRequired();
+        builder.Property(x => x.ErrorCode).HasColumnName("error_code").HasMaxLength(80);
+        builder.Property(x => x.ErrorMessage).HasColumnName("error_message").HasMaxLength(500);
+        builder.Property(x => x.AttemptCount).HasColumnName("attempt_count").IsRequired();
+        builder.Property(x => x.ExecutedAtUtc).HasColumnName("executed_at_utc");
+
+        builder.HasIndex(x => new { x.TenantId, x.BulkJobId });
     }
 }
