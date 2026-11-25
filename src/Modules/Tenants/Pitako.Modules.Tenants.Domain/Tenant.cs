@@ -31,32 +31,44 @@ public sealed class Tenant : AggregateRoot<Guid>, IAuditableEntity
 
     private Tenant(
         Guid id,
+        Guid? customerAccountId,
         string legalName,
         string tradeName,
         string slug,
         Cnpj cnpj,
         string segmentCode,
-        TenantStatus status) : base(id)
+        TenantStatus status,
+        string? address,
+        string? contactPhone,
+        string? contactEmail) : base(id)
     {
+        CustomerAccountId = customerAccountId;
         LegalName = legalName;
         TradeName = tradeName;
         Slug = slug;
         Cnpj = cnpj;
         SegmentCode = segmentCode;
         Status = status;
+        Address = address;
+        ContactPhone = contactPhone;
+        ContactEmail = contactEmail;
     }
 
+    public Guid? CustomerAccountId { get; private set; }
     public string LegalName { get; private set; }
     public string TradeName { get; private set; }
     public string Slug { get; private set; }
     public Cnpj Cnpj { get; private set; }
     public string SegmentCode { get; private set; }
     public TenantStatus Status { get; private set; }
+    public string? Address { get; private set; }
+    public string? ContactPhone { get; private set; }
+    public string? ContactEmail { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset? UpdatedAtUtc { get; private set; }
 
     /// <summary>
-    /// Cria um novo estabelecimento garantindo validação de CNPJ e normalização de slug.
+    /// Cria um novo estabelecimento garantindo validação de CNPJ, segmento comercial e normalização de slug.
     /// </summary>
     public static Result<Tenant> Create(
         string legalName,
@@ -64,7 +76,11 @@ public sealed class Tenant : AggregateRoot<Guid>, IAuditableEntity
         string slug,
         string rawCnpj,
         string segmentCode,
-        TenantStatus initialStatus = TenantStatus.Trial)
+        TenantStatus initialStatus = TenantStatus.Trial,
+        Guid? customerAccountId = null,
+        string? address = null,
+        string? contactPhone = null,
+        string? contactEmail = null)
     {
         if (string.IsNullOrWhiteSpace(legalName))
             return Result.Failure<Tenant>(Error.Validation("Tenant.LegalNameRequired", "Razão social é obrigatória."));
@@ -76,8 +92,9 @@ public sealed class Tenant : AggregateRoot<Guid>, IAuditableEntity
         if (string.IsNullOrWhiteSpace(normalizedSlug))
             return Result.Failure<Tenant>(Error.Validation("Tenant.SlugRequired", "Slug do estabelecimento é obrigatório."));
 
-        if (string.IsNullOrWhiteSpace(segmentCode))
-            return Result.Failure<Tenant>(Error.Validation("Tenant.SegmentRequired", "Segmento comercial é obrigatório."));
+        var segmentResult = BusinessSegmentCatalog.Resolve(segmentCode);
+        if (segmentResult.IsFailure)
+            return Result.Failure<Tenant>(segmentResult.Error);
 
         var cnpjResult = Cnpj.Create(rawCnpj);
         if (cnpjResult.IsFailure)
@@ -85,12 +102,29 @@ public sealed class Tenant : AggregateRoot<Guid>, IAuditableEntity
 
         return Result.Success(new Tenant(
             Guid.NewGuid(),
+            customerAccountId == Guid.Empty ? null : customerAccountId,
             legalName.Trim(),
             tradeName.Trim(),
             normalizedSlug,
             cnpjResult.Value,
-            segmentCode.Trim().ToLowerInvariant(),
-            initialStatus));
+            segmentResult.Value.Code,
+            initialStatus,
+            string.IsNullOrWhiteSpace(address) ? null : address.Trim(),
+            string.IsNullOrWhiteSpace(contactPhone) ? null : contactPhone.Trim(),
+            string.IsNullOrWhiteSpace(contactEmail) ? null : contactEmail.Trim().ToLowerInvariant()));
+    }
+
+    public Result UpdateOfficialDetails(string legalName, string tradeName, string? address, string? contactPhone, string? contactEmail)
+    {
+        if (string.IsNullOrWhiteSpace(legalName) || string.IsNullOrWhiteSpace(tradeName))
+            return Result.Failure(Error.Validation("Tenant.NamesRequired", "Razão social e nome fantasia são obrigatórios."));
+
+        LegalName = legalName.Trim();
+        TradeName = tradeName.Trim();
+        Address = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
+        ContactPhone = string.IsNullOrWhiteSpace(contactPhone) ? null : contactPhone.Trim();
+        ContactEmail = string.IsNullOrWhiteSpace(contactEmail) ? null : contactEmail.Trim().ToLowerInvariant();
+        return Result.Success();
     }
 
     public void Suspend() => Status = TenantStatus.Suspended;

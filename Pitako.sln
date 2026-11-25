@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.MasterPanel.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.MasterPanel.Infrastructure", "src\Modules\MasterPanel\Pitako.Modules.MasterPanel.Infrastructure\Pitako.Modules.MasterPanel.Infrastructure.csproj", "{C7930C9E-8BD2-42EB-A31C-D4857D91E2A2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Tenants.Application", "src\Modules\Tenants\Pitako.Modules.Tenants.Application\Pitako.Modules.Tenants.Application.csproj", "{0C5EF30F-CBD7-4B95-8108-DC9204D180C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -110,6 +112,10 @@ Global
 		{C7930C9E-8BD2-42EB-A31C-D4857D91E2A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C7930C9E-8BD2-42EB-A31C-D4857D91E2A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C7930C9E-8BD2-42EB-A31C-D4857D91E2A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C5EF30F-CBD7-4B95-8108-DC9204D180C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C5EF30F-CBD7-4B95-8108-DC9204D180C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C5EF30F-CBD7-4B95-8108-DC9204D180C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C5EF30F-CBD7-4B95-8108-DC9204D180C9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
@@ -131,5 +137,6 @@ Global
 		{65E097A4-1F81-4A93-B7A3-71D3AB6A9A23} = {8C494C98-C404-4925-9341-E95271DFA27A}
 		{555B4586-1FA8-4EC8-927C-0E20C4FE0446} = {8C494C98-C404-4925-9341-E95271DFA27A}
 		{C7930C9E-8BD2-42EB-A31C-D4857D91E2A2} = {8C494C98-C404-4925-9341-E95271DFA27A}
+		{0C5EF30F-CBD7-4B95-8108-DC9204D180C9} = {5071452D-58A6-410B-869C-AB060709C6C2}
 	EndGlobalSection
 EndGlobal

@@ -23,11 +23,62 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Pitako.Modules.Tenants.Domain.StoreBanner", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("image_url");
+
+                    b.Property<bool>("IsDraft")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_draft");
+
+                    b.Property<string>("TargetUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("target_url");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("title");
+
+                    b.Property<Guid>("VisualIdentityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visual_identity_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VisualIdentityId", "IsDraft", "DisplayOrder");
+
+                    b.ToTable("store_banners", "tenants");
+                });
+
             modelBuilder.Entity("Pitako.Modules.Tenants.Domain.StoreUnit", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(350)
+                        .HasColumnType("character varying(350)")
+                        .HasColumnName("address");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -53,9 +104,20 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasColumnType("character varying(160)")
                         .HasColumnName("name");
 
+                    b.Property<string>("Phone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phone");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("time_zone_id");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -69,11 +131,132 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                     b.ToTable("store_units", "tenants");
                 });
 
+            modelBuilder.Entity("Pitako.Modules.Tenants.Domain.StoreVisualIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DraftAccentColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("draft_accent_color_hex");
+
+                    b.Property<string>("DraftCoverImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("draft_cover_image_url");
+
+                    b.Property<string>("DraftLogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("draft_logo_url");
+
+                    b.Property<string>("DraftMenuLayoutMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("draft_menu_layout_mode");
+
+                    b.Property<string>("DraftPrimaryColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("draft_primary_color_hex");
+
+                    b.Property<string>("DraftSecondaryColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("draft_secondary_color_hex");
+
+                    b.Property<string>("DraftSlogan")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("draft_slogan");
+
+                    b.Property<bool>("HasUnpublishedChanges")
+                        .HasColumnType("boolean")
+                        .HasColumnName("has_unpublished_changes");
+
+                    b.Property<string>("PublishedAccentColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("published_accent_color_hex");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at_utc");
+
+                    b.Property<string>("PublishedCoverImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("published_cover_image_url");
+
+                    b.Property<string>("PublishedLogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("published_logo_url");
+
+                    b.Property<string>("PublishedMenuLayoutMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("published_menu_layout_mode");
+
+                    b.Property<string>("PublishedPrimaryColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("published_primary_color_hex");
+
+                    b.Property<string>("PublishedSecondaryColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("published_secondary_color_hex");
+
+                    b.Property<string>("PublishedSlogan")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("published_slogan");
+
+                    b.Property<int>("PublishedVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("published_version");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique();
+
+                    b.ToTable("store_visual_identities", "tenants");
+                });
+
             modelBuilder.Entity("Pitako.Modules.Tenants.Domain.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(350)
+                        .HasColumnType("character varying(350)")
+                        .HasColumnName("address");
 
                     b.Property<string>("Cnpj")
                         .IsRequired()
@@ -81,9 +264,23 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasColumnType("character varying(14)")
                         .HasColumnName("cnpj");
 
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("contact_email");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("contact_phone");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
+
+                    b.Property<Guid?>("CustomerAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_account_id");
 
                     b.Property<string>("LegalName")
                         .IsRequired()
@@ -122,10 +319,26 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                     b.HasIndex("Cnpj")
                         .IsUnique();
 
+                    b.HasIndex("CustomerAccountId");
+
                     b.HasIndex("Slug")
                         .IsUnique();
 
                     b.ToTable("tenants", "tenants");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Tenants.Domain.StoreBanner", b =>
+                {
+                    b.HasOne("Pitako.Modules.Tenants.Domain.StoreVisualIdentity", null)
+                        .WithMany("Banners")
+                        .HasForeignKey("VisualIdentityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Tenants.Domain.StoreVisualIdentity", b =>
+                {
+                    b.Navigation("Banners");
                 });
 #pragma warning restore 612, 618
         }

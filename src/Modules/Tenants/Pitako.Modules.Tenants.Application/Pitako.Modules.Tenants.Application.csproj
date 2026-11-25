@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Pitako.Modules.Tenants.Application</RootNamespace>
+    <AssemblyName>Pitako.Modules.Tenants.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\MasterPanel\Pitako.Modules.MasterPanel.Application\Pitako.Modules.MasterPanel.Application.csproj" />
+    <ProjectReference Include="..\..\Security\Pitako.Modules.Security.Domain\Pitako.Modules.Security.Domain.csproj" />
+    <ProjectReference Include="..\Pitako.Modules.Tenants.Domain\Pitako.Modules.Tenants.Domain.csproj" />
+  </ItemGroup>
+</Project>
