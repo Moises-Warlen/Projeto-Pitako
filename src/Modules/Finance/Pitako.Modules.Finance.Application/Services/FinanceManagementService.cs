@@ -210,7 +210,7 @@ public sealed class FinanceManagementService
                 config.Id,
                 config.Provider,
                 request.OrderOrSaleReference,
-                $"FAILED-{Guid.NewGuid():N}"[..20],
+                $"ERRX-{Guid.NewGuid():N}"[..12] + "Z" + Guid.NewGuid().ToString("N")[..7],
                 null,
                 request.CardBrandOrPix,
                 last4Res.Value,

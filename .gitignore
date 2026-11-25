@@ -33,6 +33,7 @@ logs/
 uploads/
 backups/
 *.log
+*.db
 
 # OS
 .DS_Store

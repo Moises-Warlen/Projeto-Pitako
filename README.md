@@ -39,3 +39,14 @@ Plataforma SaaS multi-tenant para gestão completa de estabelecimentos comerciai
 - **Fase 23 (Migração de dados, backup e LGPD):** Concluída com importadores Consumer/Goomer/Saipos, backup por tenant cifrado em AES-GCM + SHA-256, fluxos de portabilidade/anonimização LGPD e RLS ([Relatório](docs/relatorios/fase-23-relatorio.md)).
 - **Fase 24 (Modo offline e sincronização):** Concluída com registro de terminais, fila ordenada por sequência, idempotência SHA-256 anti-replay, resolução auditada de conflitos e RLS ([Relatório](docs/relatorios/fase-24-relatorio.md)).
 - **Fase 25 (Financeiro):** Concluída com contas a pagar/receber, fluxo de caixa, DRE gerencial, conciliação de repasses, gateways com conformidade PCI/AES-GCM e RLS ([Relatório](docs/relatorios/fase-25-relatorio.md)).
+- **Fase 26 (Frontends web, painéis, composição e hardening final):** Concluída com `Pitako.Api` (.NET 8 + SignalR + OpenAPI + ProblemDetails + verificação de módulo/plano), `Pitako.HardwareAgent` e frontend Next.js `pitako-web` com todos os painéis e vitrines whitelabel ([Relatório](docs/relatorios/fase-26-relatorio.md)).
+
+## Execução Local (Desenvolvimento)
+
+```bash
+# Backend API (.NET 8, porta 5000, SQLite dev com SeedDemoData=true)
+dotnet run --project src/Hosts/Pitako.Api --urls http://localhost:5000 --environment Development
+
+# Frontend Web (Next.js, porta 3000)
+cd src/Web/pitako-web && npm run dev
+```

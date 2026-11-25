@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\BuildingBlocks\Pitako.SharedKernel\Pitako.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\Pitako.MultiTenancy\Pitako.MultiTenancy.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\Pitako.Persistence\Pitako.Persistence.csproj" />
+    <ProjectReference Include="..\..\Modules\Security\Pitako.Modules.Security.Infrastructure\Pitako.Modules.Security.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\MasterPanel\Pitako.Modules.MasterPanel.Infrastructure\Pitako.Modules.MasterPanel.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Tenants\Pitako.Modules.Tenants.Infrastructure\Pitako.Modules.Tenants.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Catalog\Pitako.Modules.Catalog.Infrastructure\Pitako.Modules.Catalog.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Inventory\Pitako.Modules.Inventory.Infrastructure\Pitako.Modules.Inventory.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\AcaiBuilder\Pitako.Modules.AcaiBuilder.Infrastructure\Pitako.Modules.AcaiBuilder.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Weighing\Pitako.Modules.Weighing.Infrastructure\Pitako.Modules.Weighing.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Coupons\Pitako.Modules.Coupons.Infrastructure\Pitako.Modules.Coupons.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Orders\Pitako.Modules.Orders.Infrastructure\Pitako.Modules.Orders.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\DeliveryLogistics\Pitako.Modules.DeliveryLogistics.Infrastructure\Pitako.Modules.DeliveryLogistics.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\PdvCashier\Pitako.Modules.PdvCashier.Infrastructure\Pitako.Modules.PdvCashier.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\DiningHall\Pitako.Modules.DiningHall.Infrastructure\Pitako.Modules.DiningHall.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Printing\Pitako.Modules.Printing.Infrastructure\Pitako.Modules.Printing.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Marketplaces\Pitako.Modules.Marketplaces.Infrastructure\Pitako.Modules.Marketplaces.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\WhatsAppSupport\Pitako.Modules.WhatsAppSupport.Infrastructure\Pitako.Modules.WhatsAppSupport.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Reports\Pitako.Modules.Reports.Infrastructure\Pitako.Modules.Reports.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\DataLifecycle\Pitako.Modules.DataLifecycle.Infrastructure\Pitako.Modules.DataLifecycle.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\OfflineSync\Pitako.Modules.OfflineSync.Infrastructure\Pitako.Modules.OfflineSync.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Finance\Pitako.Modules.Finance.Infrastructure\Pitako.Modules.Finance.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
