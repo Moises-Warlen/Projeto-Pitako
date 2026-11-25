@@ -1,0 +1,22 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Design;
+using Pitako.MultiTenancy;
+using Pitako.Persistence;
+using Pitako.SharedKernel.Time;
+
+namespace Pitako.Modules.DataLifecycle.Infrastructure.Persistence;
+
+public sealed class DataLifecycleDesignTimeDbContextFactory : IDesignTimeDbContextFactory<DataLifecycleDbContext>
+{
+    public DataLifecycleDbContext CreateDbContext(string[] args)
+    {
+        var cs = Environment.GetEnvironmentVariable("PITAKO_POSTGRES_CONNECTION")
+                 ?? "Host=localhost;Port=5432;Database=pitako_design;Username=postgres;Password=postgres";
+
+        var options = new DbContextOptionsBuilder<DataLifecycleDbContext>()
+            .UseNpgsql(cs, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", DataLifecycleDbContext.SchemaName))
+            .Options;
+
+        return new DataLifecycleDbContext(options, new TenantContext(), new SystemClock());
+    }
+}

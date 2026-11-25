@@ -4,6 +4,8 @@ using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
 using Pitako.Modules.Coupons.Application.Services;
 using Pitako.Modules.Coupons.Domain;
+using Pitako.Modules.DataLifecycle.Application.Services;
+using Pitako.Modules.DataLifecycle.Domain;
 using Pitako.Modules.DeliveryLogistics.Application.Services;
 using Pitako.Modules.DeliveryLogistics.Domain;
 using Pitako.Modules.DiningHall.Application.Services;
@@ -83,7 +85,9 @@ public sealed class ArchitectureTests
             typeof(WhatsAppChannelConfig).Assembly,
             typeof(WhatsAppSupportService).Assembly,
             typeof(ReportExportAuditLog).Assembly,
-            typeof(ReportingManagementService).Assembly
+            typeof(ReportingManagementService).Assembly,
+            typeof(DataMigrationJob).Assembly,
+            typeof(DataLifecycleService).Assembly
         };
 
         foreach (var assembly in assemblies)
