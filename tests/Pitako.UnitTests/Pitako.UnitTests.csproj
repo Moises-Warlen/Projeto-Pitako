@@ -45,5 +45,6 @@
     <ProjectReference Include="..\..\src\Modules\Reports\Pitako.Modules.Reports.Application\Pitako.Modules.Reports.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\DataLifecycle\Pitako.Modules.DataLifecycle.Application\Pitako.Modules.DataLifecycle.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\OfflineSync\Pitako.Modules.OfflineSync.Application\Pitako.Modules.OfflineSync.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Finance\Pitako.Modules.Finance.Application\Pitako.Modules.Finance.Application.csproj" />
   </ItemGroup>
 </Project>

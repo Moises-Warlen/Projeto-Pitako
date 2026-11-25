@@ -167,6 +167,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.OfflineSync.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.OfflineSync.Infrastructure", "src\Modules\OfflineSync\Pitako.Modules.OfflineSync.Infrastructure\Pitako.Modules.OfflineSync.Infrastructure.csproj", "{7B29C6BA-2DD2-48C1-977E-F1A3100211CB}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Finance", "Finance", "{76D26B4C-199C-402E-8E56-5D8FFB24E179}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Finance.Domain", "src\Modules\Finance\Pitako.Modules.Finance.Domain\Pitako.Modules.Finance.Domain.csproj", "{C98B94BB-F75F-4DBC-A180-D215118B4809}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Finance.Application", "src\Modules\Finance\Pitako.Modules.Finance.Application\Pitako.Modules.Finance.Application.csproj", "{A1EE878A-03FF-4F8C-8349-5D8F898BA69F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pitako.Modules.Finance.Infrastructure", "src\Modules\Finance\Pitako.Modules.Finance.Infrastructure\Pitako.Modules.Finance.Infrastructure.csproj", "{66FCD41A-CE7D-4F82-9A05-F78A853CC179}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -416,6 +424,18 @@ Global
 		{7B29C6BA-2DD2-48C1-977E-F1A3100211CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B29C6BA-2DD2-48C1-977E-F1A3100211CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B29C6BA-2DD2-48C1-977E-F1A3100211CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C98B94BB-F75F-4DBC-A180-D215118B4809}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C98B94BB-F75F-4DBC-A180-D215118B4809}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C98B94BB-F75F-4DBC-A180-D215118B4809}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C98B94BB-F75F-4DBC-A180-D215118B4809}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1EE878A-03FF-4F8C-8349-5D8F898BA69F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1EE878A-03FF-4F8C-8349-5D8F898BA69F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1EE878A-03FF-4F8C-8349-5D8F898BA69F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1EE878A-03FF-4F8C-8349-5D8F898BA69F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{66FCD41A-CE7D-4F82-9A05-F78A853CC179}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{66FCD41A-CE7D-4F82-9A05-F78A853CC179}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{66FCD41A-CE7D-4F82-9A05-F78A853CC179}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{66FCD41A-CE7D-4F82-9A05-F78A853CC179}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{250686B8-0919-4579-BA74-3ABA9A4A6AE6} = {33C03C42-0E80-46AF-94FD-1F31312CDABD}
@@ -498,5 +518,9 @@ Global
 		{764B49D1-8409-4895-8C19-6BA8547944F2} = {E88A95A2-04F3-4B17-B57C-42DFDB316A4D}
 		{189D10B2-B66D-41A5-BA80-B131F8AA19C0} = {E88A95A2-04F3-4B17-B57C-42DFDB316A4D}
 		{7B29C6BA-2DD2-48C1-977E-F1A3100211CB} = {E88A95A2-04F3-4B17-B57C-42DFDB316A4D}
+		{76D26B4C-199C-402E-8E56-5D8FFB24E179} = {857C3F19-1BE8-43E0-B21E-27C33584B25C}
+		{C98B94BB-F75F-4DBC-A180-D215118B4809} = {76D26B4C-199C-402E-8E56-5D8FFB24E179}
+		{A1EE878A-03FF-4F8C-8349-5D8F898BA69F} = {76D26B4C-199C-402E-8E56-5D8FFB24E179}
+		{66FCD41A-CE7D-4F82-9A05-F78A853CC179} = {76D26B4C-199C-402E-8E56-5D8FFB24E179}
 	EndGlobalSection
 EndGlobal

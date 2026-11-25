@@ -10,6 +10,8 @@ using Pitako.Modules.DeliveryLogistics.Application.Services;
 using Pitako.Modules.DeliveryLogistics.Domain;
 using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.DiningHall.Domain;
+using Pitako.Modules.Finance.Application.Services;
+using Pitako.Modules.Finance.Domain;
 using Pitako.Modules.Inventory.Application.Services;
 using Pitako.Modules.Inventory.Domain;
 using Pitako.Modules.Marketplaces.Application.Services;
@@ -91,7 +93,9 @@ public sealed class ArchitectureTests
             typeof(DataMigrationJob).Assembly,
             typeof(DataLifecycleService).Assembly,
             typeof(OfflineTerminalRegistration).Assembly,
-            typeof(OfflineSynchronizationService).Assembly
+            typeof(OfflineSynchronizationService).Assembly,
+            typeof(FinancialEntry).Assembly,
+            typeof(FinanceManagementService).Assembly
         };
 
         foreach (var assembly in assemblies)
