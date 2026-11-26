@@ -50,6 +50,28 @@ public sealed class SignalRRealtimeNotifiers(IHubContext<PitakoRealtimeHub> hubC
             .SendAsync("whatsappInboxUpdated", notification, cancellationToken);
 }
 
+public sealed class CatalogSupplyCostLookupAdapter(ISupplyItemRepository supplyRepo) : ICatalogSupplyCostLookup
+{
+    public async Task<IReadOnlyDictionary<Guid, CatalogSupplyCostInfo>> GetSupplyCostsAsync(
+        IEnumerable<Guid> supplyIds,
+        CancellationToken cancellationToken = default)
+    {
+        var supplies = await supplyRepo.FindLookupByIdsAsync(supplyIds, cancellationToken);
+        var map = new Dictionary<Guid, CatalogSupplyCostInfo>(supplies.Count);
+        foreach (var (id, s) in supplies)
+        {
+            var unitCost = s.CalculateCostForUsage(1m, s.ContentUnitCode);
+            map[id] = new CatalogSupplyCostInfo(
+                id,
+                s.Name,
+                s.ContentUnitCode,
+                unitCost.IsSuccess ? unitCost.Value : 0m,
+                s.DefaultLossPercent);
+        }
+        return map;
+    }
+}
+
 public sealed class TenantStoreBrandingAndPrintAdapter(
     ITenantRepository tenantRepo,
     IStoreVisualIdentityRepository identityRepo) :

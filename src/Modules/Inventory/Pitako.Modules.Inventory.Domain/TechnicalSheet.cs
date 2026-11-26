@@ -20,7 +20,8 @@ public sealed class TechnicalSheetIngredient : Entity<Guid>
         string supplyItemNameSnapshot,
         decimal quantity,
         string unitCode,
-        decimal calculatedCost) : base(id)
+        decimal calculatedCost,
+        decimal lossPercent = 0m) : base(id)
     {
         TenantId = tenantId;
         TechnicalSheetId = technicalSheetId;
@@ -28,6 +29,7 @@ public sealed class TechnicalSheetIngredient : Entity<Guid>
         SupplyItemNameSnapshot = supplyItemNameSnapshot;
         Quantity = quantity;
         UnitCode = unitCode;
+        LossPercent = lossPercent;
         CalculatedCost = calculatedCost;
     }
 
@@ -37,7 +39,10 @@ public sealed class TechnicalSheetIngredient : Entity<Guid>
     public string SupplyItemNameSnapshot { get; private set; }
     public decimal Quantity { get; private set; }
     public string UnitCode { get; private set; }
+    public decimal LossPercent { get; private set; }
     public decimal CalculatedCost { get; private set; }
+
+    public decimal GrossQuantity => decimal.Round(Quantity * (1m + (LossPercent / 100m)), 4, MidpointRounding.ToEven);
 
     internal void UpdateCalculatedCost(string supplyName, decimal cost)
     {
@@ -128,7 +133,7 @@ public sealed class TechnicalSheetCostSnapshot : Entity<Guid>
     public DateTimeOffset RecordedAtUtc { get; private set; }
 }
 
-public sealed record IngredientInput(Guid SupplyItemId, decimal Quantity, string UnitCode);
+public sealed record IngredientInput(Guid SupplyItemId, decimal Quantity, string UnitCode, decimal LossPercent = 0m);
 public sealed record PackagingInput(Guid? SupplyItemId, string Description, decimal Quantity, string UnitCode, decimal? ManualTotalCost = null);
 
 /// <summary>
@@ -226,6 +231,21 @@ public sealed class TechnicalSheet : TenantScopedAggregateRoot
         return Result.Success(sheet);
     }
 
+    public Result UpdateMetadata(string name, decimal yieldQuantity, string yieldUnitCode, Guid? productId, string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("TechnicalSheet.NameRequired", "Nome da ficha técnica é obrigatório."));
+        if (yieldQuantity <= 0m)
+            return Result.Failure(Error.Validation("TechnicalSheet.InvalidYield", "Rendimento deve ser positivo."));
+
+        Name = name.Trim();
+        YieldQuantity = yieldQuantity;
+        YieldUnitCode = UnitConverter.NormalizeCode(yieldUnitCode);
+        ProductId = productId == Guid.Empty ? null : productId;
+        Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        return Result.Success();
+    }
+
     public Result ReplaceCompositionAndRecalculate(
         IEnumerable<IngredientInput> ingredients,
         IEnumerable<PackagingInput> packagings,
@@ -243,11 +263,15 @@ public sealed class TechnicalSheet : TenantScopedAggregateRoot
         {
             if (ing.Quantity <= 0m)
                 return Result.Failure(Error.Validation("TechnicalSheet.InvalidIngredientQty", "Quantidade do ingrediente deve ser positiva."));
+            if (ing.LossPercent < 0m || ing.LossPercent >= 100m)
+                return Result.Failure(Error.Validation("TechnicalSheet.InvalidLossPercent", "Percentual de perda deve estar entre 0 e 99%."));
 
             if (!supplyLookup.TryGetValue(ing.SupplyItemId, out var supply) || supply.TenantId != TenantId)
                 return Result.Failure(Error.NotFound("TechnicalSheet.SupplyNotFound", "Insumo não encontrado neste estabelecimento."));
 
-            var costRes = supply.CalculateCostForUsage(ing.Quantity, ing.UnitCode, customUnits);
+            var effLoss = ing.LossPercent > 0m ? ing.LossPercent : supply.DefaultLossPercent;
+            var grossQty = decimal.Round(ing.Quantity * (1m + (effLoss / 100m)), 4, MidpointRounding.ToEven);
+            var costRes = supply.CalculateCostForUsage(grossQty, ing.UnitCode, customUnits);
             if (costRes.IsFailure)
                 return Result.Failure(costRes.Error);
 
@@ -259,7 +283,8 @@ public sealed class TechnicalSheet : TenantScopedAggregateRoot
                 supply.Name,
                 ing.Quantity,
                 UnitConverter.NormalizeCode(ing.UnitCode),
-                costRes.Value));
+                costRes.Value,
+                effLoss));
         }
 
         var newPackagings = new List<TechnicalSheetPackaging>();
@@ -319,7 +344,7 @@ public sealed class TechnicalSheet : TenantScopedAggregateRoot
             if (!supplyLookup.TryGetValue(ing.SupplyItemId, out var supply))
                 return Result.Failure(Error.NotFound("TechnicalSheet.SupplyNotFound", $"Insumo '{ing.SupplyItemNameSnapshot}' não encontrado."));
 
-            var costRes = supply.CalculateCostForUsage(ing.Quantity, ing.UnitCode, customUnits);
+            var costRes = supply.CalculateCostForUsage(ing.GrossQuantity, ing.UnitCode, customUnits);
             if (costRes.IsFailure)
                 return Result.Failure(costRes.Error);
 

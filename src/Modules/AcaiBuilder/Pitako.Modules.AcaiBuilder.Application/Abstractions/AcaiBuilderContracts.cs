@@ -8,14 +8,17 @@ public interface IAcaiCupSizeRepository
     Task<AcaiCupSize?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AcaiCupSize>> ListAsync(bool includePaused, CancellationToken cancellationToken = default);
     Task AddAsync(AcaiCupSize cupSize, CancellationToken cancellationToken = default);
+    void Remove(AcaiCupSize cupSize);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IAcaiBaseFlavorRepository
 {
+    Task<AcaiBaseFlavor?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, AcaiBaseFlavor>> FindLookupByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AcaiBaseFlavor>> ListAsync(bool includePaused, CancellationToken cancellationToken = default);
     Task AddAsync(AcaiBaseFlavor flavor, CancellationToken cancellationToken = default);
+    void Remove(AcaiBaseFlavor flavor);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -25,6 +28,7 @@ public interface IAcaiFreeToppingRepository
     Task<IReadOnlyDictionary<Guid, AcaiFreeTopping>> FindLookupByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AcaiFreeTopping>> ListAsync(bool includePaused, CancellationToken cancellationToken = default);
     Task AddAsync(AcaiFreeTopping topping, CancellationToken cancellationToken = default);
+    void Remove(AcaiFreeTopping topping);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -34,6 +38,7 @@ public interface IAcaiPaidAddonRepository
     Task<IReadOnlyDictionary<Guid, AcaiPaidAddon>> FindLookupByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AcaiPaidAddon>> ListAsync(bool includePaused, CancellationToken cancellationToken = default);
     Task AddAsync(AcaiPaidAddon addon, CancellationToken cancellationToken = default);
+    void Remove(AcaiPaidAddon addon);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

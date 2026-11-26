@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pitako.Modules.Coupons.Application.Abstractions;
 using Pitako.Modules.Coupons.Domain;
 using Pitako.Modules.DeliveryLogistics.Application.Abstractions;
@@ -27,7 +28,10 @@ public sealed record CheckoutCartRequest(
     string? Neighborhood = null,
     string? ZipCode = null,
     decimal? PrecomputedDistanceKm = null,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? PaymentMethod = null,
+    bool LgpdConsentAccepted = true,
+    bool AllowFallbackZeroFreightIfNoPolicy = false);
 
 public sealed record KanbanBoardView(
     IReadOnlyList<Order> Received,
@@ -122,12 +126,17 @@ public sealed class OrderManagementService
                 cancellationToken);
 
             if (freightRes.IsFailure)
-                return Result.Failure<Order>(freightRes.Error);
-
-            baseDeliveryFee = freightRes.Value.BaseDeliveryFee;
-            autoDeliveryDiscount = freightRes.Value.IsFreeShippingApplied
-                ? freightRes.Value.BaseDeliveryFee
-                : Money.Zero(currency);
+            {
+                if (!request.AllowFallbackZeroFreightIfNoPolicy || freightRes.Error.Code != "Delivery.PolicyNotConfigured")
+                    return Result.Failure<Order>(freightRes.Error);
+            }
+            else
+            {
+                baseDeliveryFee = freightRes.Value.BaseDeliveryFee;
+                autoDeliveryDiscount = freightRes.Value.IsFreeShippingApplied
+                    ? freightRes.Value.BaseDeliveryFee
+                    : Money.Zero(currency);
+            }
         }
 
         var netDeliveryBeforeCoupon = Money.Create(
@@ -178,18 +187,17 @@ public sealed class OrderManagementService
             request.StoreUnitId,
             actor.Id,
             normalizedKey,
-            utcNow);
+            utcNow,
+            request.PaymentMethod,
+            request.LgpdConsentAccepted);
 
         if (orderRes.IsFailure)
             return orderRes;
 
         var order = orderRes.Value;
 
-        // Baixa automática de estoque configurável por ficha técnica antes de efetivar pedido
-        var stockLines = order.Items
-            .Where(i => i.ProductId.HasValue)
-            .Select(i => new OrderStockLineInput(i.ProductId!.Value, i.Quantity, "unidade"))
-            .ToList();
+        // Baixa automática de estoque configurável por ficha técnica + ingredientes personalizados (sem duplicidade)
+        var stockLines = BuildOrderStockLines(order.Items);
 
         if (stockLines.Count > 0)
         {
@@ -327,5 +335,72 @@ public sealed class OrderManagementService
             return Result.Failure<Guid>(Error.Forbidden("Orders.Forbidden", "Permissão insuficiente para operar pedidos."));
 
         return Result.Success(currentTenantId);
+    }
+
+    private static List<OrderStockLineInput> BuildOrderStockLines(IEnumerable<OrderItem> items)
+    {
+        var lines = new List<OrderStockLineInput>();
+        foreach (var item in items)
+        {
+            var customIngredients = new List<OrderCustomIngredientInput>();
+            var expandedCombo = false;
+
+            if (!string.IsNullOrWhiteSpace(item.SelectionsPayloadJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(item.SelectionsPayloadJson);
+                    if (doc.RootElement.TryGetProperty("customIngredients", out var customEl) && customEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var ci in customEl.EnumerateArray())
+                        {
+                            if (ci.TryGetProperty("SupplyItemId", out var sidEl) || ci.TryGetProperty("supplyItemId", out sidEl))
+                            {
+                                if (Guid.TryParse(sidEl.GetString(), out var supplyId) && supplyId != Guid.Empty)
+                                {
+                                    var qty = ci.TryGetProperty("GrossQuantity", out var qEl) ? qEl.GetDecimal()
+                                        : ci.TryGetProperty("grossQuantity", out var qEl2) ? qEl2.GetDecimal() : 0m;
+                                    var unit = ci.TryGetProperty("UnitCode", out var uEl) ? (uEl.GetString() ?? "unidade")
+                                        : ci.TryGetProperty("unitCode", out var uEl2) ? (uEl2.GetString() ?? "unidade") : "unidade";
+                                    var name = ci.TryGetProperty("IngredientName", out var nEl) ? (nEl.GetString() ?? "Adicional")
+                                        : ci.TryGetProperty("ingredientName", out var nEl2) ? (nEl2.GetString() ?? "Adicional") : "Adicional";
+                                    if (qty > 0m)
+                                        customIngredients.Add(new OrderCustomIngredientInput(supplyId, qty, unit, name));
+                                }
+                            }
+                        }
+                    }
+
+                    if (item.ItemKind == CartItemKind.Combo &&
+                        doc.RootElement.TryGetProperty("items", out var comboItemsEl) &&
+                        comboItemsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var ci in comboItemsEl.EnumerateArray())
+                        {
+                            if (ci.TryGetProperty("productId", out var pidEl) && Guid.TryParse(pidEl.GetString(), out var pid))
+                            {
+                                var cQty = ci.TryGetProperty("qty", out var qEl) ? qEl.GetInt32() : 1;
+                                lines.Add(new OrderStockLineInput(pid, item.Quantity * Math.Max(1, cQty), "unidade"));
+                                expandedCombo = true;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Payload JSON legado/simples sem customIngredients
+                }
+            }
+
+            if (!expandedCombo && (item.ProductId.HasValue || customIngredients.Count > 0))
+            {
+                lines.Add(new OrderStockLineInput(
+                    item.ProductId ?? Guid.Empty,
+                    item.Quantity,
+                    "unidade",
+                    customIngredients.Count > 0 ? customIngredients : null));
+            }
+        }
+        return lines;
     }
 }

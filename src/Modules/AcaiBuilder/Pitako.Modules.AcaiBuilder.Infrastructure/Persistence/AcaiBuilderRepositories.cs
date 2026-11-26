@@ -20,12 +20,17 @@ public sealed class EfAcaiCupSizeRepository(AcaiBuilderDbContext db) : IAcaiCupS
     public async Task AddAsync(AcaiCupSize cupSize, CancellationToken cancellationToken = default) =>
         await db.CupSizes.AddAsync(cupSize, cancellationToken);
 
+    public void Remove(AcaiCupSize cupSize) => db.CupSizes.Remove(cupSize);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
 
 public sealed class EfAcaiBaseFlavorRepository(AcaiBuilderDbContext db) : IAcaiBaseFlavorRepository
 {
+    public Task<AcaiBaseFlavor?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.BaseFlavors.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+
     public async Task<IReadOnlyDictionary<Guid, AcaiBaseFlavor>> FindLookupByIdsAsync(
         IEnumerable<Guid> ids,
         CancellationToken cancellationToken = default)
@@ -51,6 +56,8 @@ public sealed class EfAcaiBaseFlavorRepository(AcaiBuilderDbContext db) : IAcaiB
 
     public async Task AddAsync(AcaiBaseFlavor flavor, CancellationToken cancellationToken = default) =>
         await db.BaseFlavors.AddAsync(flavor, cancellationToken);
+
+    public void Remove(AcaiBaseFlavor flavor) => db.BaseFlavors.Remove(flavor);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
@@ -87,6 +94,8 @@ public sealed class EfAcaiFreeToppingRepository(AcaiBuilderDbContext db) : IAcai
     public async Task AddAsync(AcaiFreeTopping topping, CancellationToken cancellationToken = default) =>
         await db.FreeToppings.AddAsync(topping, cancellationToken);
 
+    public void Remove(AcaiFreeTopping topping) => db.FreeToppings.Remove(topping);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -121,6 +130,8 @@ public sealed class EfAcaiPaidAddonRepository(AcaiBuilderDbContext db) : IAcaiPa
 
     public async Task AddAsync(AcaiPaidAddon addon, CancellationToken cancellationToken = default) =>
         await db.PaidAddons.AddAsync(addon, cancellationToken);
+
+    public void Remove(AcaiPaidAddon addon) => db.PaidAddons.Remove(addon);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

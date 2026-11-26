@@ -93,6 +93,7 @@ internal sealed class SupplyItemConfiguration : IEntityTypeConfiguration<SupplyI
         builder.Property(x => x.ContentUnitCode).HasColumnName("content_unit_code").HasMaxLength(32).IsRequired();
         builder.Property(x => x.ContentQuantityPerPackage).HasColumnName("content_quantity_per_package").HasPrecision(18, 4).IsRequired();
         builder.Property(x => x.SupplierName).HasColumnName("supplier_name").HasMaxLength(160);
+        builder.Property(x => x.DefaultLossPercent).HasColumnName("default_loss_percent").HasPrecision(5, 2).IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
@@ -187,6 +188,7 @@ internal sealed class TechnicalSheetIngredientConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SupplyItemNameSnapshot).HasColumnName("supply_item_name_snapshot").HasMaxLength(180).IsRequired();
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 4).IsRequired();
         builder.Property(x => x.UnitCode).HasColumnName("unit_code").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.LossPercent).HasColumnName("loss_percent").HasPrecision(5, 2).IsRequired();
         builder.Property(x => x.CalculatedCost).HasColumnName("calculated_cost").HasPrecision(18, 4).IsRequired();
         builder.HasIndex(x => new { x.TenantId, x.SupplyItemId });
     }

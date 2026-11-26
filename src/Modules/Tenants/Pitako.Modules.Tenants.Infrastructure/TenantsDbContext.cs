@@ -115,6 +115,10 @@ internal sealed class StoreVisualIdentityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.DraftSecondaryColorHex).HasColumnName("draft_secondary_color_hex").HasMaxLength(7).IsRequired();
         builder.Property(x => x.DraftAccentColorHex).HasColumnName("draft_accent_color_hex").HasMaxLength(7).IsRequired();
         builder.Property(x => x.DraftMenuLayoutMode).HasColumnName("draft_menu_layout_mode").HasMaxLength(24).IsRequired();
+        builder.Property(x => x.DraftOperatingHoursJson).HasColumnName("draft_operating_hours_json").HasMaxLength(2500);
+        builder.Property(x => x.DraftAnnouncementText).HasColumnName("draft_announcement_text").HasMaxLength(350);
+        builder.Property(x => x.DraftWhatsAppNumber).HasColumnName("draft_whatsapp_number").HasMaxLength(32);
+        builder.Property(x => x.DraftInstagramHandle).HasColumnName("draft_instagram_handle").HasMaxLength(80);
 
         builder.Property(x => x.PublishedLogoUrl).HasColumnName("published_logo_url").HasMaxLength(500);
         builder.Property(x => x.PublishedCoverImageUrl).HasColumnName("published_cover_image_url").HasMaxLength(500);
@@ -123,6 +127,12 @@ internal sealed class StoreVisualIdentityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.PublishedSecondaryColorHex).HasColumnName("published_secondary_color_hex").HasMaxLength(7).IsRequired();
         builder.Property(x => x.PublishedAccentColorHex).HasColumnName("published_accent_color_hex").HasMaxLength(7).IsRequired();
         builder.Property(x => x.PublishedMenuLayoutMode).HasColumnName("published_menu_layout_mode").HasMaxLength(24).IsRequired();
+        builder.Property(x => x.PublishedOperatingHoursJson).HasColumnName("published_operating_hours_json").HasMaxLength(2500);
+        builder.Property(x => x.PublishedAnnouncementText).HasColumnName("published_announcement_text").HasMaxLength(350);
+        builder.Property(x => x.PublishedWhatsAppNumber).HasColumnName("published_whatsapp_number").HasMaxLength(32);
+        builder.Property(x => x.PublishedInstagramHandle).HasColumnName("published_instagram_handle").HasMaxLength(80);
+        builder.Property(x => x.IsTemporarilyPaused).HasColumnName("is_temporarily_paused").IsRequired();
+        builder.Property(x => x.PauseReason).HasColumnName("pause_reason").HasMaxLength(240);
         builder.Property(x => x.PublishedVersion).HasColumnName("published_version").IsRequired();
         builder.Property(x => x.PublishedAtUtc).HasColumnName("published_at_utc");
         builder.Property(x => x.HasUnpublishedChanges).HasColumnName("has_unpublished_changes").IsRequired();

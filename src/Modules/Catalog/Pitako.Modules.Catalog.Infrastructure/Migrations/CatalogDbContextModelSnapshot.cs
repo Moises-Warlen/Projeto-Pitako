@@ -53,6 +53,16 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("character varying(140)")
                         .HasColumnName("name");
 
+                    b.Property<string>("RuleNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rule_notes");
+
+                    b.Property<string>("SegmentTemplateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("segment_template_code");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -171,6 +181,15 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("CategoryTag")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("category_tag");
+
+                    b.Property<int>("CountingMode")
+                        .HasColumnType("integer")
+                        .HasColumnName("counting_mode");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
@@ -178,6 +197,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
                         .HasColumnName("display_order");
+
+                    b.Property<int>("FreeAllowance")
+                        .HasColumnType("integer")
+                        .HasColumnName("free_allowance");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
@@ -200,6 +223,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasMaxLength(140)
                         .HasColumnType("character varying(140)")
                         .HasColumnName("name");
+
+                    b.Property<int>("SelectionKind")
+                        .HasColumnType("integer")
+                        .HasColumnName("selection_kind");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -226,13 +253,38 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<decimal>("ConsumptionQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("consumption_quantity");
+
+                    b.Property<string>("ConsumptionUnitCode")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("consumption_unit_code");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
                         .HasColumnName("display_order");
 
+                    b.Property<string>("IncompatibleOptionIdsCsv")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("incompatible_option_ids_csv");
+
                     b.Property<bool>("IsAvailable")
                         .HasColumnType("boolean")
                         .HasColumnName("is_available");
+
+                    b.Property<decimal>("LossPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("loss_percent");
 
                     b.Property<int>("MaxQuantity")
                         .HasColumnType("integer")
@@ -247,6 +299,15 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasMaxLength(140)
                         .HasColumnType("character varying(140)")
                         .HasColumnName("name");
+
+                    b.Property<string>("ReplacesLabel")
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("replaces_label");
+
+                    b.Property<Guid?>("SupplyItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supply_item_id");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -267,6 +328,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("AllowsNotes")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allows_notes");
+
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
@@ -274,6 +339,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CustomTemplateKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("custom_template_key");
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
@@ -288,11 +358,27 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_featured");
 
+                    b.Property<bool>("IsNew")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_new");
+
+                    b.Property<bool>("IsRecommended")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_recommended");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(180)
                         .HasColumnType("character varying(180)")
                         .HasColumnName("name");
+
+                    b.Property<int?>("PreparationMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("preparation_minutes");
+
+                    b.Property<int>("PricingStrategy")
+                        .HasColumnType("integer")
+                        .HasColumnName("pricing_strategy");
 
                     b.Property<int>("SaleMode")
                         .HasColumnType("integer")
@@ -306,6 +392,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<string>("TagsCsv")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("tags_csv");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -397,6 +488,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
                         .HasColumnName("display_order");
@@ -404,6 +500,20 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
+
+                    b.Property<int>("MaxFlavors")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_flavors");
+
+                    b.Property<decimal?>("MeasureAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("measure_amount");
+
+                    b.Property<string>("MeasureUnit")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("measure_unit");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -519,6 +629,58 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("promotion_targets", "catalog");
+                });
+
+            modelBuilder.Entity("Pitako.Modules.Catalog.Domain.VariationModifierRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("FreeAllowance")
+                        .HasColumnType("integer")
+                        .HasColumnName("free_allowance");
+
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_hidden");
+
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_required");
+
+                    b.Property<int>("MaxSelections")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_selections");
+
+                    b.Property<int>("MinSelections")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_selections");
+
+                    b.Property<Guid>("ModifierGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("modifier_group_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<Guid?>("ProductVariationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_variation_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("TenantId", "ProductId", "ProductVariationId", "ModifierGroupId")
+                        .IsUnique();
+
+                    b.ToTable("variation_modifier_rules", "catalog");
                 });
 
             modelBuilder.Entity("Pitako.Modules.Catalog.Domain.Combo", b =>
@@ -689,6 +851,15 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pitako.Modules.Catalog.Domain.VariationModifierRule", b =>
+                {
+                    b.HasOne("Pitako.Modules.Catalog.Domain.Product", null)
+                        .WithMany("VariationRules")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pitako.Modules.Catalog.Domain.Combo", b =>
                 {
                     b.Navigation("Items");
@@ -704,6 +875,8 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Navigation("Images");
 
                     b.Navigation("ModifierLinks");
+
+                    b.Navigation("VariationRules");
 
                     b.Navigation("Variations");
                 });

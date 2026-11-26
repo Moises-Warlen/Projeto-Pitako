@@ -15,6 +15,8 @@ public sealed class EfCategoryRepository(CatalogDbContext db) : ICategoryReposit
     public async Task AddAsync(Category category, CancellationToken cancellationToken = default) =>
         await db.Categories.AddAsync(category, cancellationToken);
 
+    public void Remove(Category category) => db.Categories.Remove(category);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -25,7 +27,8 @@ public sealed class EfProductRepository(CatalogDbContext db) : IProductRepositor
         db.Products
             .Include(p => p.Images)
             .Include(p => p.Variations)
-            .Include(p => p.ModifierLinks);
+            .Include(p => p.ModifierLinks)
+            .Include(p => p.VariationRules);
 
     public Task<Product?> FindByIdAsync(Guid productId, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
@@ -62,6 +65,8 @@ public sealed class EfModifierGroupRepository(CatalogDbContext db) : IModifierGr
     public async Task AddAsync(ModifierGroup group, CancellationToken cancellationToken = default) =>
         await db.ModifierGroups.AddAsync(group, cancellationToken);
 
+    public void Remove(ModifierGroup group) => db.ModifierGroups.Remove(group);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -77,6 +82,8 @@ public sealed class EfComboRepository(CatalogDbContext db) : IComboRepository
     public async Task AddAsync(Combo combo, CancellationToken cancellationToken = default) =>
         await db.Combos.AddAsync(combo, cancellationToken);
 
+    public void Remove(Combo combo) => db.Combos.Remove(combo);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -89,8 +96,13 @@ public sealed class EfPromotionRepository(CatalogDbContext db) : IPromotionRepos
     public async Task<IReadOnlyList<Promotion>> ListActiveCandidatesAsync(CancellationToken cancellationToken = default) =>
         await db.Promotions.Include(p => p.Targets).Where(p => p.IsActive).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Promotion>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await db.Promotions.Include(p => p.Targets).OrderByDescending(p => p.StartsAtUtc).ToListAsync(cancellationToken);
+
     public async Task AddAsync(Promotion promotion, CancellationToken cancellationToken = default) =>
         await db.Promotions.AddAsync(promotion, cancellationToken);
+
+    public void Remove(Promotion promotion) => db.Promotions.Remove(promotion);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

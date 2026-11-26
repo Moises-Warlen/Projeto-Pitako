@@ -167,6 +167,127 @@ public sealed class DeliveryPolicyAndFreightService : IDeliveryFreightQuoteServi
         return Result.Success();
     }
 
+    public async Task<Result> ResumeDeliveryAsync(
+        User actor,
+        Guid policyId,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var policy = await _policyRepo.FindByIdAsync(policyId, cancellationToken);
+        if (policy is null)
+            return Result.Failure(Error.NotFound("Delivery.PolicyNotFound", "Política de delivery não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, policy);
+        policy.ResumeDelivery();
+        await _policyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<DeliveryPolicy>> UpdatePolicyAsync(
+        User actor,
+        Guid policyId,
+        double originLatitude,
+        double originLongitude,
+        decimal maxRadiusKm,
+        FreightCalculationMode calculationMode,
+        decimal baseFeeAmount,
+        decimal includedKm = 0m,
+        decimal feePerKmAmount = 0m,
+        int baseEstimatedMinutes = 35,
+        decimal minimumOrderAmount = 0m,
+        decimal? freeShippingThresholdAmount = null,
+        bool isDeliveryEnabled = true,
+        bool allowPickup = true,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<DeliveryPolicy>(guard.Error);
+
+        var policy = await _policyRepo.FindByIdAsync(policyId, cancellationToken);
+        if (policy is null)
+            return Result.Failure<DeliveryPolicy>(Error.NotFound("Delivery.PolicyNotFound", "Política de delivery não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, policy);
+
+        var baseFeeRes = Money.Create(baseFeeAmount);
+        var perKmRes = Money.Create(feePerKmAmount);
+        var minRes = Money.Create(minimumOrderAmount);
+        if (baseFeeRes.IsFailure) return Result.Failure<DeliveryPolicy>(baseFeeRes.Error);
+        if (perKmRes.IsFailure) return Result.Failure<DeliveryPolicy>(perKmRes.Error);
+        if (minRes.IsFailure) return Result.Failure<DeliveryPolicy>(minRes.Error);
+
+        Money? freeThreshold = null;
+        if (freeShippingThresholdAmount.HasValue)
+        {
+            var freeRes = Money.Create(freeShippingThresholdAmount.Value);
+            if (freeRes.IsFailure)
+                return Result.Failure<DeliveryPolicy>(freeRes.Error);
+            freeThreshold = freeRes.Value;
+        }
+
+        var res = policy.UpdateConfiguration(
+            originLatitude,
+            originLongitude,
+            maxRadiusKm,
+            calculationMode,
+            baseFeeRes.Value,
+            includedKm,
+            perKmRes.Value,
+            baseEstimatedMinutes,
+            minRes.Value,
+            freeThreshold,
+            isDeliveryEnabled,
+            allowPickup);
+
+        if (res.IsFailure)
+            return Result.Failure<DeliveryPolicy>(res.Error);
+
+        await _policyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(policy);
+    }
+
+    public async Task<Result> RemoveDistanceTierAsync(User actor, Guid policyId, Guid tierId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var policy = await _policyRepo.FindByIdAsync(policyId, cancellationToken);
+        if (policy is null)
+            return Result.Failure(Error.NotFound("Delivery.PolicyNotFound", "Política de delivery não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, policy);
+        var res = policy.RemoveDistanceTier(tierId);
+        if (res.IsFailure)
+            return res;
+
+        await _policyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> RemoveZoneRuleAsync(User actor, Guid policyId, Guid zoneRuleId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var policy = await _policyRepo.FindByIdAsync(policyId, cancellationToken);
+        if (policy is null)
+            return Result.Failure(Error.NotFound("Delivery.PolicyNotFound", "Política de delivery não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, policy);
+        var res = policy.RemoveZoneRule(zoneRuleId);
+        if (res.IsFailure)
+            return res;
+
+        await _policyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
     public async Task<Result<DeliveryFreightQuote>> QuoteFreightAsync(
         Guid? storeUnitId,
         DeliveryFreightQuoteRequest request,

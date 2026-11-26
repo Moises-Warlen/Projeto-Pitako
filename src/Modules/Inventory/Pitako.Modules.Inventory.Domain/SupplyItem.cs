@@ -75,7 +75,8 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
         string contentUnitCode,
         decimal contentQuantityPerPackage,
         Money purchasePrice,
-        string? supplierName) : base(id, tenantId)
+        string? supplierName,
+        decimal defaultLossPercent = 0m) : base(id, tenantId)
     {
         Name = name;
         Sku = sku;
@@ -85,6 +86,7 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
         ContentQuantityPerPackage = contentQuantityPerPackage;
         PurchasePrice = purchasePrice;
         SupplierName = supplierName;
+        DefaultLossPercent = defaultLossPercent;
         IsActive = true;
     }
 
@@ -96,6 +98,7 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
     public decimal ContentQuantityPerPackage { get; private set; }
     public Money PurchasePrice { get; private set; }
     public string? SupplierName { get; private set; }
+    public decimal DefaultLossPercent { get; private set; }
     public bool IsActive { get; private set; }
 
     public IReadOnlyCollection<SupplyPriceHistory> PriceHistory => _priceHistory.AsReadOnly();
@@ -112,7 +115,8 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
         string? contentUnitCode = null,
         IReadOnlyDictionary<string, UnitDefinition>? customUnits = null,
         DateTimeOffset? createdAtUtc = null,
-        Guid? createdByUserId = null)
+        Guid? createdByUserId = null,
+        decimal defaultLossPercent = 0m)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<SupplyItem>(Error.Validation("Supply.TenantRequired", "TenantId é obrigatório."));
@@ -122,6 +126,9 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
 
         if (purchaseQuantity <= 0m)
             return Result.Failure<SupplyItem>(Error.Validation("Supply.InvalidQuantity", "Quantidade de compra do insumo deve ser positiva."));
+
+        if (defaultLossPercent < 0m || defaultLossPercent >= 100m)
+            return Result.Failure<SupplyItem>(Error.Validation("Supply.InvalidLossPercent", "Percentual de perda padrão deve estar entre 0 e 99%."));
 
         ArgumentNullException.ThrowIfNull(purchasePrice);
 
@@ -151,7 +158,8 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
             contentUnitRes.Value.Code,
             effectiveContentQty,
             purchasePrice,
-            string.IsNullOrWhiteSpace(supplierName) ? null : supplierName.Trim());
+            string.IsNullOrWhiteSpace(supplierName) ? null : supplierName.Trim(),
+            defaultLossPercent);
 
         item._priceHistory.Add(new SupplyPriceHistory(
             Guid.NewGuid(),
@@ -165,6 +173,72 @@ public sealed class SupplyItem : TenantScopedAggregateRoot
             createdAtUtc ?? DateTimeOffset.UtcNow));
 
         return Result.Success(item);
+    }
+
+    public Result UpdateDetails(
+        string name,
+        Money newPrice,
+        decimal purchaseQuantity,
+        string purchaseUnitCode,
+        string? supplierName,
+        string? sku,
+        decimal? contentQuantityPerPackage,
+        string? contentUnitCode,
+        decimal defaultLossPercent,
+        IReadOnlyDictionary<string, UnitDefinition>? customUnits,
+        DateTimeOffset utcNow,
+        Guid? actorUserId)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Supply.NameRequired", "Nome do insumo é obrigatório."));
+        if (purchaseQuantity <= 0m)
+            return Result.Failure(Error.Validation("Supply.InvalidQuantity", "Quantidade de compra do insumo deve ser positiva."));
+        if (defaultLossPercent < 0m || defaultLossPercent >= 100m)
+            return Result.Failure(Error.Validation("Supply.InvalidLossPercent", "Percentual de perda deve estar entre 0 e 99%."));
+        ArgumentNullException.ThrowIfNull(newPrice);
+
+        var purchaseUnitRes = UnitConverter.Resolve(purchaseUnitCode, customUnits);
+        if (purchaseUnitRes.IsFailure)
+            return Result.Failure(purchaseUnitRes.Error);
+
+        var effectiveContentUnit = string.IsNullOrWhiteSpace(contentUnitCode)
+            ? purchaseUnitRes.Value.Code
+            : UnitConverter.NormalizeCode(contentUnitCode);
+
+        var contentUnitRes = UnitConverter.Resolve(effectiveContentUnit, customUnits);
+        if (contentUnitRes.IsFailure)
+            return Result.Failure(contentUnitRes.Error);
+
+        var effectiveContentQty = contentQuantityPerPackage ?? purchaseQuantity;
+        if (effectiveContentQty <= 0m)
+            return Result.Failure(Error.Validation("Supply.InvalidContentQty", "Quantidade contida deve ser positiva."));
+
+        Name = name.Trim();
+        Sku = string.IsNullOrWhiteSpace(sku) ? null : sku.Trim().ToUpperInvariant();
+        PurchaseUnitCode = purchaseUnitRes.Value.Code;
+        PurchaseQuantity = purchaseQuantity;
+        ContentUnitCode = contentUnitRes.Value.Code;
+        ContentQuantityPerPackage = effectiveContentQty;
+        DefaultLossPercent = defaultLossPercent;
+
+        if (PurchasePrice.Amount != newPrice.Amount || !string.Equals(SupplierName, supplierName?.Trim(), StringComparison.Ordinal))
+        {
+            var prev = PurchasePrice;
+            PurchasePrice = newPrice;
+            SupplierName = string.IsNullOrWhiteSpace(supplierName) ? null : supplierName.Trim();
+            _priceHistory.Add(new SupplyPriceHistory(
+                Guid.NewGuid(),
+                TenantId,
+                Id,
+                prev,
+                newPrice,
+                SupplierName,
+                actorUserId,
+                "Atualização cadastral do insumo",
+                utcNow));
+        }
+
+        return Result.Success();
     }
 
     public Result UpdatePurchasePrice(

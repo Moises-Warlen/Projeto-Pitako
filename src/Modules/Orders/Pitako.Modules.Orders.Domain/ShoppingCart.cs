@@ -96,6 +96,29 @@ public sealed class ShoppingCartItem : Entity<Guid>, ITenantScopedEntity
         LineSubtotal = UnitPrice.Multiply(newQuantity);
     }
 
+    internal void ReplaceDetails(
+        Guid? variationId,
+        string itemTitle,
+        string customizationSummaryText,
+        string selectionsPayloadJson,
+        string customizationFingerprint,
+        Money unitPrice,
+        int quantity,
+        bool hasNonCombinablePromotion,
+        string? customerNotes)
+    {
+        VariationId = variationId;
+        ItemTitle = itemTitle;
+        CustomizationSummaryText = customizationSummaryText;
+        SelectionsPayloadJson = selectionsPayloadJson;
+        CustomizationFingerprint = customizationFingerprint;
+        UnitPrice = Money.Create(unitPrice.Amount, unitPrice.Currency).Value;
+        Quantity = quantity;
+        LineSubtotal = UnitPrice.Multiply(quantity);
+        HasNonCombinablePromotion = hasNonCombinablePromotion;
+        CustomerNotes = customerNotes;
+    }
+
     public void AssignTenant(Guid tenantId)
     {
         if (tenantId == Guid.Empty)
@@ -259,6 +282,57 @@ public sealed class ShoppingCart : TenantScopedAggregateRoot
         _items.Remove(item);
         RecalculateRawTotals();
         return Result.Success();
+    }
+
+    public Result UpdateItemCustomization(
+        Guid cartItemId,
+        Guid? variationId,
+        string itemTitle,
+        string customizationSummaryText,
+        string selectionsPayloadJson,
+        Money unitPrice,
+        int quantity,
+        bool hasNonCombinablePromotion,
+        string? customerNotes)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == cartItemId);
+        if (item is null)
+            return Result.Failure(Error.NotFound("Cart.ItemNotFound", "Item não encontrado no carrinho."));
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Cart.InvalidQuantity", "Quantidade do item deve ser positiva."));
+        if (string.IsNullOrWhiteSpace(itemTitle))
+            return Result.Failure(Error.Validation("Cart.TitleRequired", "Descrição do item é obrigatória."));
+        ArgumentNullException.ThrowIfNull(unitPrice);
+
+        var trimmedNotes = string.IsNullOrWhiteSpace(customerNotes) ? null : customerNotes.Trim();
+        var fingerprint = ShoppingCartItem.ComputeFingerprint(
+            item.ItemKind,
+            item.ProductId,
+            variationId,
+            item.AcaiCupSizeId,
+            item.WeighingRecordId,
+            selectionsPayloadJson,
+            trimmedNotes);
+
+        item.ReplaceDetails(
+            variationId,
+            itemTitle.Trim(),
+            customizationSummaryText,
+            selectionsPayloadJson,
+            fingerprint,
+            unitPrice,
+            quantity,
+            hasNonCombinablePromotion,
+            trimmedNotes);
+
+        RecalculateRawTotals();
+        return Result.Success();
+    }
+
+    public void ClearItems()
+    {
+        _items.Clear();
+        ClearCoupon();
     }
 
     public Result UpdateItemQuantity(Guid cartItemId, int newQuantity)

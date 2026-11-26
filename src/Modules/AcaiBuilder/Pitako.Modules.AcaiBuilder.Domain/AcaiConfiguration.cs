@@ -199,6 +199,17 @@ public sealed class AcaiBaseFlavor : TenantScopedAggregateRoot
             displayOrder));
     }
 
+    public Result Update(string name, Money? extraPrice = null, int displayOrder = 0)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Acai.FlavorNameRequired", "Nome do sabor base é obrigatório."));
+
+        Name = name.Trim();
+        ExtraPrice = extraPrice ?? Money.Zero();
+        DisplayOrder = displayOrder;
+        return Result.Success();
+    }
+
     public void Pause() => IsActive = false;
     public void Reactivate() => IsActive = true;
 }
@@ -267,6 +278,30 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
             consumptionQuantityPerPortion,
             string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant(),
             displayOrder));
+    }
+
+    public Result Update(
+        string name,
+        int maxPortionsPerCup,
+        int displayOrder = 0,
+        Guid? supplyItemId = null,
+        decimal? consumptionQuantityPerPortion = null,
+        string? consumptionUnitCode = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Acai.ToppingNameRequired", "Nome do acompanhamento gratuito é obrigatório."));
+        if (maxPortionsPerCup <= 0)
+            return Result.Failure(Error.Validation("Acai.InvalidMaxPortions", "Quantidade máxima por copo deve ser positiva."));
+        if (consumptionQuantityPerPortion.HasValue && consumptionQuantityPerPortion.Value <= 0m)
+            return Result.Failure(Error.Validation("Acai.InvalidConsumption", "Quantidade de consumo por porção deve ser positiva."));
+
+        Name = name.Trim();
+        MaxPortionsPerCup = maxPortionsPerCup;
+        DisplayOrder = displayOrder;
+        SupplyItemId = supplyItemId == Guid.Empty ? null : supplyItemId;
+        ConsumptionQuantityPerPortion = consumptionQuantityPerPortion;
+        ConsumptionUnitCode = string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant();
+        return Result.Success();
     }
 
     public void Pause() => IsActive = false;
@@ -351,6 +386,33 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
     {
         ArgumentNullException.ThrowIfNull(newPrice);
         AdditionalPrice = newPrice;
+        return Result.Success();
+    }
+
+    public Result Update(
+        string name,
+        Money additionalPrice,
+        int maxQuantityPerCup,
+        int displayOrder = 0,
+        Guid? supplyItemId = null,
+        decimal? consumptionQuantityPerUnit = null,
+        string? consumptionUnitCode = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Acai.AddonNameRequired", "Nome do adicional pago é obrigatório."));
+        if (maxQuantityPerCup <= 0)
+            return Result.Failure(Error.Validation("Acai.InvalidMaxQty", "Quantidade máxima por copo deve ser positiva."));
+        if (consumptionQuantityPerUnit.HasValue && consumptionQuantityPerUnit.Value <= 0m)
+            return Result.Failure(Error.Validation("Acai.InvalidConsumption", "Quantidade de consumo por unidade deve ser positiva."));
+        ArgumentNullException.ThrowIfNull(additionalPrice);
+
+        Name = name.Trim();
+        AdditionalPrice = additionalPrice;
+        MaxQuantityPerCup = maxQuantityPerCup;
+        DisplayOrder = displayOrder;
+        SupplyItemId = supplyItemId == Guid.Empty ? null : supplyItemId;
+        ConsumptionQuantityPerUnit = consumptionQuantityPerUnit;
+        ConsumptionUnitCode = string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant();
         return Result.Success();
     }
 

@@ -85,11 +85,20 @@ namespace Pitako.Modules.Orders.Infrastructure.Migrations
                         .HasColumnType("character varying(160)")
                         .HasColumnName("idempotency_key");
 
+                    b.Property<bool>("LgpdConsentAccepted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("lgpd_consent_accepted");
+
                     b.Property<string>("OrderNumber")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("order_number");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("payment_method");
 
                     b.Property<DateTimeOffset>("PlacedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -170,8 +179,8 @@ namespace Pitako.Modules.Orders.Infrastructure.Migrations
 
                     b.Property<string>("SelectionsPayloadJson")
                         .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)")
                         .HasColumnName("selections_payload_json");
 
                     b.Property<Guid>("TenantId")
@@ -345,8 +354,8 @@ namespace Pitako.Modules.Orders.Infrastructure.Migrations
 
                     b.Property<string>("SelectionsPayloadJson")
                         .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)")
                         .HasColumnName("selections_payload_json");
 
                     b.Property<Guid>("ShoppingCartId")

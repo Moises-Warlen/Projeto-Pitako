@@ -524,71 +524,125 @@ public sealed class InventoryStockAndProductionService : IInventoryOrderDeductio
                 continue;
             }
 
-            var sheet = await _sheetRepo.FindActiveByProductIdAsync(line.ProductId, cancellationToken);
-            if (sheet is null)
+            var sheet = line.ProductId != Guid.Empty
+                ? await _sheetRepo.FindActiveByProductIdAsync(line.ProductId, cancellationToken)
+                : null;
+            var customList = line.CustomIngredients ?? [];
+
+            if (sheet is null && customList.Count == 0)
             {
                 skippedItems++;
                 lineIndex++;
                 continue;
             }
 
-            TenantGuard.EnsureOwnership(_tenantContext, sheet);
-
-            var lineInSheetYieldRes = UnitConverter.Convert(line.Quantity, line.UnitCode, sheet.YieldUnitCode, customUnits);
-            if (lineInSheetYieldRes.IsFailure)
-                return Result.Failure<StockOrderDeductionSummary>(lineInSheetYieldRes.Error);
-
-            var batchScale = lineInSheetYieldRes.Value / sheet.YieldQuantity;
-            var supplyIds = sheet.Ingredients.Select(i => i.SupplyItemId)
-                .Concat(sheet.Packagings.Where(p => p.SupplyItemId.HasValue).Select(p => p.SupplyItemId!.Value))
-                .Distinct()
-                .ToList();
-
-            var supplies = await _supplyRepo.FindLookupByIdsAsync(supplyIds, cancellationToken);
-            var balances = await _stockRepo.FindLookupBySupplyItemIdsAsync(supplyIds, cancellationToken);
-
-            var components = sheet.Ingredients
-                .Select(i => (i.SupplyItemId, Qty: i.Quantity * batchScale, i.UnitCode))
-                .Concat(sheet.Packagings.Where(p => p.SupplyItemId.HasValue)
-                    .Select(p => (SupplyItemId: p.SupplyItemId!.Value, Qty: p.Quantity * batchScale, p.UnitCode)))
-                .ToList();
-
-            for (var compIndex = 0; compIndex < components.Count; compIndex++)
+            if (sheet is not null)
             {
-                var comp = components[compIndex];
-                if (!supplies.TryGetValue(comp.SupplyItemId, out var supply) ||
-                    !balances.TryGetValue(comp.SupplyItemId, out var balance) ||
-                    !balance.AutoDeductOnOrder)
+                TenantGuard.EnsureOwnership(_tenantContext, sheet);
+
+                var lineInSheetYieldRes = UnitConverter.Convert(line.Quantity, line.UnitCode, sheet.YieldUnitCode, customUnits);
+                if (lineInSheetYieldRes.IsFailure)
+                    return Result.Failure<StockOrderDeductionSummary>(lineInSheetYieldRes.Error);
+
+                var batchScale = lineInSheetYieldRes.Value / sheet.YieldQuantity;
+                var supplyIds = sheet.Ingredients.Select(i => i.SupplyItemId)
+                    .Concat(sheet.Packagings.Where(p => p.SupplyItemId.HasValue).Select(p => p.SupplyItemId!.Value))
+                    .Distinct()
+                    .ToList();
+
+                var supplies = await _supplyRepo.FindLookupByIdsAsync(supplyIds, cancellationToken);
+                var balances = await _stockRepo.FindLookupBySupplyItemIdsAsync(supplyIds, cancellationToken);
+
+                var components = sheet.Ingredients
+                    .Select(i => (i.SupplyItemId, Qty: i.GrossQuantity * batchScale, i.UnitCode))
+                    .Concat(sheet.Packagings.Where(p => p.SupplyItemId.HasValue)
+                        .Select(p => (SupplyItemId: p.SupplyItemId!.Value, Qty: p.Quantity * batchScale, p.UnitCode)))
+                    .ToList();
+
+                for (var compIndex = 0; compIndex < components.Count; compIndex++)
                 {
-                    skippedItems++;
-                    continue;
+                    var comp = components[compIndex];
+                    if (!supplies.TryGetValue(comp.SupplyItemId, out var supply) ||
+                        !balances.TryGetValue(comp.SupplyItemId, out var balance) ||
+                        !balance.AutoDeductOnOrder)
+                    {
+                        skippedItems++;
+                        continue;
+                    }
+
+                    TenantGuard.EnsureOwnership(_tenantContext, balance);
+
+                    var idempotencyKey = $"order-sale:{orderId:N}:{lineIndex}:{compIndex}:{comp.SupplyItemId:N}";
+                    if (balance.HasMovementWithKey(idempotencyKey))
+                        continue;
+
+                    var qtyInStockRes = supply.ConvertQuantity(comp.Qty, comp.UnitCode, balance.UnitCode, customUnits);
+                    if (qtyInStockRes.IsFailure)
+                        return Result.Failure<StockOrderDeductionSummary>(qtyInStockRes.Error);
+
+                    var moveRes = balance.RegisterConsumption(
+                        qtyInStockRes.Value,
+                        EstimateStockUnitCost(supply, balance.UnitCode, customUnits),
+                        StockMovementType.OrderSaleDeduction,
+                        $"Baixa automática venda {orderReferenceLabel}",
+                        utcNow,
+                        actor.Id,
+                        "Order",
+                        orderId,
+                        idempotencyKey);
+
+                    if (moveRes.IsFailure)
+                        return Result.Failure<StockOrderDeductionSummary>(moveRes.Error);
+
+                    movementsCreated++;
                 }
+            }
 
-                TenantGuard.EnsureOwnership(_tenantContext, balance);
+            if (customList.Count > 0)
+            {
+                var customSupplyIds = customList.Select(c => c.SupplyItemId).Distinct().ToList();
+                var customSupplies = await _supplyRepo.FindLookupByIdsAsync(customSupplyIds, cancellationToken);
+                var customBalances = await _stockRepo.FindLookupBySupplyItemIdsAsync(customSupplyIds, cancellationToken);
 
-                var idempotencyKey = $"order-sale:{orderId:N}:{lineIndex}:{compIndex}:{comp.SupplyItemId:N}";
-                if (balance.HasMovementWithKey(idempotencyKey))
-                    continue;
+                for (var optIndex = 0; optIndex < customList.Count; optIndex++)
+                {
+                    var cust = customList[optIndex];
+                    if (cust.Quantity <= 0m) continue;
+                    if (!customSupplies.TryGetValue(cust.SupplyItemId, out var supply) ||
+                        !customBalances.TryGetValue(cust.SupplyItemId, out var balance) ||
+                        !balance.AutoDeductOnOrder)
+                    {
+                        skippedItems++;
+                        continue;
+                    }
 
-                var qtyInStockRes = supply.ConvertQuantity(comp.Qty, comp.UnitCode, balance.UnitCode, customUnits);
-                if (qtyInStockRes.IsFailure)
-                    return Result.Failure<StockOrderDeductionSummary>(qtyInStockRes.Error);
+                    TenantGuard.EnsureOwnership(_tenantContext, balance);
 
-                var moveRes = balance.RegisterConsumption(
-                    qtyInStockRes.Value,
-                    EstimateStockUnitCost(supply, balance.UnitCode, customUnits),
-                    StockMovementType.OrderSaleDeduction,
-                    $"Baixa automática venda {orderReferenceLabel}",
-                    utcNow,
-                    actor.Id,
-                    "Order",
-                    orderId,
-                    idempotencyKey);
+                    var optKey = $"order-opt:{orderId:N}:{lineIndex}:{optIndex}:{cust.SupplyItemId:N}";
+                    if (balance.HasMovementWithKey(optKey))
+                        continue;
 
-                if (moveRes.IsFailure)
-                    return Result.Failure<StockOrderDeductionSummary>(moveRes.Error);
+                    var totalOptQty = cust.Quantity * line.Quantity;
+                    var qtyInStockRes = supply.ConvertQuantity(totalOptQty, cust.UnitCode, balance.UnitCode, customUnits);
+                    if (qtyInStockRes.IsFailure)
+                        return Result.Failure<StockOrderDeductionSummary>(qtyInStockRes.Error);
 
-                movementsCreated++;
+                    var moveRes = balance.RegisterConsumption(
+                        qtyInStockRes.Value,
+                        EstimateStockUnitCost(supply, balance.UnitCode, customUnits),
+                        StockMovementType.OrderSaleDeduction,
+                        $"Baixa opcional ({cust.IngredientName}) venda {orderReferenceLabel}",
+                        utcNow,
+                        actor.Id,
+                        "Order",
+                        orderId,
+                        optKey);
+
+                    if (moveRes.IsFailure)
+                        return Result.Failure<StockOrderDeductionSummary>(moveRes.Error);
+
+                    movementsCreated++;
+                }
             }
 
             lineIndex++;

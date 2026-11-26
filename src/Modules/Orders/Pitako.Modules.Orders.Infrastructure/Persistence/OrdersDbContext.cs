@@ -96,7 +96,7 @@ internal sealed class ShoppingCartItemConfiguration : IEntityTypeConfiguration<S
         builder.Property(x => x.WeighingRecordId).HasColumnName("weighing_record_id");
         builder.Property(x => x.ItemTitle).HasColumnName("item_title").HasMaxLength(200).IsRequired();
         builder.Property(x => x.CustomizationSummaryText).HasColumnName("customization_summary_text").HasMaxLength(1000).IsRequired();
-        builder.Property(x => x.SelectionsPayloadJson).HasColumnName("selections_payload_json").HasMaxLength(4000).IsRequired();
+        builder.Property(x => x.SelectionsPayloadJson).HasColumnName("selections_payload_json").HasMaxLength(16000).IsRequired();
         builder.Property(x => x.CustomizationFingerprint).HasColumnName("customization_fingerprint").HasMaxLength(64).IsRequired();
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired();
         builder.Property(x => x.HasNonCombinablePromotion).HasColumnName("has_non_combinable_promotion").IsRequired();
@@ -128,6 +128,8 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(x => x.CustomerPhone).HasColumnName("customer_phone").HasMaxLength(40);
         builder.Property(x => x.DeliveryAddressSummary).HasColumnName("delivery_address_summary").HasMaxLength(400);
         builder.Property(x => x.AppliedCouponCode).HasColumnName("applied_coupon_code").HasMaxLength(40);
+        builder.Property(x => x.PaymentMethod).HasColumnName("payment_method").HasMaxLength(40);
+        builder.Property(x => x.LgpdConsentAccepted).HasColumnName("lgpd_consent_accepted").IsRequired();
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(160);
         builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(300);
         builder.Property(x => x.PlacedAtUtc).HasColumnName("placed_at_utc").IsRequired();
@@ -171,7 +173,7 @@ internal sealed class OrderItemConfiguration : IEntityTypeConfiguration<OrderIte
         builder.Property(x => x.WeighingRecordId).HasColumnName("weighing_record_id");
         builder.Property(x => x.ItemTitle).HasColumnName("item_title").HasMaxLength(200).IsRequired();
         builder.Property(x => x.CustomizationSummaryText).HasColumnName("customization_summary_text").HasMaxLength(1000).IsRequired();
-        builder.Property(x => x.SelectionsPayloadJson).HasColumnName("selections_payload_json").HasMaxLength(4000).IsRequired();
+        builder.Property(x => x.SelectionsPayloadJson).HasColumnName("selections_payload_json").HasMaxLength(16000).IsRequired();
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired();
         builder.Property(x => x.CustomerNotes).HasColumnName("customer_notes").HasMaxLength(400);
 

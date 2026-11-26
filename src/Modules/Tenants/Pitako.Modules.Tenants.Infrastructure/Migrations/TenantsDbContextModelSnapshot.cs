@@ -147,10 +147,20 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasColumnType("character varying(7)")
                         .HasColumnName("draft_accent_color_hex");
 
+                    b.Property<string>("DraftAnnouncementText")
+                        .HasMaxLength(350)
+                        .HasColumnType("character varying(350)")
+                        .HasColumnName("draft_announcement_text");
+
                     b.Property<string>("DraftCoverImageUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("draft_cover_image_url");
+
+                    b.Property<string>("DraftInstagramHandle")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("draft_instagram_handle");
 
                     b.Property<string>("DraftLogoUrl")
                         .HasMaxLength(500)
@@ -162,6 +172,11 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)")
                         .HasColumnName("draft_menu_layout_mode");
+
+                    b.Property<string>("DraftOperatingHoursJson")
+                        .HasMaxLength(2500)
+                        .HasColumnType("character varying(2500)")
+                        .HasColumnName("draft_operating_hours_json");
 
                     b.Property<string>("DraftPrimaryColorHex")
                         .IsRequired()
@@ -180,15 +195,34 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("draft_slogan");
 
+                    b.Property<string>("DraftWhatsAppNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("draft_whatsapp_number");
+
                     b.Property<bool>("HasUnpublishedChanges")
                         .HasColumnType("boolean")
                         .HasColumnName("has_unpublished_changes");
+
+                    b.Property<bool>("IsTemporarilyPaused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_temporarily_paused");
+
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("pause_reason");
 
                     b.Property<string>("PublishedAccentColorHex")
                         .IsRequired()
                         .HasMaxLength(7)
                         .HasColumnType("character varying(7)")
                         .HasColumnName("published_accent_color_hex");
+
+                    b.Property<string>("PublishedAnnouncementText")
+                        .HasMaxLength(350)
+                        .HasColumnType("character varying(350)")
+                        .HasColumnName("published_announcement_text");
 
                     b.Property<DateTimeOffset?>("PublishedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -198,6 +232,11 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("published_cover_image_url");
+
+                    b.Property<string>("PublishedInstagramHandle")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("published_instagram_handle");
 
                     b.Property<string>("PublishedLogoUrl")
                         .HasMaxLength(500)
@@ -209,6 +248,11 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)")
                         .HasColumnName("published_menu_layout_mode");
+
+                    b.Property<string>("PublishedOperatingHoursJson")
+                        .HasMaxLength(2500)
+                        .HasColumnType("character varying(2500)")
+                        .HasColumnName("published_operating_hours_json");
 
                     b.Property<string>("PublishedPrimaryColorHex")
                         .IsRequired()
@@ -230,6 +274,11 @@ namespace Pitako.Modules.Tenants.Infrastructure.Migrations
                     b.Property<int>("PublishedVersion")
                         .HasColumnType("integer")
                         .HasColumnName("published_version");
+
+                    b.Property<string>("PublishedWhatsAppNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("published_whatsapp_number");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")

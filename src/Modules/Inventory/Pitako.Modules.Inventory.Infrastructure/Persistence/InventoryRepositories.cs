@@ -42,8 +42,13 @@ public sealed class EfSupplyItemRepository(InventoryDbContext db) : ISupplyItemR
         return items.ToDictionary(s => s.Id);
     }
 
+    public async Task<IReadOnlyList<SupplyItem>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await db.SupplyItems.OrderBy(s => s.Name).ToListAsync(cancellationToken);
+
     public async Task AddAsync(SupplyItem item, CancellationToken cancellationToken = default) =>
         await db.SupplyItems.AddAsync(item, cancellationToken);
+
+    public void Remove(SupplyItem item) => db.SupplyItems.Remove(item);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
@@ -63,6 +68,9 @@ public sealed class EfTechnicalSheetRepository(InventoryDbContext db) : ITechnic
     public Task<TechnicalSheet?> FindActiveByProductIdAsync(Guid productId, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(t => t.IsActive && t.ProductId == productId, cancellationToken);
 
+    public async Task<IReadOnlyList<TechnicalSheet>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await FullQuery().OrderBy(t => t.Name).ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<TechnicalSheet>> ListUsingSupplyItemAsync(
         Guid supplyItemId,
         CancellationToken cancellationToken = default) =>
@@ -74,6 +82,8 @@ public sealed class EfTechnicalSheetRepository(InventoryDbContext db) : ITechnic
 
     public async Task AddAsync(TechnicalSheet sheet, CancellationToken cancellationToken = default) =>
         await db.TechnicalSheets.AddAsync(sheet, cancellationToken);
+
+    public void Remove(TechnicalSheet sheet) => db.TechnicalSheets.Remove(sheet);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

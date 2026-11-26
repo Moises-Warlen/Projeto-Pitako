@@ -23,6 +23,8 @@ public sealed class EfCouponRepository(CouponsDbContext db) : ICouponRepository
     public async Task AddAsync(Coupon coupon, CancellationToken cancellationToken = default) =>
         await db.Coupons.AddAsync(coupon, cancellationToken);
 
+    public void Remove(Coupon coupon) => db.Coupons.Remove(coupon);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }

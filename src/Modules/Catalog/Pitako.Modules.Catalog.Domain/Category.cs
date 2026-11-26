@@ -30,12 +30,16 @@ public sealed class Category : TenantScopedAggregateRoot
         string name,
         string? description,
         string? imageUrl,
-        int displayOrder) : base(id, tenantId)
+        int displayOrder,
+        string? segmentTemplateCode = null,
+        string? ruleNotes = null) : base(id, tenantId)
     {
         Name = name;
         Description = description;
         ImageUrl = imageUrl;
         DisplayOrder = displayOrder;
+        SegmentTemplateCode = segmentTemplateCode;
+        RuleNotes = ruleNotes;
         Status = CatalogItemStatus.Active;
     }
 
@@ -44,13 +48,17 @@ public sealed class Category : TenantScopedAggregateRoot
     public string? ImageUrl { get; private set; }
     public int DisplayOrder { get; private set; }
     public CatalogItemStatus Status { get; private set; }
+    public string? SegmentTemplateCode { get; private set; }
+    public string? RuleNotes { get; private set; }
 
     public static Result<Category> Create(
         Guid tenantId,
         string name,
         string? description = null,
         string? imageUrl = null,
-        int displayOrder = 0)
+        int displayOrder = 0,
+        string? segmentTemplateCode = null,
+        string? ruleNotes = null)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<Category>(Error.Validation("Category.TenantRequired", "TenantId é obrigatório."));
@@ -64,10 +72,18 @@ public sealed class Category : TenantScopedAggregateRoot
             name.Trim(),
             string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
             string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim(),
-            displayOrder));
+            displayOrder,
+            string.IsNullOrWhiteSpace(segmentTemplateCode) ? null : segmentTemplateCode.Trim().ToLowerInvariant(),
+            string.IsNullOrWhiteSpace(ruleNotes) ? null : ruleNotes.Trim()));
     }
 
-    public Result Update(string name, string? description, string? imageUrl, int displayOrder)
+    public Result Update(
+        string name,
+        string? description,
+        string? imageUrl,
+        int displayOrder,
+        string? segmentTemplateCode = null,
+        string? ruleNotes = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Category.NameRequired", "Nome da categoria é obrigatório."));
@@ -76,6 +92,8 @@ public sealed class Category : TenantScopedAggregateRoot
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
         DisplayOrder = displayOrder;
+        SegmentTemplateCode = string.IsNullOrWhiteSpace(segmentTemplateCode) ? null : segmentTemplateCode.Trim().ToLowerInvariant();
+        RuleNotes = string.IsNullOrWhiteSpace(ruleNotes) ? null : ruleNotes.Trim();
         return Result.Success();
     }
 

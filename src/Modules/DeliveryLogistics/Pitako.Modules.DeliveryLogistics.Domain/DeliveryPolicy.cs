@@ -301,6 +301,67 @@ public sealed class DeliveryPolicy : TenantScopedAggregateRoot
         PauseReason = null;
     }
 
+    public Result UpdateConfiguration(
+        double originLatitude,
+        double originLongitude,
+        decimal maxRadiusKm,
+        FreightCalculationMode calculationMode,
+        Money baseFee,
+        decimal includedKm,
+        Money feePerKm,
+        int baseEstimatedMinutes,
+        Money minimumOrderAmount,
+        Money? freeShippingThreshold,
+        bool isDeliveryEnabled,
+        bool allowPickup)
+    {
+        var originRes = GeoCoordinate.Create(originLatitude, originLongitude);
+        if (originRes.IsFailure)
+            return Result.Failure(originRes.Error);
+        if (maxRadiusKm <= 0m)
+            return Result.Failure(Error.Validation("Delivery.InvalidRadius", "Raio máximo de entrega deve ser positivo."));
+        if (includedKm < 0m)
+            return Result.Failure(Error.Validation("Delivery.NegativeIncludedKm", "Quilometragem incluída não pode ser negativa."));
+        if (baseEstimatedMinutes <= 0)
+            return Result.Failure(Error.Validation("Delivery.InvalidEstimatedTime", "Tempo estimado deve ser positivo."));
+
+        ArgumentNullException.ThrowIfNull(baseFee);
+        ArgumentNullException.ThrowIfNull(feePerKm);
+        ArgumentNullException.ThrowIfNull(minimumOrderAmount);
+
+        OriginLatitude = originLatitude;
+        OriginLongitude = originLongitude;
+        MaxRadiusKm = decimal.Round(maxRadiusKm, 2, MidpointRounding.ToEven);
+        CalculationMode = calculationMode;
+        BaseFee = baseFee;
+        IncludedKm = decimal.Round(includedKm, 2, MidpointRounding.ToEven);
+        FeePerKm = feePerKm;
+        BaseEstimatedMinutes = baseEstimatedMinutes;
+        MinimumOrderAmount = minimumOrderAmount;
+        FreeShippingThreshold = freeShippingThreshold;
+        IsDeliveryEnabled = isDeliveryEnabled;
+        AllowPickup = allowPickup;
+        return Result.Success();
+    }
+
+    public Result RemoveDistanceTier(Guid tierId)
+    {
+        var tier = _distanceTiers.FirstOrDefault(t => t.Id == tierId);
+        if (tier is null)
+            return Result.Failure(Error.NotFound("Delivery.TierNotFound", "Faixa de distância não encontrada."));
+        _distanceTiers.Remove(tier);
+        return Result.Success();
+    }
+
+    public Result RemoveZoneRule(Guid zoneRuleId)
+    {
+        var zone = _zoneRules.FirstOrDefault(z => z.Id == zoneRuleId);
+        if (zone is null)
+            return Result.Failure(Error.NotFound("Delivery.ZoneNotFound", "Zona de entrega não encontrada."));
+        _zoneRules.Remove(zone);
+        return Result.Success();
+    }
+
     /// <summary>
     /// Calcula o frete no backend validando pausa, pedido mínimo, raio máximo, região bloqueada e isenção por valor.
     /// </summary>

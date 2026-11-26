@@ -75,6 +75,20 @@ public sealed class StoreBanner : Entity<Guid>
     public bool IsDraft { get; private set; }
 }
 
+public sealed record StoreOperatingHoursEntry(
+    int DayOfWeek,
+    bool IsOpen,
+    string OpenTime,
+    string CloseTime);
+
+public sealed record StoreOperatingStatus(
+    bool IsOpenNow,
+    string StatusLabel,
+    string DetailText,
+    bool IsTemporarilyPaused,
+    string? PauseReason,
+    IReadOnlyList<StoreOperatingHoursEntry> Schedule);
+
 public sealed record StoreBrandingSnapshot(
     string? LogoUrl,
     string? CoverImageUrl,
@@ -83,13 +97,92 @@ public sealed record StoreBrandingSnapshot(
     string SecondaryColorHex,
     string AccentColorHex,
     string MenuLayoutMode,
-    IReadOnlyList<StoreBannerSnapshot> Banners);
+    IReadOnlyList<StoreBannerSnapshot> Banners,
+    string? OperatingHoursJson = null,
+    string? AnnouncementText = null,
+    string? WhatsAppNumber = null,
+    string? InstagramHandle = null,
+    bool IsTemporarilyPaused = false,
+    string? PauseReason = null);
 
 public sealed record StoreBannerSnapshot(
     string Title,
     string ImageUrl,
     string? TargetUrl,
     int DisplayOrder);
+
+public static class StoreOperatingHoursHelper
+{
+    public static readonly IReadOnlyList<StoreOperatingHoursEntry> DefaultSchedule =
+    [
+        new(0, true, "13:00", "23:00"),
+        new(1, true, "11:00", "23:00"),
+        new(2, true, "11:00", "23:00"),
+        new(3, true, "11:00", "23:00"),
+        new(4, true, "11:00", "23:00"),
+        new(5, true, "11:00", "23:30"),
+        new(6, true, "11:00", "23:30")
+    ];
+
+    public static IReadOnlyList<StoreOperatingHoursEntry> ParseSchedule(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return DefaultSchedule;
+        try
+        {
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<List<StoreOperatingHoursEntry>>(json);
+            return parsed is { Count: > 0 } ? parsed.OrderBy(p => p.DayOfWeek).ToList() : DefaultSchedule;
+        }
+        catch
+        {
+            return DefaultSchedule;
+        }
+    }
+
+    public static StoreOperatingStatus Evaluate(
+        string? scheduleJson,
+        bool isTemporarilyPaused,
+        string? pauseReason,
+        DateTimeOffset utcNow,
+        string? timeZoneId = "America/Sao_Paulo")
+    {
+        var schedule = ParseSchedule(scheduleJson);
+        if (isTemporarilyPaused)
+        {
+            var reasonText = string.IsNullOrWhiteSpace(pauseReason) ? "Loja fechada temporariamente" : pauseReason.Trim();
+            return new StoreOperatingStatus(false, "LOJA PAUSADA", reasonText, true, pauseReason, schedule);
+        }
+
+        DateTimeOffset localNow;
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(string.IsNullOrWhiteSpace(timeZoneId) ? "E. South America Standard Time" : timeZoneId);
+            localNow = TimeZoneInfo.ConvertTime(utcNow, tz);
+        }
+        catch
+        {
+            localNow = utcNow.ToOffset(TimeSpan.FromHours(-3));
+        }
+
+        var dow = (int)localNow.DayOfWeek;
+        var today = schedule.FirstOrDefault(s => s.DayOfWeek == dow);
+        if (today is null || !today.IsOpen)
+            return new StoreOperatingStatus(false, "LOJA FECHADA", "Fechado hoje conforme horário de funcionamento.", false, null, schedule);
+
+        if (TimeSpan.TryParse(today.OpenTime, out var openTs) && TimeSpan.TryParse(today.CloseTime, out var closeTs))
+        {
+            var nowTod = localNow.TimeOfDay;
+            var isWithin = closeTs >= openTs
+                ? (nowTod >= openTs && nowTod <= closeTs)
+                : (nowTod >= openTs || nowTod <= closeTs);
+            return isWithin
+                ? new StoreOperatingStatus(true, "ABERTA AGORA", $"Atendimento hoje até {today.CloseTime}.", false, null, schedule)
+                : new StoreOperatingStatus(false, "LOJA FECHADA", $"Abre às {today.OpenTime} (horário de {today.OpenTime} às {today.CloseTime}).", false, null, schedule);
+        }
+
+        return new StoreOperatingStatus(true, "ABERTA AGORA", "Horário flexível ativo.", false, null, schedule);
+    }
+}
 
 /// <summary>
 /// Agregado isolado por tenant para personalização completa da identidade visual do estabelecimento,
@@ -134,6 +227,10 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
     public string DraftSecondaryColorHex { get; private set; }
     public string DraftAccentColorHex { get; private set; }
     public string DraftMenuLayoutMode { get; private set; }
+    public string? DraftOperatingHoursJson { get; private set; }
+    public string? DraftAnnouncementText { get; private set; }
+    public string? DraftWhatsAppNumber { get; private set; }
+    public string? DraftInstagramHandle { get; private set; }
 
     // Estado Publicado (exibido ao consumidor final)
     public string? PublishedLogoUrl { get; private set; }
@@ -143,6 +240,12 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
     public string PublishedSecondaryColorHex { get; private set; }
     public string PublishedAccentColorHex { get; private set; }
     public string PublishedMenuLayoutMode { get; private set; }
+    public string? PublishedOperatingHoursJson { get; private set; }
+    public string? PublishedAnnouncementText { get; private set; }
+    public string? PublishedWhatsAppNumber { get; private set; }
+    public string? PublishedInstagramHandle { get; private set; }
+    public bool IsTemporarilyPaused { get; private set; }
+    public string? PauseReason { get; private set; }
     public int PublishedVersion { get; private set; }
     public DateTimeOffset? PublishedAtUtc { get; private set; }
     public bool HasUnpublishedChanges { get; private set; }
@@ -152,6 +255,12 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
     public static StoreVisualIdentity CreateDefault(Guid tenantId) =>
         new(Guid.NewGuid(), tenantId, BrandingPalette.NeutralDefault());
 
+    public void SetTemporaryPause(bool isPaused, string? reason)
+    {
+        IsTemporarilyPaused = isPaused;
+        PauseReason = isPaused && !string.IsNullOrWhiteSpace(reason) ? reason.Trim() : null;
+    }
+
     public Result UpdateDraftBranding(
         string? logoUrl,
         string? coverImageUrl,
@@ -160,7 +269,11 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
         string secondaryColorHex,
         string accentColorHex,
         string menuLayoutMode,
-        IEnumerable<StoreBannerSnapshot>? draftBanners = null)
+        IEnumerable<StoreBannerSnapshot>? draftBanners = null,
+        string? operatingHoursJson = null,
+        string? announcementText = null,
+        string? whatsAppNumber = null,
+        string? instagramHandle = null)
     {
         var paletteResult = BrandingPalette.Create(primaryColorHex, secondaryColorHex, accentColorHex);
         if (paletteResult.IsFailure)
@@ -177,6 +290,14 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
         DraftSecondaryColorHex = paletteResult.Value.SecondaryColorHex;
         DraftAccentColorHex = paletteResult.Value.AccentColorHex;
         DraftMenuLayoutMode = normalizedLayout;
+        if (operatingHoursJson is not null)
+            DraftOperatingHoursJson = string.IsNullOrWhiteSpace(operatingHoursJson) ? null : operatingHoursJson.Trim();
+        if (announcementText is not null)
+            DraftAnnouncementText = string.IsNullOrWhiteSpace(announcementText) ? null : announcementText.Trim();
+        if (whatsAppNumber is not null)
+            DraftWhatsAppNumber = string.IsNullOrWhiteSpace(whatsAppNumber) ? null : whatsAppNumber.Trim();
+        if (instagramHandle is not null)
+            DraftInstagramHandle = string.IsNullOrWhiteSpace(instagramHandle) ? null : instagramHandle.Trim();
 
         if (draftBanners is not null)
         {
@@ -214,7 +335,13 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
             _banners.Where(b => b.IsDraft)
                 .OrderBy(b => b.DisplayOrder)
                 .Select(b => new StoreBannerSnapshot(b.Title, b.ImageUrl, b.TargetUrl, b.DisplayOrder))
-                .ToList());
+                .ToList(),
+            DraftOperatingHoursJson,
+            DraftAnnouncementText,
+            DraftWhatsAppNumber,
+            DraftInstagramHandle,
+            IsTemporarilyPaused,
+            PauseReason);
 
     public StoreBrandingSnapshot GetPublishedView() =>
         new(
@@ -228,7 +355,13 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
             _banners.Where(b => !b.IsDraft)
                 .OrderBy(b => b.DisplayOrder)
                 .Select(b => new StoreBannerSnapshot(b.Title, b.ImageUrl, b.TargetUrl, b.DisplayOrder))
-                .ToList());
+                .ToList(),
+            PublishedOperatingHoursJson,
+            PublishedAnnouncementText,
+            PublishedWhatsAppNumber,
+            PublishedInstagramHandle,
+            IsTemporarilyPaused,
+            PauseReason);
 
     public void Publish(DateTimeOffset utcNow)
     {
@@ -239,6 +372,10 @@ public sealed class StoreVisualIdentity : TenantScopedAggregateRoot
         PublishedSecondaryColorHex = DraftSecondaryColorHex;
         PublishedAccentColorHex = DraftAccentColorHex;
         PublishedMenuLayoutMode = DraftMenuLayoutMode;
+        PublishedOperatingHoursJson = DraftOperatingHoursJson;
+        PublishedAnnouncementText = DraftAnnouncementText;
+        PublishedWhatsAppNumber = DraftWhatsAppNumber;
+        PublishedInstagramHandle = DraftInstagramHandle;
 
         _banners.RemoveAll(b => !b.IsDraft);
         var draftCopy = _banners.Where(b => b.IsDraft).ToList();

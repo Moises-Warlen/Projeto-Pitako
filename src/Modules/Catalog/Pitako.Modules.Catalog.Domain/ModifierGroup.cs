@@ -11,6 +11,22 @@ public enum ModifierGroupType
     Complement = 2
 }
 
+public enum ModifierGroupKind
+{
+    RequiredChoice = 1,
+    FreeIncluded = 2,
+    PaidAddon = 3,
+    IngredientRemoval = 4,
+    Substitution = 5,
+    FlavorSelection = 6
+}
+
+public enum OptionCountingMode
+{
+    ByDistinctOption = 1,
+    ByTotalQuantity = 2
+}
+
 public sealed class ModifierOption : Entity<Guid>
 {
     private ModifierOption()
@@ -26,7 +42,14 @@ public sealed class ModifierOption : Entity<Guid>
         string name,
         Money additionalPrice,
         int maxQuantity,
-        int displayOrder) : base(id)
+        int displayOrder,
+        string? description = null,
+        Guid? supplyItemId = null,
+        decimal consumptionQuantity = 0m,
+        string? consumptionUnitCode = null,
+        decimal lossPercent = 0m,
+        string? replacesLabel = null,
+        string? incompatibleOptionIdsCsv = null) : base(id)
     {
         TenantId = tenantId;
         ModifierGroupId = modifierGroupId;
@@ -34,6 +57,13 @@ public sealed class ModifierOption : Entity<Guid>
         AdditionalPrice = additionalPrice;
         MaxQuantity = maxQuantity;
         DisplayOrder = displayOrder;
+        Description = description;
+        SupplyItemId = supplyItemId;
+        ConsumptionQuantity = consumptionQuantity;
+        ConsumptionUnitCode = consumptionUnitCode;
+        LossPercent = lossPercent;
+        ReplacesLabel = replacesLabel;
+        IncompatibleOptionIdsCsv = incompatibleOptionIdsCsv;
         IsAvailable = true;
     }
 
@@ -44,13 +74,56 @@ public sealed class ModifierOption : Entity<Guid>
     public int MaxQuantity { get; private set; }
     public int DisplayOrder { get; private set; }
     public bool IsAvailable { get; private set; }
+    public string? Description { get; private set; }
+    public Guid? SupplyItemId { get; private set; }
+    public decimal ConsumptionQuantity { get; private set; }
+    public string? ConsumptionUnitCode { get; private set; }
+    public decimal LossPercent { get; private set; }
+    public string? ReplacesLabel { get; private set; }
+    public string? IncompatibleOptionIdsCsv { get; private set; }
+
+    public Result Update(
+        string name,
+        Money additionalPrice,
+        int maxQuantity,
+        int displayOrder,
+        string? description = null,
+        Guid? supplyItemId = null,
+        decimal consumptionQuantity = 0m,
+        string? consumptionUnitCode = null,
+        decimal lossPercent = 0m,
+        string? replacesLabel = null,
+        string? incompatibleOptionIdsCsv = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
+        if (maxQuantity <= 0)
+            return Result.Failure(Error.Validation("ModifierOption.InvalidMaxQty", "Quantidade máxima deve ser positiva."));
+        if (consumptionQuantity < 0m || lossPercent < 0m || lossPercent >= 100m)
+            return Result.Failure(Error.Validation("ModifierOption.InvalidConsumption", "Consumo e percentual de perda devem ser válidos (0 a 99%)."));
+
+        ArgumentNullException.ThrowIfNull(additionalPrice);
+
+        Name = name.Trim();
+        AdditionalPrice = additionalPrice;
+        MaxQuantity = maxQuantity;
+        DisplayOrder = displayOrder;
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        SupplyItemId = supplyItemId == Guid.Empty ? null : supplyItemId;
+        ConsumptionQuantity = consumptionQuantity;
+        ConsumptionUnitCode = string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant();
+        LossPercent = lossPercent;
+        ReplacesLabel = string.IsNullOrWhiteSpace(replacesLabel) ? null : replacesLabel.Trim();
+        IncompatibleOptionIdsCsv = string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim();
+        return Result.Success();
+    }
 
     public void Pause() => IsAvailable = false;
     public void Reactivate() => IsAvailable = true;
 }
 
 /// <summary>
-/// Grupo reutilizável de adicionais ou complementos vinculado a produtos do cardápio.
+/// Grupo reutilizável de opções, adicionais, complementos, remoções, substituições e sabores vinculado a produtos.
 /// </summary>
 public sealed class ModifierGroup : TenantScopedAggregateRoot
 {
@@ -69,7 +142,11 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         int minSelections,
         int maxSelections,
         bool isRequired,
-        int displayOrder) : base(id, tenantId)
+        int displayOrder,
+        ModifierGroupKind selectionKind,
+        int freeAllowance,
+        OptionCountingMode countingMode,
+        string? categoryTag) : base(id, tenantId)
     {
         Name = name;
         Type = type;
@@ -77,6 +154,10 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         MaxSelections = maxSelections;
         IsRequired = isRequired;
         DisplayOrder = displayOrder;
+        SelectionKind = selectionKind;
+        FreeAllowance = freeAllowance;
+        CountingMode = countingMode;
+        CategoryTag = categoryTag;
         IsActive = true;
     }
 
@@ -87,6 +168,10 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
     public bool IsRequired { get; private set; }
     public int DisplayOrder { get; private set; }
     public bool IsActive { get; private set; }
+    public ModifierGroupKind SelectionKind { get; private set; }
+    public int FreeAllowance { get; private set; }
+    public OptionCountingMode CountingMode { get; private set; }
+    public string? CategoryTag { get; private set; }
 
     public IReadOnlyCollection<ModifierOption> Options => _options.AsReadOnly();
 
@@ -97,7 +182,11 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         int minSelections,
         int maxSelections,
         bool isRequired,
-        int displayOrder = 0)
+        int displayOrder = 0,
+        ModifierGroupKind? selectionKind = null,
+        int freeAllowance = 0,
+        OptionCountingMode countingMode = OptionCountingMode.ByTotalQuantity,
+        string? categoryTag = null)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<ModifierGroup>(Error.Validation("ModifierGroup.TenantRequired", "TenantId é obrigatório."));
@@ -105,11 +194,15 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ModifierGroup>(Error.Validation("ModifierGroup.NameRequired", "Nome do grupo é obrigatório."));
 
-        if (minSelections < 0 || maxSelections < 1 || minSelections > maxSelections)
-            return Result.Failure<ModifierGroup>(Error.Validation("ModifierGroup.InvalidRange", "Limites mínimo e máximo inválidos."));
+        if (minSelections < 0 || maxSelections < 1 || minSelections > maxSelections || freeAllowance < 0)
+            return Result.Failure<ModifierGroup>(Error.Validation("ModifierGroup.InvalidRange", "Limites mínimo, máximo e gratuito inválidos."));
 
         if (isRequired && minSelections < 1)
             return Result.Failure<ModifierGroup>(Error.Validation("ModifierGroup.RequiredMinOne", "Grupo obrigatório exige ao menos 1 seleção mínima."));
+
+        var resolvedKind = selectionKind ?? (isRequired
+            ? ModifierGroupKind.RequiredChoice
+            : type == ModifierGroupType.Complement ? ModifierGroupKind.FreeIncluded : ModifierGroupKind.PaidAddon);
 
         return Result.Success(new ModifierGroup(
             Guid.NewGuid(),
@@ -119,10 +212,62 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
             minSelections,
             maxSelections,
             isRequired,
-            displayOrder));
+            displayOrder,
+            resolvedKind,
+            freeAllowance,
+            countingMode,
+            string.IsNullOrWhiteSpace(categoryTag) ? null : categoryTag.Trim().ToLowerInvariant()));
     }
 
-    public Result<ModifierOption> AddOption(string name, Money additionalPrice, int maxQuantity = 1, int displayOrder = 0)
+    public Result UpdateConfiguration(
+        string name,
+        ModifierGroupType type,
+        int minSelections,
+        int maxSelections,
+        bool isRequired,
+        int displayOrder,
+        ModifierGroupKind selectionKind,
+        int freeAllowance,
+        OptionCountingMode countingMode,
+        string? categoryTag)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("ModifierGroup.NameRequired", "Nome do grupo é obrigatório."));
+
+        if (minSelections < 0 || maxSelections < 1 || minSelections > maxSelections || freeAllowance < 0)
+            return Result.Failure(Error.Validation("ModifierGroup.InvalidRange", "Limites mínimo, máximo e gratuito inválidos."));
+
+        if (isRequired && minSelections < 1)
+            return Result.Failure(Error.Validation("ModifierGroup.RequiredMinOne", "Grupo obrigatório exige ao menos 1 seleção mínima."));
+
+        Name = name.Trim();
+        Type = type;
+        MinSelections = minSelections;
+        MaxSelections = maxSelections;
+        IsRequired = isRequired;
+        DisplayOrder = displayOrder;
+        SelectionKind = selectionKind;
+        FreeAllowance = freeAllowance;
+        CountingMode = countingMode;
+        CategoryTag = string.IsNullOrWhiteSpace(categoryTag) ? null : categoryTag.Trim().ToLowerInvariant();
+        return Result.Success();
+    }
+
+    public void Pause() => IsActive = false;
+    public void Reactivate() => IsActive = true;
+
+    public Result<ModifierOption> AddOption(
+        string name,
+        Money additionalPrice,
+        int maxQuantity = 1,
+        int displayOrder = 0,
+        string? description = null,
+        Guid? supplyItemId = null,
+        decimal consumptionQuantity = 0m,
+        string? consumptionUnitCode = null,
+        decimal lossPercent = 0m,
+        string? replacesLabel = null,
+        string? incompatibleOptionIdsCsv = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ModifierOption>(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
@@ -130,10 +275,37 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         if (maxQuantity <= 0)
             return Result.Failure<ModifierOption>(Error.Validation("ModifierOption.InvalidMaxQty", "Quantidade máxima deve ser positiva."));
 
+        if (consumptionQuantity < 0m || lossPercent < 0m || lossPercent >= 100m)
+            return Result.Failure<ModifierOption>(Error.Validation("ModifierOption.InvalidConsumption", "Consumo e percentual de perda devem ser válidos (0 a 99%)."));
+
         ArgumentNullException.ThrowIfNull(additionalPrice);
 
-        var option = new ModifierOption(Guid.NewGuid(), TenantId, Id, name.Trim(), additionalPrice, maxQuantity, displayOrder);
+        var option = new ModifierOption(
+            Guid.NewGuid(),
+            TenantId,
+            Id,
+            name.Trim(),
+            additionalPrice,
+            maxQuantity,
+            displayOrder,
+            string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+            supplyItemId == Guid.Empty ? null : supplyItemId,
+            consumptionQuantity,
+            string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant(),
+            lossPercent,
+            string.IsNullOrWhiteSpace(replacesLabel) ? null : replacesLabel.Trim(),
+            string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim());
         _options.Add(option);
         return Result.Success(option);
+    }
+
+    public Result RemoveOption(Guid optionId)
+    {
+        var option = _options.FirstOrDefault(o => o.Id == optionId);
+        if (option is null)
+            return Result.Failure(Error.NotFound("ModifierOption.NotFound", "Opção não encontrada."));
+
+        _options.Remove(option);
+        return Result.Success();
     }
 }

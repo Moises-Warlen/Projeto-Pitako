@@ -195,7 +195,9 @@ public sealed class Order : TenantScopedAggregateRoot
         Money deliveryDiscount,
         string? idempotencyKey,
         DateTimeOffset placedAtUtc,
-        Guid? createdByUserId) : base(id, tenantId)
+        Guid? createdByUserId,
+        string? paymentMethod = null,
+        bool lgpdConsentAccepted = true) : base(id, tenantId)
     {
         StoreUnitId = storeUnitId;
         OrderNumber = orderNumber;
@@ -207,6 +209,8 @@ public sealed class Order : TenantScopedAggregateRoot
         CustomerPhone = customerPhone;
         DeliveryAddressSummary = deliveryAddressSummary;
         AppliedCouponCode = appliedCouponCode;
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? null : paymentMethod.Trim();
+        LgpdConsentAccepted = lgpdConsentAccepted;
         ItemsSubtotal = Money.Create(itemsSubtotal.Amount, itemsSubtotal.Currency).Value;
         ItemsDiscount = Money.Create(itemsDiscount.Amount, itemsDiscount.Currency).Value;
         DeliveryFee = Money.Create(deliveryFee.Amount, deliveryFee.Currency).Value;
@@ -241,6 +245,8 @@ public sealed class Order : TenantScopedAggregateRoot
     public string? CustomerPhone { get; private set; }
     public string? DeliveryAddressSummary { get; private set; }
     public string? AppliedCouponCode { get; private set; }
+    public string? PaymentMethod { get; private set; }
+    public bool LgpdConsentAccepted { get; private set; }
     public Money ItemsSubtotal { get; private set; }
     public Money ItemsDiscount { get; private set; }
     public Money DeliveryFee { get; private set; }
@@ -271,7 +277,9 @@ public sealed class Order : TenantScopedAggregateRoot
         Guid? storeUnitId,
         Guid? actorUserId,
         string? idempotencyKey,
-        DateTimeOffset utcNow)
+        DateTimeOffset utcNow,
+        string? paymentMethod = null,
+        bool lgpdConsentAccepted = true)
     {
         ArgumentNullException.ThrowIfNull(cart);
         ArgumentNullException.ThrowIfNull(authoritativeDeliveryFee);
@@ -306,7 +314,9 @@ public sealed class Order : TenantScopedAggregateRoot
             authoritativeDeliveryDiscount,
             string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim(),
             utcNow,
-            actorUserId);
+            actorUserId,
+            paymentMethod,
+            lgpdConsentAccepted);
 
         foreach (var cartItem in cart.Items)
         {

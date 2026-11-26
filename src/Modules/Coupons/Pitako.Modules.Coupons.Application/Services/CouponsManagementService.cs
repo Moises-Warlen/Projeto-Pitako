@@ -109,6 +109,87 @@ public sealed class CouponsManagementService : ICouponValidationService
         return Result.Success();
     }
 
+    public async Task<Result> ReactivateCouponAsync(User actor, Guid couponId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var coupon = await _couponRepo.FindByIdAsync(couponId, cancellationToken);
+        if (coupon is null)
+            return Result.Failure(Error.NotFound("Coupon.NotFound", "Cupom não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, coupon);
+        coupon.Activate();
+        await _couponRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<Coupon>> UpdateCouponAsync(
+        User actor,
+        Guid couponId,
+        CouponDiscountType discountType,
+        decimal discountValue,
+        DateTimeOffset validFromUtc,
+        DateTimeOffset validUntilUtc,
+        decimal minimumOrderAmount = 0m,
+        decimal? maxDiscountAmount = null,
+        int? maxTotalUses = null,
+        int? maxUsesPerCustomer = null,
+        bool canCombineWithPromotions = false,
+        string? description = null,
+        bool isActive = true,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<Coupon>(guard.Error);
+
+        var coupon = await _couponRepo.FindByIdAsync(couponId, cancellationToken);
+        if (coupon is null)
+            return Result.Failure<Coupon>(Error.NotFound("Coupon.NotFound", "Cupom não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, coupon);
+        var minRes = Money.Create(minimumOrderAmount);
+        if (minRes.IsFailure)
+            return Result.Failure<Coupon>(minRes.Error);
+
+        Money? maxMoney = null;
+        if (maxDiscountAmount.HasValue)
+        {
+            var maxRes = Money.Create(maxDiscountAmount.Value);
+            if (maxRes.IsFailure)
+                return Result.Failure<Coupon>(maxRes.Error);
+            maxMoney = maxRes.Value;
+        }
+
+        var upd = coupon.UpdateDetails(discountType, discountValue, validFromUtc, validUntilUtc, minRes.Value, maxMoney, maxTotalUses, maxUsesPerCustomer, canCombineWithPromotions, description);
+        if (upd.IsFailure)
+            return Result.Failure<Coupon>(upd.Error);
+
+        if (isActive) coupon.Activate();
+        else coupon.Deactivate();
+
+        await _couponRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(coupon);
+    }
+
+    public async Task<Result> DeleteCouponAsync(User actor, Guid couponId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure)
+            return guard;
+
+        var coupon = await _couponRepo.FindByIdAsync(couponId, cancellationToken);
+        if (coupon is null)
+            return Result.Failure(Error.NotFound("Coupon.NotFound", "Cupom não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, coupon);
+        _couponRepo.Remove(coupon);
+        await _couponRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
     public async Task<Result<CouponEvaluationResult>> EvaluateCouponAsync(
         string couponCode,
         string? customerIdentifier,

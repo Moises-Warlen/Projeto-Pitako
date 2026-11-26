@@ -253,6 +253,37 @@ public sealed class Coupon : TenantScopedAggregateRoot
     public void Deactivate() => IsActive = false;
     public void Activate() => IsActive = true;
 
+    public Result UpdateDetails(
+        CouponDiscountType discountType,
+        decimal discountValue,
+        DateTimeOffset validFromUtc,
+        DateTimeOffset validUntilUtc,
+        Money minimumOrderAmount,
+        Money? maxDiscountAmount,
+        int? maxTotalUses,
+        int? maxUsesPerCustomer,
+        bool canCombineWithPromotions,
+        string? description)
+    {
+        if (validUntilUtc <= validFromUtc)
+            return Result.Failure(Error.Validation("Coupon.InvalidPeriod", "Validade final deve ser posterior à inicial."));
+        if (discountValue < 0m || (discountType == CouponDiscountType.Percentage && discountValue > 100m))
+            return Result.Failure(Error.Validation("Coupon.InvalidDiscount", "Valor de desconto inválido."));
+        ArgumentNullException.ThrowIfNull(minimumOrderAmount);
+
+        DiscountType = discountType;
+        DiscountValue = discountValue;
+        ValidFromUtc = validFromUtc;
+        ValidUntilUtc = validUntilUtc;
+        MinimumOrderAmount = minimumOrderAmount;
+        MaxDiscountAmount = maxDiscountAmount;
+        MaxTotalUses = maxTotalUses;
+        MaxUsesPerCustomer = maxUsesPerCustomer;
+        CanCombineWithPromotions = canCombineWithPromotions;
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        return Result.Success();
+    }
+
     public Result<CouponEvaluationResult> Evaluate(
         DateTimeOffset utcNow,
         string? customerIdentifier,

@@ -15,7 +15,11 @@ public sealed record UpdateStoreBrandingDraftCommand(
     string SecondaryColorHex,
     string AccentColorHex,
     string MenuLayoutMode,
-    IReadOnlyList<StoreBannerSnapshot>? DraftBanners = null);
+    IReadOnlyList<StoreBannerSnapshot>? DraftBanners = null,
+    string? OperatingHoursJson = null,
+    string? AnnouncementText = null,
+    string? WhatsAppNumber = null,
+    string? InstagramHandle = null);
 
 public sealed record PublicStorefrontPresentation(
     Guid TenantId,
@@ -25,7 +29,9 @@ public sealed record PublicStorefrontPresentation(
     string FormattedCnpj,
     string? Address,
     string? ContactPhone,
-    StoreBrandingSnapshot Branding);
+    StoreBrandingSnapshot Branding,
+    string? ContactEmail = null,
+    StoreOperatingStatus? OperatingStatus = null);
 
 /// <summary>
 /// Serviço de personalização visual independente dos estabelecimentos com rascunho,
@@ -69,13 +75,65 @@ public sealed class StoreBrandingService
             command.SecondaryColorHex,
             command.AccentColorHex,
             command.MenuLayoutMode,
-            command.DraftBanners);
+            command.DraftBanners,
+            command.OperatingHoursJson,
+            command.AnnouncementText,
+            command.WhatsAppNumber,
+            command.InstagramHandle);
 
         if (update.IsFailure)
             return Result.Failure<StoreBrandingSnapshot>(update.Error);
 
         await _identityRepo.SaveChangesAsync(cancellationToken);
         return Result.Success(identity.GetDraftPreview());
+    }
+
+    public async Task<Result<Tenant>> UpdateStoreProfileAsync(
+        User actor,
+        Guid targetTenantId,
+        string legalName,
+        string tradeName,
+        string? address,
+        string? contactPhone,
+        string? contactEmail,
+        CancellationToken cancellationToken = default)
+    {
+        var auth = ValidateTenantAccess(actor, targetTenantId, PermissionAction.Edit);
+        if (auth.IsFailure)
+            return Result.Failure<Tenant>(auth.Error);
+
+        var tenant = await _tenantRepo.FindByIdAsync(targetTenantId, cancellationToken);
+        if (tenant is null)
+            return Result.Failure<Tenant>(Error.NotFound("Tenant.NotFound", "Estabelecimento não encontrado."));
+
+        var upd = tenant.UpdateOfficialDetails(legalName, tradeName, address, contactPhone, contactEmail);
+        if (upd.IsFailure)
+            return Result.Failure<Tenant>(upd.Error);
+
+        await _tenantRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(tenant);
+    }
+
+    public async Task<Result<StoreOperatingStatus>> SetTemporaryPauseAsync(
+        User actor,
+        Guid targetTenantId,
+        bool isPaused,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        var auth = ValidateTenantAccess(actor, targetTenantId, PermissionAction.Edit);
+        if (auth.IsFailure)
+            return Result.Failure<StoreOperatingStatus>(auth.Error);
+
+        var identity = await GetOrCreateIdentityAsync(targetTenantId, cancellationToken);
+        identity.SetTemporaryPause(isPaused, reason);
+        await _identityRepo.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(StoreOperatingHoursHelper.Evaluate(
+            identity.PublishedOperatingHoursJson,
+            identity.IsTemporarilyPaused,
+            identity.PauseReason,
+            _clock.UtcNow));
     }
 
     public async Task<Result<StoreBrandingSnapshot>> GetDraftPreviewAsync(
@@ -118,6 +176,13 @@ public sealed class StoreBrandingService
         var identity = await _identityRepo.FindByTenantIdForPublicViewAsync(tenant.Id, cancellationToken)
             ?? StoreVisualIdentity.CreateDefault(tenant.Id);
 
+        var pubView = identity.GetPublishedView();
+        var opStatus = StoreOperatingHoursHelper.Evaluate(
+            pubView.OperatingHoursJson,
+            pubView.IsTemporarilyPaused,
+            pubView.PauseReason,
+            _clock.UtcNow);
+
         // Sempre expõe somente a versão publicada, nunca alterações em rascunho não publicadas.
         return Result.Success(new PublicStorefrontPresentation(
             tenant.Id,
@@ -127,7 +192,9 @@ public sealed class StoreBrandingService
             tenant.Cnpj.Formatted,
             tenant.Address,
             tenant.ContactPhone,
-            identity.GetPublishedView()));
+            pubView,
+            tenant.ContactEmail,
+            opStatus));
     }
 
     private Result ValidateTenantAccess(User actor, Guid targetTenantId, PermissionAction action)

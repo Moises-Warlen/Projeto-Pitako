@@ -15,7 +15,9 @@ public interface ISupplyItemRepository
 {
     Task<SupplyItem?> FindByIdAsync(Guid supplyItemId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, SupplyItem>> FindLookupByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SupplyItem>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(SupplyItem item, CancellationToken cancellationToken = default);
+    void Remove(SupplyItem item);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -23,8 +25,10 @@ public interface ITechnicalSheetRepository
 {
     Task<TechnicalSheet?> FindByIdAsync(Guid sheetId, CancellationToken cancellationToken = default);
     Task<TechnicalSheet?> FindActiveByProductIdAsync(Guid productId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TechnicalSheet>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TechnicalSheet>> ListUsingSupplyItemAsync(Guid supplyItemId, CancellationToken cancellationToken = default);
     Task AddAsync(TechnicalSheet sheet, CancellationToken cancellationToken = default);
+    void Remove(TechnicalSheet sheet);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -53,7 +57,13 @@ public interface IProductionOrderRepository
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
-public sealed record OrderStockLineInput(Guid ProductId, decimal Quantity, string UnitCode = "unidade");
+public sealed record OrderCustomIngredientInput(Guid SupplyItemId, decimal Quantity, string UnitCode, string IngredientName);
+
+public sealed record OrderStockLineInput(
+    Guid ProductId,
+    decimal Quantity,
+    string UnitCode = "unidade",
+    IReadOnlyList<OrderCustomIngredientInput>? CustomIngredients = null);
 
 public sealed record StockOrderDeductionSummary(int MovementsCreated, int SkippedItemsCount);
 

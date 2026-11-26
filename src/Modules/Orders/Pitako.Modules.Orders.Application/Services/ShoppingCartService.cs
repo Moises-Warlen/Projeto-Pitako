@@ -120,6 +120,101 @@ public sealed class ShoppingCartService
         return Result.Success(cartRes.Value);
     }
 
+    public async Task<Result<ShoppingCart>> UpdateCatalogProductItemAsync(
+        string cartSessionKey,
+        Guid cartItemId,
+        Guid? variationId,
+        IReadOnlyList<CatalogModifierSelection>? modifiers,
+        int quantity,
+        string? customerNotes,
+        CancellationToken cancellationToken = default)
+    {
+        var cartRes = await GetOrCreateCartAsync(cartSessionKey, null, cancellationToken);
+        if (cartRes.IsFailure)
+            return cartRes;
+
+        var existingItem = cartRes.Value.Items.FirstOrDefault(i => i.Id == cartItemId);
+        if (existingItem is null || !existingItem.ProductId.HasValue)
+            return Result.Failure<ShoppingCart>(Error.NotFound("Cart.ItemNotFound", "Item não encontrado no carrinho."));
+
+        var quoteRes = await _catalogPricing.QuoteProductItemAsync(existingItem.ProductId.Value, variationId, modifiers, cancellationToken);
+        if (quoteRes.IsFailure)
+            return Result.Failure<ShoppingCart>(quoteRes.Error);
+
+        var q = quoteRes.Value;
+        var updRes = cartRes.Value.UpdateItemCustomization(
+            cartItemId,
+            q.VariationId,
+            q.ProductName,
+            q.CustomizationSummaryText,
+            q.CanonicalSelectionsJson,
+            q.UnitPrice,
+            quantity,
+            q.HasNonCombinablePromotion,
+            customerNotes);
+
+        if (updRes.IsFailure)
+            return Result.Failure<ShoppingCart>(updRes.Error);
+
+        await ReevaluateAppliedCouponIfAnyAsync(cartRes.Value, cancellationToken);
+        await _cartRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(cartRes.Value);
+    }
+
+    public async Task<Result<ShoppingCart>> AddComboAsync(
+        string cartSessionKey,
+        Guid comboId,
+        int quantity = 1,
+        string? customerNotes = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_catalogPricing is not IUniversalCatalogQuoteService universal)
+            return Result.Failure<ShoppingCart>(Error.Validation("Catalog.ComboUnsupported", "Serviço de cotação de combos não configurado."));
+
+        var cartRes = await GetOrCreateCartAsync(cartSessionKey, null, cancellationToken);
+        if (cartRes.IsFailure)
+            return cartRes;
+
+        var quoteRes = await universal.QuoteComboAsync(comboId, cancellationToken);
+        if (quoteRes.IsFailure)
+            return Result.Failure<ShoppingCart>(quoteRes.Error);
+
+        var q = quoteRes.Value;
+        var addRes = cartRes.Value.AddItem(
+            CartItemKind.Combo,
+            null,
+            q.CategoryId,
+            null,
+            null,
+            null,
+            q.ProductName,
+            q.CustomizationSummaryText,
+            q.CanonicalSelectionsJson,
+            q.UnitPrice,
+            quantity,
+            q.HasNonCombinablePromotion,
+            customerNotes,
+            _clock.UtcNow);
+
+        if (addRes.IsFailure)
+            return Result.Failure<ShoppingCart>(addRes.Error);
+
+        await ReevaluateAppliedCouponIfAnyAsync(cartRes.Value, cancellationToken);
+        await _cartRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(cartRes.Value);
+    }
+
+    public async Task<Result<ShoppingCart>> ClearCartAsync(string cartSessionKey, CancellationToken cancellationToken = default)
+    {
+        var cartRes = await GetOrCreateCartAsync(cartSessionKey, null, cancellationToken);
+        if (cartRes.IsFailure)
+            return cartRes;
+
+        cartRes.Value.ClearItems();
+        await _cartRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(cartRes.Value);
+    }
+
     public async Task<Result<ShoppingCart>> AddCustomAcaiCupAsync(
         string cartSessionKey,
         AcaiCupBuildRequest buildRequest,

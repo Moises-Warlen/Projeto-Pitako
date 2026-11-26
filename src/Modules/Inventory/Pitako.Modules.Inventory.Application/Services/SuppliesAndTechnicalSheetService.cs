@@ -69,6 +69,7 @@ public sealed class SuppliesAndTechnicalSheetService
         string? sku = null,
         decimal? contentQuantityPerPackage = null,
         string? contentUnitCode = null,
+        decimal defaultLossPercent = 0m,
         CancellationToken cancellationToken = default)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Create);
@@ -92,7 +93,8 @@ public sealed class SuppliesAndTechnicalSheetService
             contentUnitCode,
             customUnits,
             _clock.UtcNow,
-            actor.Id);
+            actor.Id,
+            defaultLossPercent);
 
         if (supplyRes.IsFailure)
             return supplyRes;
@@ -100,6 +102,100 @@ public sealed class SuppliesAndTechnicalSheetService
         await _supplyRepo.AddAsync(supplyRes.Value, cancellationToken);
         await _supplyRepo.SaveChangesAsync(cancellationToken);
         return supplyRes;
+    }
+
+    public async Task<Result<SupplyPriceUpdateResult>> UpdateSupplyItemAsync(
+        User actor,
+        Guid supplyItemId,
+        string name,
+        decimal purchasePriceAmount,
+        decimal purchaseQuantity,
+        string purchaseUnitCode,
+        string? supplierName,
+        string? sku,
+        decimal? contentQuantityPerPackage,
+        string? contentUnitCode,
+        decimal defaultLossPercent,
+        bool isActive = true,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<SupplyPriceUpdateResult>(guard.Error);
+
+        var supply = await _supplyRepo.FindByIdAsync(supplyItemId, cancellationToken);
+        if (supply is null)
+            return Result.Failure<SupplyPriceUpdateResult>(Error.NotFound("Supply.NotFound", "Insumo não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, supply);
+        var priceRes = Money.Create(purchasePriceAmount);
+        if (priceRes.IsFailure)
+            return Result.Failure<SupplyPriceUpdateResult>(priceRes.Error);
+
+        var customUnits = await _unitRepo.GetLookupAsync(cancellationToken);
+        var utcNow = _clock.UtcNow;
+        var upd = supply.UpdateDetails(
+            name,
+            priceRes.Value,
+            purchaseQuantity,
+            purchaseUnitCode,
+            supplierName,
+            sku,
+            contentQuantityPerPackage,
+            contentUnitCode,
+            defaultLossPercent,
+            customUnits,
+            utcNow,
+            actor.Id);
+        if (upd.IsFailure)
+            return Result.Failure<SupplyPriceUpdateResult>(upd.Error);
+
+        if (isActive) supply.Activate();
+        else supply.Deactivate();
+
+        var affectedSheets = await _sheetRepo.ListUsingSupplyItemAsync(supplyItemId, cancellationToken);
+        if (affectedSheets.Count > 0)
+        {
+            var allSupplyIds = affectedSheets
+                .SelectMany(s => s.Ingredients.Select(i => i.SupplyItemId)
+                    .Concat(s.Packagings.Where(p => p.SupplyItemId.HasValue).Select(p => p.SupplyItemId!.Value)))
+                .Distinct()
+                .ToList();
+
+            var lookup = (await _supplyRepo.FindLookupByIdsAsync(allSupplyIds, cancellationToken))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            lookup[supply.Id] = supply;
+
+            foreach (var sheet in affectedSheets)
+            {
+                var recalc = sheet.RecalculateFromCurrentSupplies(lookup, customUnits, $"Atualização do insumo '{supply.Name}'", utcNow);
+                if (recalc.IsFailure)
+                    return Result.Failure<SupplyPriceUpdateResult>(recalc.Error);
+            }
+        }
+
+        await _supplyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(new SupplyPriceUpdateResult(supply, affectedSheets.Count));
+    }
+
+    public async Task<Result> DeleteSupplyItemAsync(User actor, Guid supplyItemId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure)
+            return guard;
+
+        var supply = await _supplyRepo.FindByIdAsync(supplyItemId, cancellationToken);
+        if (supply is null)
+            return Result.Failure(Error.NotFound("Supply.NotFound", "Insumo não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, supply);
+        var usedBySheets = await _sheetRepo.ListUsingSupplyItemAsync(supplyItemId, cancellationToken);
+        if (usedBySheets.Count > 0)
+            return Result.Failure(Error.Conflict("Supply.InUse", $"Insumo vinculado a {usedBySheets.Count} ficha(s) técnica(s). Desative-o ou remova das fichas primeiro."));
+
+        _supplyRepo.Remove(supply);
+        await _supplyRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 
     public async Task<Result<TechnicalSheet>> CreateTechnicalSheetAsync(
@@ -146,6 +242,65 @@ public sealed class SuppliesAndTechnicalSheetService
         await _sheetRepo.AddAsync(sheetRes.Value, cancellationToken);
         await _sheetRepo.SaveChangesAsync(cancellationToken);
         return sheetRes;
+    }
+
+    public async Task<Result<TechnicalSheet>> UpdateTechnicalSheetAsync(
+        User actor,
+        Guid sheetId,
+        string name,
+        decimal yieldQuantity,
+        string yieldUnitCode,
+        IEnumerable<IngredientInput> ingredients,
+        IEnumerable<PackagingInput> packagings,
+        Guid? productId = null,
+        string? notes = null,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<TechnicalSheet>(guard.Error);
+
+        var sheet = await _sheetRepo.FindByIdAsync(sheetId, cancellationToken);
+        if (sheet is null)
+            return Result.Failure<TechnicalSheet>(Error.NotFound("TechnicalSheet.NotFound", "Ficha técnica não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, sheet);
+        var metaRes = sheet.UpdateMetadata(name, yieldQuantity, yieldUnitCode, productId, notes);
+        if (metaRes.IsFailure)
+            return Result.Failure<TechnicalSheet>(metaRes.Error);
+
+        var ingList = ingredients.ToList();
+        var pkgList = packagings.ToList();
+        var supplyIds = ingList.Select(i => i.SupplyItemId)
+            .Concat(pkgList.Where(p => p.SupplyItemId.HasValue).Select(p => p.SupplyItemId!.Value))
+            .Distinct()
+            .ToList();
+
+        var supplies = await _supplyRepo.FindLookupByIdsAsync(supplyIds, cancellationToken);
+        var customUnits = await _unitRepo.GetLookupAsync(cancellationToken);
+
+        var compRes = sheet.ReplaceCompositionAndRecalculate(ingList, pkgList, supplies, customUnits, "Edição da ficha técnica", _clock.UtcNow);
+        if (compRes.IsFailure)
+            return Result.Failure<TechnicalSheet>(compRes.Error);
+
+        await _sheetRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(sheet);
+    }
+
+    public async Task<Result> DeleteTechnicalSheetAsync(User actor, Guid sheetId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure)
+            return guard;
+
+        var sheet = await _sheetRepo.FindByIdAsync(sheetId, cancellationToken);
+        if (sheet is null)
+            return Result.Failure(Error.NotFound("TechnicalSheet.NotFound", "Ficha técnica não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, sheet);
+        _sheetRepo.Remove(sheet);
+        await _sheetRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 
     /// <summary>

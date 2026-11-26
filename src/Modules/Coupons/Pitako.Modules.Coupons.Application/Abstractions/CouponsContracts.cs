@@ -10,6 +10,7 @@ public interface ICouponRepository
     Task<Coupon?> FindByCodeAsync(string normalizedCode, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Coupon>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Coupon coupon, CancellationToken cancellationToken = default);
+    void Remove(Coupon coupon);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

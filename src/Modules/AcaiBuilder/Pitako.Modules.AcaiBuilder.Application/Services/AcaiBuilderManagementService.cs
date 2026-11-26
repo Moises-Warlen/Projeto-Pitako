@@ -209,6 +209,202 @@ public sealed class AcaiBuilderManagementService : IAcaiAssemblyPricingService
         return Result.Success();
     }
 
+    public async Task<Result<AcaiCupSize>> UpdateCupSizeAsync(
+        User actor,
+        Guid cupSizeId,
+        string name,
+        int volumeMl,
+        decimal basePriceAmount,
+        int freeToppingsLimit,
+        int minFreeToppings = 0,
+        AcaiFreeCountingMode countingMode = AcaiFreeCountingMode.ByPortion,
+        int? maxPaidAddonsPerCup = null,
+        int displayOrder = 0,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<AcaiCupSize>(guard.Error);
+
+        var cup = await _cupRepo.FindByIdAsync(cupSizeId, cancellationToken);
+        if (cup is null)
+            return Result.Failure<AcaiCupSize>(Error.NotFound("Acai.CupSizeNotFound", "Tamanho de copo não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, cup);
+        var priceRes = Money.Create(basePriceAmount);
+        if (priceRes.IsFailure)
+            return Result.Failure<AcaiCupSize>(priceRes.Error);
+
+        var res = cup.UpdateConfiguration(name, volumeMl, priceRes.Value, freeToppingsLimit, minFreeToppings, countingMode, maxPaidAddonsPerCup, displayOrder);
+        if (res.IsFailure)
+            return Result.Failure<AcaiCupSize>(res.Error);
+
+        await _cupRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(cup);
+    }
+
+    public async Task<Result> SetCupSizeActiveAsync(User actor, Guid cupSizeId, bool isActive, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return guard;
+
+        var cup = await _cupRepo.FindByIdAsync(cupSizeId, cancellationToken);
+        if (cup is null)
+            return Result.Failure(Error.NotFound("Acai.CupSizeNotFound", "Tamanho de copo não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, cup);
+        if (isActive) cup.Reactivate(); else cup.Pause();
+        await _cupRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> DeleteCupSizeAsync(User actor, Guid cupSizeId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure) return guard;
+
+        var cup = await _cupRepo.FindByIdAsync(cupSizeId, cancellationToken);
+        if (cup is null)
+            return Result.Failure(Error.NotFound("Acai.CupSizeNotFound", "Tamanho de copo não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, cup);
+        _cupRepo.Remove(cup);
+        await _cupRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<AcaiBaseFlavor>> UpdateBaseFlavorAsync(User actor, Guid flavorId, string name, decimal extraPriceAmount = 0m, int displayOrder = 0, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return Result.Failure<AcaiBaseFlavor>(guard.Error);
+
+        var flavor = await _flavorRepo.FindByIdAsync(flavorId, cancellationToken);
+        if (flavor is null)
+            return Result.Failure<AcaiBaseFlavor>(Error.NotFound("Acai.FlavorNotFound", "Sabor base não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, flavor);
+        var priceRes = Money.Create(extraPriceAmount);
+        if (priceRes.IsFailure) return Result.Failure<AcaiBaseFlavor>(priceRes.Error);
+
+        var res = flavor.Update(name, priceRes.Value, displayOrder);
+        if (res.IsFailure) return Result.Failure<AcaiBaseFlavor>(res.Error);
+
+        await _flavorRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(flavor);
+    }
+
+    public async Task<Result> DeleteBaseFlavorAsync(User actor, Guid flavorId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure) return guard;
+
+        var flavor = await _flavorRepo.FindByIdAsync(flavorId, cancellationToken);
+        if (flavor is null)
+            return Result.Failure(Error.NotFound("Acai.FlavorNotFound", "Sabor base não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, flavor);
+        _flavorRepo.Remove(flavor);
+        await _flavorRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<AcaiFreeTopping>> UpdateFreeToppingAsync(User actor, Guid toppingId, string name, int maxPortionsPerCup = 1, int displayOrder = 0, Guid? supplyItemId = null, decimal? consumptionQuantityPerPortion = null, string? consumptionUnitCode = null, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return Result.Failure<AcaiFreeTopping>(guard.Error);
+
+        var topping = await _toppingRepo.FindByIdAsync(toppingId, cancellationToken);
+        if (topping is null)
+            return Result.Failure<AcaiFreeTopping>(Error.NotFound("Acai.ToppingNotFound", "Acompanhamento gratuito não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, topping);
+        var res = topping.Update(name, maxPortionsPerCup, displayOrder, supplyItemId, consumptionQuantityPerPortion, consumptionUnitCode);
+        if (res.IsFailure) return Result.Failure<AcaiFreeTopping>(res.Error);
+
+        await _toppingRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(topping);
+    }
+
+    public async Task<Result> ReactivateFreeToppingAsync(User actor, Guid toppingId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return guard;
+
+        var topping = await _toppingRepo.FindByIdAsync(toppingId, cancellationToken);
+        if (topping is null)
+            return Result.Failure(Error.NotFound("Acai.ToppingNotFound", "Acompanhamento gratuito não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, topping);
+        topping.Reactivate();
+        await _toppingRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> DeleteFreeToppingAsync(User actor, Guid toppingId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure) return guard;
+
+        var topping = await _toppingRepo.FindByIdAsync(toppingId, cancellationToken);
+        if (topping is null)
+            return Result.Failure(Error.NotFound("Acai.ToppingNotFound", "Acompanhamento gratuito não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, topping);
+        _toppingRepo.Remove(topping);
+        await _toppingRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<AcaiPaidAddon>> UpdatePaidAddonAsync(User actor, Guid addonId, string name, decimal additionalPriceAmount, int maxQuantityPerCup = 3, int displayOrder = 0, Guid? supplyItemId = null, decimal? consumptionQuantityPerUnit = null, string? consumptionUnitCode = null, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return Result.Failure<AcaiPaidAddon>(guard.Error);
+
+        var addon = await _addonRepo.FindByIdAsync(addonId, cancellationToken);
+        if (addon is null)
+            return Result.Failure<AcaiPaidAddon>(Error.NotFound("Acai.AddonNotFound", "Adicional pago não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, addon);
+        var priceRes = Money.Create(additionalPriceAmount);
+        if (priceRes.IsFailure) return Result.Failure<AcaiPaidAddon>(priceRes.Error);
+
+        var res = addon.Update(name, priceRes.Value, maxQuantityPerCup, displayOrder, supplyItemId, consumptionQuantityPerUnit, consumptionUnitCode);
+        if (res.IsFailure) return Result.Failure<AcaiPaidAddon>(res.Error);
+
+        await _addonRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(addon);
+    }
+
+    public async Task<Result> ReactivatePaidAddonAsync(User actor, Guid addonId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure) return guard;
+
+        var addon = await _addonRepo.FindByIdAsync(addonId, cancellationToken);
+        if (addon is null)
+            return Result.Failure(Error.NotFound("Acai.AddonNotFound", "Adicional pago não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, addon);
+        addon.Reactivate();
+        await _addonRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> DeletePaidAddonAsync(User actor, Guid addonId, CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Delete);
+        if (guard.IsFailure) return guard;
+
+        var addon = await _addonRepo.FindByIdAsync(addonId, cancellationToken);
+        if (addon is null)
+            return Result.Failure(Error.NotFound("Acai.AddonNotFound", "Adicional pago não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, addon);
+        _addonRepo.Remove(addon);
+        await _addonRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
     public async Task<AcaiMenuCatalogView> GetMenuCatalogAsync(
         bool includePaused = false,
         CancellationToken cancellationToken = default)

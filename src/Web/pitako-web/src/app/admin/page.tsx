@@ -1,272 +1,259 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ExternalLink, Pause, Play } from "lucide-react";
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { StoreBrandShell, StoreBrandTheme } from "@/components/StoreBrandShell";
+import { AdminAcaiConfigDto, AdminAcaiTab, AdminTeamTab } from "@/components/admin/AdminAcaiAndTeamTabs";
+import { AdminCategoryDto, AdminCatalogTab, AdminProductDto } from "@/components/admin/AdminCatalogTab";
+import { AdminBrandingAndStoreTab, AdminComboDto, AdminCommercialTab, AdminCouponDto, AdminDeliveryPolicyDto, AdminMarginDto } from "@/components/admin/AdminCommercialAndStoreTab";
+import { AdminInventoryTab, AdminSupplyDto, AdminTechnicalSheetDto } from "@/components/admin/AdminInventoryTab";
+import { AdminModifierGroupDto, AdminModifiersTab } from "@/components/admin/AdminModifiersTab";
 import { apiFetch, loadSession } from "@/lib/api";
+import { StoreBannerSnapshot, StoreOperatingHoursEntry } from "@/types/menu";
 
-interface BrandingResponse {
-  tradeName: string;
-  slug: string;
-  cnpj?: string;
-  draft: {
-    logoUrl?: string;
-    slogan?: string;
-    primaryColorHex: string;
-    secondaryColorHex: string;
-    accentColorHex: string;
-    menuLayoutMode: string;
-  };
-}
+const DEFAULT_HOURS: StoreOperatingHoursEntry[] = [
+  { dayOfWeek: 0, isOpen: true, openTime: "13:00", closeTime: "23:00" },
+  { dayOfWeek: 1, isOpen: true, openTime: "11:00", closeTime: "23:00" },
+  { dayOfWeek: 2, isOpen: true, openTime: "11:00", closeTime: "23:00" },
+  { dayOfWeek: 3, isOpen: true, openTime: "11:00", closeTime: "23:00" },
+  { dayOfWeek: 4, isOpen: true, openTime: "11:00", closeTime: "23:00" },
+  { dayOfWeek: 5, isOpen: true, openTime: "11:00", closeTime: "23:30" },
+  { dayOfWeek: 6, isOpen: true, openTime: "11:00", closeTime: "23:30" }
+];
 
-interface CatalogData {
-  categories: { id: string; name: string }[];
-  products: { id: string; categoryId: string; name: string; basePrice: number; status: string; saleMode: string }[];
-}
+type AdminTabKey = "catalog" | "modifiers" | "acai" | "inventory" | "commercial" | "branding" | "team";
 
-interface AcaiData {
-  cupSizes: { id: string; name: string; volumeMl: number; basePrice: { amount: number }; freeToppingsLimit: number }[];
-  baseFlavors: { id: string; name: string }[];
-  freeToppings: { id: string; name: string }[];
-  paidAddons: { id: string; name: string; additionalPrice: { amount: number } }[];
-}
-
-interface StoreUserRow {
-  id: string;
-  fullName: string;
-  normalizedEmail: string;
-  role: string;
-}
-
-export default function StoreAdminPage() {
-  const [tab, setTab] = useState<"catalog" | "acai" | "branding" | "team">("catalog");
+export default function AdminStorePage() {
+  const [token, setToken] = useState("");
   const [slug, setSlug] = useState("acai-demo");
   const [theme, setTheme] = useState<StoreBrandTheme>({
-    tradeName: "Painel do Estabelecimento",
-    formattedCnpj: "CNPJ da loja",
-    primaryColorHex: "#4C1D95",
-    secondaryColorHex: "#FAF5FF",
-    accentColorHex: "#F59E0B"
+    tradeName: "Administração da Loja",
+    primaryColorHex: "#1e293b",
+    secondaryColorHex: "#f8fafc",
+    accentColorHex: "#0f766e"
   });
+  const [tab, setTab] = useState<AdminTabKey>("catalog");
   const [msg, setMsg] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
 
-  // Branding
-  const [primaryHex, setPrimaryHex] = useState("#4C1D95");
-  const [accentHex, setAccentHex] = useState("#F59E0B");
-  const [slogan, setSlogan] = useState("");
+  const [categories, setCategories] = useState<AdminCategoryDto[]>([]);
+  const [products, setProducts] = useState<AdminProductDto[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<AdminModifierGroupDto[]>([]);
+  const [acai, setAcai] = useState<AdminAcaiConfigDto>({ cupSizes: [], baseFlavors: [], freeToppings: [], paidAddons: [] });
+  const [supplies, setSupplies] = useState<AdminSupplyDto[]>([]);
+  const [sheets, setSheets] = useState<AdminTechnicalSheetDto[]>([]);
+  const [margins, setMargins] = useState<AdminMarginDto[]>([]);
+  const [combos, setCombos] = useState<AdminComboDto[]>([]);
+  const [coupons, setCoupons] = useState<AdminCouponDto[]>([]);
+  const [deliveryPolicy, setDeliveryPolicy] = useState<AdminDeliveryPolicyDto | null>(null);
+  const [team, setTeam] = useState<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>([]);
 
-  // Catalog
-  const [catalog, setCatalog] = useState<CatalogData>({ categories: [], products: [] });
-  const [newCatName, setNewCatName] = useState("");
-  const [prodCatId, setProdCatId] = useState("");
-  const [prodName, setProdName] = useState("");
-  const [prodPrice, setProdPrice] = useState("19.90");
-  const [prodSaleMode, setProdSaleMode] = useState("1");
+  const [storeProfile, setStoreProfile] = useState({
+    legalName: "",
+    tradeName: "",
+    address: "",
+    contactPhone: "",
+    contactEmail: ""
+  });
+  const [brandingData, setBrandingData] = useState({
+    logoUrl: "",
+    coverImageUrl: "",
+    slogan: "",
+    primaryColorHex: "#1e293b",
+    secondaryColorHex: "#f8fafc",
+    accentColorHex: "#0f766e",
+    announcementText: "",
+    whatsAppNumber: "",
+    instagramHandle: "",
+    banners: [] as StoreBannerSnapshot[],
+    schedule: DEFAULT_HOURS
+  });
 
-  // Acai
-  const [acai, setAcai] = useState<AcaiData>({ cupSizes: [], baseFlavors: [], freeToppings: [], paidAddons: [] });
-  const [cupName, setCupName] = useState("");
-  const [cupMl, setCupMl] = useState("400");
-  const [cupPrice, setCupPrice] = useState("18.90");
-  const [cupFreeLimit, setCupFreeLimit] = useState("3");
-  const [freeName, setFreeName] = useState("");
-  const [paidName, setPaidName] = useState("");
-  const [paidPrice, setPaidPrice] = useState("4.50");
-
-  // Team
-  const [team, setTeam] = useState<StoreUserRow[]>([]);
-  const [staffName, setStaffName] = useState("");
-  const [staffEmail, setStaffEmail] = useState("");
-  const [staffPassword, setStaffPassword] = useState("Equipe@123");
-  const [staffRole, setStaffRole] = useState("3");
-
-  async function refreshStoreData() {
+  const refreshStoreData = useCallback(async () => {
     const session = loadSession();
-    if (!session || session.scope !== "Establishment") {
-      setMsg("Faça login como usuário do estabelecimento em /login (ex.: admin@tropicalexpress.com.br / Store@12345).");
-      return;
-    }
+    if (!session) return;
+    setToken(session.accessToken);
+    if (session.storeSlug) setSlug(session.storeSlug);
 
-    const [brandRes, catRes, acaiRes, usersRes] = await Promise.all([
-      apiFetch<BrandingResponse>("/api/v1/store/branding", {}, session.accessToken),
-      apiFetch<CatalogData>("/api/v1/catalog/products", {}, session.accessToken),
-      apiFetch<AcaiData>("/api/v1/acai/config", {}, session.accessToken),
-      apiFetch<StoreUserRow[]>("/api/v1/store/users", {}, session.accessToken)
+    const [brandRes, catRes, acaiRes, supRes, sheetRes, marginRes, comboRes, couponRes, delivRes, userRes] = await Promise.all([
+      apiFetch<{
+        legalName?: string;
+        tradeName?: string;
+        slug?: string;
+        address?: string;
+        contactPhone?: string;
+        contactEmail?: string;
+        draft: {
+          logoUrl?: string;
+          coverImageUrl?: string;
+          slogan?: string;
+          primaryColorHex: string;
+          secondaryColorHex: string;
+          accentColorHex: string;
+          announcementText?: string;
+          whatsAppNumber?: string;
+          instagramHandle?: string;
+          operatingHoursJson?: string;
+          isTemporarilyPaused?: boolean;
+          banners?: StoreBannerSnapshot[];
+        };
+      }>("/api/v1/store/branding", {}, session.accessToken),
+      apiFetch<{ categories: AdminCategoryDto[]; products: AdminProductDto[]; modifierGroups: AdminModifierGroupDto[] }>(
+        "/api/v1/catalog/products",
+        {},
+        session.accessToken
+      ),
+      apiFetch<AdminAcaiConfigDto>("/api/v1/acai/config", {}, session.accessToken),
+      apiFetch<AdminSupplyDto[]>("/api/v1/inventory/supplies", {}, session.accessToken),
+      apiFetch<AdminTechnicalSheetDto[]>("/api/v1/inventory/technical-sheets", {}, session.accessToken),
+      apiFetch<AdminMarginDto[]>("/api/v1/catalog/analytics/margins", {}, session.accessToken),
+      apiFetch<AdminComboDto[]>("/api/v1/catalog/combos", {}, session.accessToken),
+      apiFetch<AdminCouponDto[]>("/api/v1/coupons", {}, session.accessToken),
+      apiFetch<AdminDeliveryPolicyDto | null>("/api/v1/delivery/policy", {}, session.accessToken),
+      apiFetch<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>("/api/v1/store/users", {}, session.accessToken)
     ]);
 
     if (brandRes.ok && brandRes.data) {
-      setSlug(brandRes.data.slug);
+      const d = brandRes.data.draft;
       setTheme({
-        tradeName: brandRes.data.tradeName,
-        formattedCnpj: brandRes.data.cnpj,
-        logoUrl: brandRes.data.draft.logoUrl,
-        primaryColorHex: brandRes.data.draft.primaryColorHex,
-        secondaryColorHex: brandRes.data.draft.secondaryColorHex,
-        accentColorHex: brandRes.data.draft.accentColorHex
+        tradeName: brandRes.data.tradeName || session.email,
+        logoUrl: d.logoUrl,
+        primaryColorHex: d.primaryColorHex,
+        secondaryColorHex: d.secondaryColorHex,
+        accentColorHex: d.accentColorHex
       });
-      setPrimaryHex(brandRes.data.draft.primaryColorHex);
-      setAccentHex(brandRes.data.draft.accentColorHex);
-      setSlogan(brandRes.data.draft.slogan || "");
+      if (brandRes.data.slug) setSlug(brandRes.data.slug);
+      setIsPaused(Boolean(d.isTemporarilyPaused));
+      setStoreProfile({
+        legalName: brandRes.data.legalName || brandRes.data.tradeName || "",
+        tradeName: brandRes.data.tradeName || "",
+        address: brandRes.data.address || "",
+        contactPhone: brandRes.data.contactPhone || "",
+        contactEmail: brandRes.data.contactEmail || ""
+      });
+
+      let parsedSchedule = DEFAULT_HOURS;
+      try {
+        if (d.operatingHoursJson) {
+          const arr = JSON.parse(d.operatingHoursJson) as StoreOperatingHoursEntry[];
+          if (Array.isArray(arr) && arr.length > 0) parsedSchedule = arr;
+        }
+      } catch {
+        // Mantém padrão semanal
+      }
+
+      setBrandingData({
+        logoUrl: d.logoUrl || "",
+        coverImageUrl: d.coverImageUrl || "",
+        slogan: d.slogan || "",
+        primaryColorHex: d.primaryColorHex,
+        secondaryColorHex: d.secondaryColorHex,
+        accentColorHex: d.accentColorHex,
+        announcementText: d.announcementText || "",
+        whatsAppNumber: d.whatsAppNumber || "",
+        instagramHandle: d.instagramHandle || "",
+        banners: d.banners || [],
+        schedule: parsedSchedule
+      });
     }
+
     if (catRes.ok && catRes.data) {
-      setCatalog(catRes.data);
-      if (!prodCatId && catRes.data.categories[0]) setProdCatId(catRes.data.categories[0].id);
+      setCategories(catRes.data.categories || []);
+      setProducts(catRes.data.products || []);
+      setModifierGroups(catRes.data.modifierGroups || []);
     }
     if (acaiRes.ok && acaiRes.data) setAcai(acaiRes.data);
-    if (usersRes.ok && usersRes.data) setTeam(usersRes.data);
-
-    setMsg(brandRes.ok ? null : brandRes.errorMessage || "Erro ao carregar dados da loja.");
-  }
-
-  useEffect(() => {
-    refreshStoreData();
+    if (supRes.ok && supRes.data) setSupplies(supRes.data);
+    if (sheetRes.ok && sheetRes.data) setSheets(sheetRes.data);
+    if (marginRes.ok && marginRes.data) setMargins(marginRes.data);
+    if (comboRes.ok && comboRes.data) setCombos(comboRes.data);
+    if (couponRes.ok && couponRes.data) setCoupons(couponRes.data);
+    if (delivRes.ok) setDeliveryPolicy(delivRes.data ?? null);
+    if (userRes.ok && userRes.data) setTeam(userRes.data);
   }, []);
 
-  async function handlePublishBranding(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
+  useEffect(() => {
+    void refreshStoreData();
+  }, [refreshStoreData]);
 
-    const draftRes = await apiFetch(
-      "/api/v1/store/branding/draft",
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          logoUrl: theme.logoUrl || "/store-assets/tropical-logo.svg",
-          coverImageUrl: "/store-assets/tropical-cover.svg",
-          slogan,
-          primaryColorHex: primaryHex,
-          secondaryColorHex: theme.secondaryColorHex,
-          accentColorHex: accentHex,
-          menuLayoutMode: "grid"
-        })
-      },
-      session.accessToken
+  async function toggleStoreOpenPause() {
+    if (!token) return;
+    const nextPaused = !isPaused;
+    const res = await apiFetch(
+      "/api/v1/store/pause",
+      { method: "POST", body: JSON.stringify({ isPaused: nextPaused, reason: nextPaused ? "Pausada temporariamente pelo gestor" : null }) },
+      token
     );
-
-    if (!draftRes.ok) {
-      setMsg(draftRes.errorMessage || "Erro ao atualizar rascunho.");
-      return;
+    if (res.ok) {
+      setIsPaused(nextPaused);
+      setMsg(nextPaused ? "Loja pausada no cardápio digital." : "Loja reaberta para receber pedidos!");
+      await refreshStoreData();
     }
-    await apiFetch("/api/v1/store/branding/publish", { method: "POST" }, session.accessToken);
-    setMsg("Visual exclusivo da loja publicado! Abra /loja/" + slug + " para ver.");
-    refreshStoreData();
-  }
-
-  async function handleCreateCategory(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    const res = await apiFetch("/api/v1/catalog/categories", { method: "POST", body: JSON.stringify({ name: newCatName, displayOrder: catalog.categories.length + 1 }) }, session.accessToken);
-    if (res.ok) {
-      setNewCatName("");
-      setMsg("Categoria adicionada ao cardápio!");
-      refreshStoreData();
-    } else setMsg(res.errorMessage || "Erro ao criar categoria.");
-  }
-
-  async function handleCreateProduct(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    const res = await apiFetch("/api/v1/catalog/products", {
-      method: "POST",
-      body: JSON.stringify({ categoryId: prodCatId, name: prodName, basePrice: Number(prodPrice), saleMode: Number(prodSaleMode) })
-    }, session.accessToken);
-    if (res.ok) {
-      setProdName("");
-      setMsg("Produto criado! Ele já aparece no cardápio público da loja.");
-      refreshStoreData();
-    } else setMsg(res.errorMessage || "Erro ao criar produto.");
-  }
-
-  async function toggleProduct(id: string, isActive: boolean) {
-    const session = loadSession();
-    if (!session) return;
-    await apiFetch(`/api/v1/catalog/products/${id}/${isActive ? "pause" : "reactivate"}`, { method: "POST" }, session.accessToken);
-    refreshStoreData();
-  }
-
-  async function handleCreateCup(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    const res = await apiFetch("/api/v1/acai/cup-sizes", {
-      method: "POST",
-      body: JSON.stringify({ name: cupName, volumeMl: Number(cupMl), basePrice: Number(cupPrice), freeToppingsLimit: Number(cupFreeLimit) })
-    }, session.accessToken);
-    if (res.ok) {
-      setCupName("");
-      setMsg("Copo de açaí criado!");
-      refreshStoreData();
-    } else setMsg(res.errorMessage || "Erro.");
-  }
-
-  async function handleCreateFreeTopping(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    await apiFetch("/api/v1/acai/free-toppings", { method: "POST", body: JSON.stringify({ name: freeName, maxPortionsPerCup: 2 }) }, session.accessToken);
-    setFreeName("");
-    refreshStoreData();
-  }
-
-  async function handleCreatePaidAddon(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    await apiFetch("/api/v1/acai/paid-addons", { method: "POST", body: JSON.stringify({ name: paidName, additionalPrice: Number(paidPrice), maxQuantityPerCup: 3 }) }, session.accessToken);
-    setPaidName("");
-    refreshStoreData();
-  }
-
-  async function handleCreateStaff(e: React.FormEvent) {
-    e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
-    const res = await apiFetch("/api/v1/store/users", {
-      method: "POST",
-      body: JSON.stringify({ fullName: staffName, email: staffEmail, password: staffPassword, role: Number(staffRole) })
-    }, session.accessToken);
-    if (res.ok) {
-      setStaffName("");
-      setStaffEmail("");
-      setMsg("Funcionário criado com sucesso!");
-      refreshStoreData();
-    } else setMsg(res.errorMessage || "Erro ao criar usuário.");
   }
 
   return (
     <StoreBrandShell theme={theme} activeSection="/admin">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {/* Cabeçalho Administrativo */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
-          <h1 className="text-lg font-bold text-slate-900">Administração da Loja — {theme.tradeName}</h1>
-          <p className="text-xs text-slate-500">Cadastre produtos, configure seu montador de açaí, personalize as cores e gerencie sua equipe.</p>
+          <h1 className="text-lg font-extrabold text-slate-900">Painel do Estabelecimento — {theme.tradeName}</h1>
+          <p className="text-xs text-slate-500">
+            Gerencie cardápio multi-segmento, grupos de personalização, estoque com perdas, promoções, entrega e visual da loja.
+          </p>
         </div>
-        <Link
-          href={`/loja/${slug}`}
-          style={{ backgroundColor: "var(--store-accent)" }}
-          className="rounded-lg px-4 py-2 text-xs font-bold text-white shadow"
-        >
-          Ver Cardápio da Minha Loja (/loja/{slug})
-        </Link>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleStoreOpenPause}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold ${
+              isPaused ? "bg-emerald-600 text-white" : "bg-rose-100 text-rose-800"
+            }`}
+          >
+            {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            {isPaused ? "Reabrir Cardápio" : "Pausar Cardápio"}
+          </button>
+
+          <Link
+            href={`/loja/${slug}`}
+            target="_blank"
+            style={{ backgroundColor: "var(--store-accent)" }}
+            className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-sm"
+          >
+            Ver Cardápio (/loja/{slug}) <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </div>
       </div>
 
-      {msg && <div className="mb-5 rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-800">{msg}</div>}
+      {msg && (
+        <div className="mb-5 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-900">
+          <span>{msg}</span>
+          <button type="button" onClick={() => setMsg(null)} className="underline">Fechar</button>
+        </div>
+      )}
 
+      {/* Abas */}
       <div className="mb-6 flex flex-wrap gap-2">
-        {[
-          { key: "catalog", label: "1. Cardápio & Produtos" },
-          { key: "acai", label: "2. Montador de Açaí" },
-          { key: "branding", label: "3. Cores & Identidade Visual" },
-          { key: "team", label: "4. Equipe & Acessos" }
-        ].map((t) => (
+        {(
+          [
+            { key: "catalog", label: "1. Cardápio & Segmentos" },
+            { key: "modifiers", label: "2. Grupos & Opções" },
+            { key: "acai", label: "3. Montador Açaí Clássico" },
+            { key: "inventory", label: "4. Estoque & Ficha Técnica" },
+            { key: "commercial", label: "5. Margem, Combos & Frete" },
+            { key: "branding", label: "6. Loja, Horários & Visual" },
+            { key: "team", label: "7. Equipe & Acessos" }
+          ] as const
+        ).map((t) => (
           <button
             key={t.key}
             type="button"
-            onClick={() => setTab(t.key as typeof tab)}
+            onClick={() => setTab(t.key)}
             style={tab === t.key ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+            className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition ${
+              tab === t.key ? "border-transparent shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
           >
             {t.label}
           </button>
@@ -274,148 +261,67 @@ export default function StoreAdminPage() {
       </div>
 
       {tab === "catalog" && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-            <h2 className="mb-3 font-bold text-slate-900">Produtos no Cardápio ({catalog.products.length})</h2>
-            <div className="space-y-2.5">
-              {catalog.products.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm">
-                  <div>
-                    <p className="font-semibold text-slate-900">{p.name}</p>
-                    <p className="text-xs text-slate-500">R$ {p.basePrice.toFixed(2)} · {p.saleMode} · Status: {p.status}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleProduct(p.id, p.status === "Active")}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-slate-100"
-                  >
-                    {p.status === "Active" ? "Pausar" : "Reativar"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
+        <AdminCatalogTab
+          token={token}
+          categories={categories}
+          products={products}
+          modifierGroups={modifierGroups}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
+      )}
 
-          <section className="space-y-5">
-            <form onSubmit={handleCreateCategory} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-2 font-bold text-slate-900">Nova Categoria</h3>
-              <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} required placeholder="Ex: Pizzas Salgadas" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="w-full rounded-lg py-2 text-sm font-semibold text-white">Criar Categoria</button>
-            </form>
-
-            <form onSubmit={handleCreateProduct} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-2 font-bold text-slate-900">Novo Produto</h3>
-              <select value={prodCatId} onChange={(e) => setProdCatId(e.target.value)} required className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                {catalog.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <input value={prodName} onChange={(e) => setProdName(e.target.value)} required placeholder="Nome do produto" className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <input type="number" step="0.01" value={prodPrice} onChange={(e) => setProdPrice(e.target.value)} required className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <select value={prodSaleMode} onChange={(e) => setProdSaleMode(e.target.value)} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                <option value="1">Por Unidade</option>
-                <option value="2">Por Quilo (Balança)</option>
-              </select>
-              <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="w-full rounded-lg py-2 text-sm font-semibold text-white">Adicionar Produto</button>
-            </form>
-          </section>
-        </div>
+      {tab === "modifiers" && (
+        <AdminModifiersTab
+          token={token}
+          groups={modifierGroups}
+          supplies={supplies.map((s) => ({ id: s.id, name: s.name, contentUnitCode: s.contentUnitCode }))}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
       )}
 
       {tab === "acai" && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 font-bold">Copos / Tamanhos ({acai.cupSizes.length})</h2>
-            <ul className="mb-4 space-y-1.5 text-xs text-slate-700">
-              {acai.cupSizes.map((c) => <li key={c.id}>• {c.name} ({c.volumeMl}ml) — R$ {c.basePrice.amount.toFixed(2)} ({c.freeToppingsLimit} grátis)</li>)}
-            </ul>
-            <form onSubmit={handleCreateCup} className="space-y-2 text-sm">
-              <input value={cupName} onChange={(e) => setCupName(e.target.value)} required placeholder="Nome (ex: Copo 700ml)" className="w-full rounded-lg border px-3 py-1.5" />
-              <input type="number" value={cupMl} onChange={(e) => setCupMl(e.target.value)} required placeholder="ml" className="w-full rounded-lg border px-3 py-1.5" />
-              <input type="number" step="0.01" value={cupPrice} onChange={(e) => setCupPrice(e.target.value)} required placeholder="Preço base" className="w-full rounded-lg border px-3 py-1.5" />
-              <input type="number" value={cupFreeLimit} onChange={(e) => setCupFreeLimit(e.target.value)} required placeholder="Qtd itens grátis" className="w-full rounded-lg border px-3 py-1.5" />
-              <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="w-full rounded-lg py-2 font-semibold text-white">Criar Copo</button>
-            </form>
-          </div>
+        <AdminAcaiTab token={token} acai={acai} onNotify={setMsg} onReload={refreshStoreData} />
+      )}
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 font-bold">Acompanhamentos Gratuitos ({acai.freeToppings.length})</h2>
-            <ul className="mb-4 space-y-1.5 text-xs text-slate-700">
-              {acai.freeToppings.map((t) => <li key={t.id}>• {t.name}</li>)}
-            </ul>
-            <form onSubmit={handleCreateFreeTopping} className="space-y-2 text-sm">
-              <input value={freeName} onChange={(e) => setFreeName(e.target.value)} required placeholder="Ex: Paçoca / Leite Condensado" className="w-full rounded-lg border px-3 py-1.5" />
-              <button type="submit" className="w-full rounded-lg bg-emerald-600 py-2 font-semibold text-white">Adicionar Grátis</button>
-            </form>
-          </div>
+      {tab === "inventory" && (
+        <AdminInventoryTab
+          token={token}
+          supplies={supplies}
+          sheets={sheets}
+          products={products.map((p) => ({ id: p.id, name: p.name }))}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
+      )}
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 font-bold">Adicionais Pagos ({acai.paidAddons.length})</h2>
-            <ul className="mb-4 space-y-1.5 text-xs text-slate-700">
-              {acai.paidAddons.map((a) => <li key={a.id}>• {a.name} (+R$ {a.additionalPrice.amount.toFixed(2)})</li>)}
-            </ul>
-            <form onSubmit={handleCreatePaidAddon} className="space-y-2 text-sm">
-              <input value={paidName} onChange={(e) => setPaidName(e.target.value)} required placeholder="Ex: Creme Ninho" className="w-full rounded-lg border px-3 py-1.5" />
-              <input type="number" step="0.01" value={paidPrice} onChange={(e) => setPaidPrice(e.target.value)} required className="w-full rounded-lg border px-3 py-1.5" />
-              <button type="submit" className="w-full rounded-lg bg-amber-600 py-2 font-semibold text-white">Adicionar Pago</button>
-            </form>
-          </div>
-        </div>
+      {tab === "commercial" && (
+        <AdminCommercialTab
+          token={token}
+          products={products.map((p) => ({ id: p.id, name: p.name }))}
+          margins={margins}
+          combos={combos}
+          coupons={coupons}
+          deliveryPolicy={deliveryPolicy}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
       )}
 
       {tab === "branding" && (
-        <section className="max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">Identidade Visual Própria (Whitelabel)</h2>
-          <form onSubmit={handlePublishBranding} className="mt-4 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-600">Slogan da Loja</label>
-              <input value={slogan} onChange={(e) => setSlogan(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600">Cor Primária</label>
-                <input value={primaryHex} onChange={(e) => setPrimaryHex(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600">Cor Destaque</label>
-                <input value={accentHex} onChange={(e) => setAccentHex(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
-              </div>
-            </div>
-            <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="rounded-lg px-4 py-2 text-sm font-semibold text-white">
-              Salvar Rascunho e Publicar
-            </button>
-          </form>
-        </section>
+        <AdminBrandingAndStoreTab
+          token={token}
+          slug={slug}
+          initialProfile={storeProfile}
+          initialBranding={brandingData}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
       )}
 
       {tab === "team" && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-            <h2 className="mb-3 font-bold">Equipe da Loja ({team.length})</h2>
-            <div className="space-y-2 text-sm">
-              {team.map((u) => (
-                <div key={u.id} className="flex justify-between rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <span><strong>{u.fullName}</strong> ({u.normalizedEmail})</span>
-                  <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold">{u.role}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <form onSubmit={handleCreateStaff} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-sm">
-            <h3 className="font-bold">Novo Operador</h3>
-            <input value={staffName} onChange={(e) => setStaffName(e.target.value)} required placeholder="Nome completo" className="w-full rounded-lg border px-3 py-2" />
-            <input type="email" value={staffEmail} onChange={(e) => setStaffEmail(e.target.value)} required placeholder="E-mail" className="w-full rounded-lg border px-3 py-2" />
-            <input value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} required placeholder="Senha" className="w-full rounded-lg border px-3 py-2" />
-            <select value={staffRole} onChange={(e) => setStaffRole(e.target.value)} className="w-full rounded-lg border px-3 py-2">
-              <option value="2">Gerente</option>
-              <option value="3">Caixa (PDV)</option>
-              <option value="5">Garçom</option>
-              <option value="6">Cozinha</option>
-              <option value="7">Entregador</option>
-              <option value="9">Financeiro</option>
-            </select>
-            <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="w-full rounded-lg py-2 font-semibold text-white">Cadastrar</button>
-          </form>
-        </div>
+        <AdminTeamTab token={token} team={team} onNotify={setMsg} onReload={refreshStoreData} />
       )}
     </StoreBrandShell>
   );

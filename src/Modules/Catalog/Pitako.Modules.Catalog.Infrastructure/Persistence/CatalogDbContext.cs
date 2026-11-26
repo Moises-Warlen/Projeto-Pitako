@@ -27,6 +27,7 @@ public sealed class CatalogDbContext : PitakoDbContextBase
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductVariation> ProductVariations => Set<ProductVariation>();
     public DbSet<ProductModifierLink> ProductModifierLinks => Set<ProductModifierLink>();
+    public DbSet<VariationModifierRule> VariationModifierRules => Set<VariationModifierRule>();
     public DbSet<ModifierGroup> ModifierGroups => Set<ModifierGroup>();
     public DbSet<ModifierOption> ModifierOptions => Set<ModifierOption>();
     public DbSet<Combo> Combos => Set<Combo>();
@@ -43,6 +44,7 @@ public sealed class CatalogDbContext : PitakoDbContextBase
         modelBuilder.ApplyConfiguration(new ProductImageConfiguration());
         modelBuilder.ApplyConfiguration(new ProductVariationConfiguration());
         modelBuilder.ApplyConfiguration(new ProductModifierLinkConfiguration());
+        modelBuilder.ApplyConfiguration(new VariationModifierRuleConfiguration());
         modelBuilder.ApplyConfiguration(new ModifierGroupConfiguration());
         modelBuilder.ApplyConfiguration(new ModifierOptionConfiguration());
         modelBuilder.ApplyConfiguration(new ComboConfiguration());
@@ -76,6 +78,8 @@ internal sealed class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(500);
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").IsRequired();
+        builder.Property(x => x.SegmentTemplateCode).HasColumnName("segment_template_code").HasMaxLength(64);
+        builder.Property(x => x.RuleNotes).HasColumnName("rule_notes").HasMaxLength(500);
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
         builder.HasIndex(x => new { x.TenantId, x.DisplayOrder });
@@ -98,6 +102,13 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(x => x.Status).HasColumnName("status").IsRequired();
         builder.Property(x => x.IsFeatured).HasColumnName("is_featured").IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
+        builder.Property(x => x.IsNew).HasColumnName("is_new").IsRequired();
+        builder.Property(x => x.IsRecommended).HasColumnName("is_recommended").IsRequired();
+        builder.Property(x => x.PricingStrategy).HasColumnName("pricing_strategy").IsRequired();
+        builder.Property(x => x.TagsCsv).HasColumnName("tags_csv").HasMaxLength(300);
+        builder.Property(x => x.PreparationMinutes).HasColumnName("preparation_minutes");
+        builder.Property(x => x.CustomTemplateKey).HasColumnName("custom_template_key").HasMaxLength(80);
+        builder.Property(x => x.AllowsNotes).HasColumnName("allows_notes").IsRequired();
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
 
@@ -111,6 +122,9 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.HasMany(x => x.ModifierLinks).WithOne().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.ModifierLinks).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(x => x.VariationRules).WithOne().HasForeignKey(r => r.ProductId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.VariationRules).UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.HasIndex(x => new { x.TenantId, x.CategoryId, x.DisplayOrder });
     }
@@ -145,8 +159,32 @@ internal sealed class ProductVariationConfiguration : IEntityTypeConfiguration<P
         builder.Property(x => x.Sku).HasColumnName("sku").HasMaxLength(64);
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(300);
+        builder.Property(x => x.MeasureAmount).HasColumnName("measure_amount").HasPrecision(18, 2);
+        builder.Property(x => x.MeasureUnit).HasColumnName("measure_unit").HasMaxLength(24);
+        builder.Property(x => x.MaxFlavors).HasColumnName("max_flavors").IsRequired();
         builder.OwnsOne(x => x.Price, m => MoneyMappingHelper.ConfigureMoney(m, "price_amount", "price_currency"));
         builder.HasIndex(x => new { x.TenantId, x.ProductId, x.DisplayOrder });
+    }
+}
+
+internal sealed class VariationModifierRuleConfiguration : IEntityTypeConfiguration<VariationModifierRule>
+{
+    public void Configure(EntityTypeBuilder<VariationModifierRule> builder)
+    {
+        builder.ToTable("variation_modifier_rules");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.ProductId).HasColumnName("product_id").IsRequired();
+        builder.Property(x => x.ProductVariationId).HasColumnName("product_variation_id");
+        builder.Property(x => x.ModifierGroupId).HasColumnName("modifier_group_id").IsRequired();
+        builder.Property(x => x.MinSelections).HasColumnName("min_selections").IsRequired();
+        builder.Property(x => x.MaxSelections).HasColumnName("max_selections").IsRequired();
+        builder.Property(x => x.FreeAllowance).HasColumnName("free_allowance").IsRequired();
+        builder.Property(x => x.IsRequired).HasColumnName("is_required").IsRequired();
+        builder.Property(x => x.IsHidden).HasColumnName("is_hidden").IsRequired();
+        builder.HasIndex(x => new { x.TenantId, x.ProductId, x.ProductVariationId, x.ModifierGroupId }).IsUnique();
     }
 }
 
@@ -180,6 +218,10 @@ internal sealed class ModifierGroupConfiguration : IEntityTypeConfiguration<Modi
         builder.Property(x => x.IsRequired).HasColumnName("is_required").IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
+        builder.Property(x => x.SelectionKind).HasColumnName("selection_kind").IsRequired();
+        builder.Property(x => x.FreeAllowance).HasColumnName("free_allowance").IsRequired();
+        builder.Property(x => x.CountingMode).HasColumnName("counting_mode").IsRequired();
+        builder.Property(x => x.CategoryTag).HasColumnName("category_tag").HasMaxLength(64);
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
 
@@ -202,6 +244,13 @@ internal sealed class ModifierOptionConfiguration : IEntityTypeConfiguration<Mod
         builder.Property(x => x.MaxQuantity).HasColumnName("max_quantity").IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
         builder.Property(x => x.IsAvailable).HasColumnName("is_available").IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(300);
+        builder.Property(x => x.SupplyItemId).HasColumnName("supply_item_id");
+        builder.Property(x => x.ConsumptionQuantity).HasColumnName("consumption_quantity").HasPrecision(18, 4).IsRequired();
+        builder.Property(x => x.ConsumptionUnitCode).HasColumnName("consumption_unit_code").HasMaxLength(24);
+        builder.Property(x => x.LossPercent).HasColumnName("loss_percent").HasPrecision(5, 2).IsRequired();
+        builder.Property(x => x.ReplacesLabel).HasColumnName("replaces_label").HasMaxLength(140);
+        builder.Property(x => x.IncompatibleOptionIdsCsv).HasColumnName("incompatible_option_ids_csv").HasMaxLength(500);
         builder.OwnsOne(x => x.AdditionalPrice, m => MoneyMappingHelper.ConfigureMoney(m, "additional_price_amount", "additional_price_currency"));
         builder.HasIndex(x => new { x.TenantId, x.ModifierGroupId, x.DisplayOrder });
     }

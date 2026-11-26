@@ -100,6 +100,29 @@ public sealed class Combo : TenantScopedAggregateRoot
             displayOrder));
     }
 
+    public Result UpdateDetails(
+        string name,
+        Money comboPrice,
+        string? description,
+        string? primaryImageUrl,
+        bool isFeatured,
+        int displayOrder)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Combo.NameRequired", "Nome do combo é obrigatório."));
+        ArgumentNullException.ThrowIfNull(comboPrice);
+
+        Name = name.Trim();
+        ComboPrice = comboPrice;
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        PrimaryImageUrl = string.IsNullOrWhiteSpace(primaryImageUrl) ? null : primaryImageUrl.Trim();
+        IsFeatured = isFeatured;
+        DisplayOrder = displayOrder;
+        return Result.Success();
+    }
+
+    public void ClearItems() => _items.Clear();
+
     public Result AddItem(Guid productId, int quantity, Guid? variationId = null, string? notes = null)
     {
         if (productId == Guid.Empty)
@@ -231,6 +254,32 @@ public sealed class Promotion : TenantScopedAggregateRoot
             endsAtUtc,
             canCombineWithCoupons));
     }
+
+    public Result Update(
+        string name,
+        PromotionDiscountType discountType,
+        decimal discountValue,
+        DateTimeOffset startsAtUtc,
+        DateTimeOffset endsAtUtc,
+        bool canCombineWithCoupons)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Promotion.NameRequired", "Nome da promoção é obrigatório."));
+        if (endsAtUtc <= startsAtUtc)
+            return Result.Failure(Error.Validation("Promotion.InvalidPeriod", "Data final deve ser posterior à data inicial."));
+        if (discountValue < 0m || (discountType == PromotionDiscountType.Percentage && discountValue > 100m))
+            return Result.Failure(Error.Validation("Promotion.InvalidDiscount", "Valor promocional inválido."));
+
+        Name = name.Trim();
+        DiscountType = discountType;
+        DiscountValue = discountValue;
+        StartsAtUtc = startsAtUtc;
+        EndsAtUtc = endsAtUtc;
+        CanCombineWithCoupons = canCombineWithCoupons;
+        return Result.Success();
+    }
+
+    public void ClearTargets() => _targets.Clear();
 
     public void AddTarget(PromotionTargetType type, Guid targetId)
     {

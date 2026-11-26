@@ -259,9 +259,13 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IComboRepository, EfComboRepository>();
         services.AddScoped<IPromotionRepository, EfPromotionRepository>();
         services.AddScoped<IProductHistoryReferenceChecker, OrderProductHistoryReferenceChecker>();
+        services.AddScoped<ICatalogSupplyCostLookup, CatalogSupplyCostLookupAdapter>();
         services.AddScoped<CatalogManagementService>();
+        services.AddScoped<IUniversalCatalogQuoteService>(
+            sp => sp.GetRequiredService<CatalogManagementService>());
         services.AddScoped<ICatalogItemPricingService>(
             sp => sp.GetRequiredService<CatalogManagementService>());
+        services.AddScoped<SegmentCatalogTemplateService>();
 
         services.AddScoped<IAcaiCupSizeRepository, EfAcaiCupSizeRepository>();
         services.AddScoped<IAcaiBaseFlavorRepository, EfAcaiBaseFlavorRepository>();

@@ -5,9 +5,14 @@ using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Abstractions;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.Coupons.Application.Abstractions;
+using Pitako.Modules.Coupons.Application.Services;
+using Pitako.Modules.Coupons.Domain;
 using Pitako.Modules.DataLifecycle.Application.Services;
 using Pitako.Modules.DataLifecycle.Domain;
+using Pitako.Modules.DeliveryLogistics.Application.Abstractions;
 using Pitako.Modules.DeliveryLogistics.Application.Services;
+using Pitako.Modules.DeliveryLogistics.Domain;
 using Pitako.Modules.DiningHall.Application.Abstractions;
 using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.DiningHall.Domain;
@@ -70,6 +75,7 @@ public static class PitakoV1Endpoints
         MapDiningAndSelfServiceEndpoints(v1);
         MapPrintingMarketplaceWhatsAppEndpoints(v1);
         MapFinanceReportsLifecycleOfflineEndpoints(v1);
+        PitakoUniversalMenuEndpoints.MapUniversalMenuAndAdminExtensions(v1);
 
         return app;
     }
@@ -730,8 +736,13 @@ public static class PitakoV1Endpoints
             return Results.Ok(new
             {
                 tenantId = tenant?.Id,
+                tenant?.LegalName,
                 tenant?.TradeName,
                 tenant?.Slug,
+                tenant?.SegmentCode,
+                tenant?.Address,
+                tenant?.ContactPhone,
+                tenant?.ContactEmail,
                 cnpj = tenant?.Cnpj.Formatted,
                 draft = preview.Value
             });
@@ -831,10 +842,17 @@ public static class PitakoV1Endpoints
         pub.MapGet("/menu", async (
             string slug,
             ITenantRepository tenantRepo,
+            IStoreVisualIdentityRepository identityRepo,
             ITenantContextSetter setter,
             ICategoryRepository categoryRepo,
             IProductRepository productRepo,
+            IModifierGroupRepository modifierGroupRepo,
+            IComboRepository comboRepo,
+            IPromotionRepository promotionRepo,
+            IOrderRepository orderRepo,
+            IDeliveryPolicyRepository deliveryPolicyRepo,
             AcaiBuilderManagementService acaiSvc,
+            IClock clock,
             CancellationToken ct) =>
         {
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
@@ -842,29 +860,210 @@ public static class PitakoV1Endpoints
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
+            var identity = await identityRepo.FindByTenantIdForPublicViewAsync(tenant.Id, ct);
             var categories = await categoryRepo.ListOrderedAsync(ct);
             var products = await productRepo.ListAllOrderedAsync(ct);
+            var modifierGroups = await modifierGroupRepo.ListAllAsync(ct);
+            var combos = await comboRepo.ListAllOrderedAsync(ct);
+            var promotions = await promotionRepo.ListActiveCandidatesAsync(ct);
+            var salesCounts = await orderRepo.GetProductSalesCountsAsync(ct);
+            var deliveryPolicy = await deliveryPolicyRepo.FindEffectivePolicyAsync(null, ct);
             var acai = await acaiSvc.GetMenuCatalogAsync(includePaused: false, ct);
 
-            return Results.Ok(new
+            var utcNow = clock.UtcNow;
+            var activePromos = promotions.Where(pr => pr.IsActiveAt(utcNow)).ToList();
+            var opHoursJson = identity?.PublishedOperatingHoursJson ?? identity?.DraftOperatingHoursJson;
+            var operatingStatus = StoreOperatingHoursHelper.Evaluate(opHoursJson, identity?.IsTemporarilyPaused ?? false, identity?.PauseReason, utcNow);
+
+            var productMap = products.ToDictionary(p => p.Id);
+            var activeProducts = products.Where(p => p.Status == CatalogItemStatus.Active).ToList();
+
+            var productDtos = activeProducts.Select(p =>
             {
-                tenantId = tenant.Id,
-                storeTradeName = tenant.TradeName,
-                usesPitakoBranding = false,
-                categories = categories.Select(c => new { c.Id, c.Name, c.DisplayOrder, status = c.Status.ToString() }),
-                products = products.Where(p => p.Status == CatalogItemStatus.Active).Select(p => new
+                decimal bestPrice = p.BasePrice.Amount;
+                string? appliedPromoName = null;
+                foreach (var promo in activePromos)
+                {
+                    if (!promo.AppliesTo(p)) continue;
+                    var discounted = promo.CalculatePromotionalPrice(p.BasePrice).Amount;
+                    if (discounted < bestPrice)
+                    {
+                        bestPrice = discounted;
+                        appliedPromoName = promo.Name;
+                    }
+                }
+                var primaryImg = p.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl ?? p.Images.OrderBy(i => i.DisplayOrder).FirstOrDefault()?.ImageUrl;
+                var salesCount = salesCounts.GetValueOrDefault(p.Id, 0);
+
+                return new
                 {
                     p.Id,
                     p.CategoryId,
                     p.Name,
                     p.Description,
+                    p.Sku,
                     price = p.BasePrice.Amount,
+                    effectivePrice = bestPrice,
+                    discountAmount = decimal.Round(p.BasePrice.Amount - bestPrice, 2),
+                    appliedPromotionName = appliedPromoName,
                     saleMode = p.SaleMode.ToString(),
-                    p.IsFeatured
+                    pricingStrategy = p.PricingStrategy.ToString(),
+                    pricingStrategyCode = (int)p.PricingStrategy,
+                    p.IsFeatured,
+                    p.IsNew,
+                    p.IsRecommended,
+                    p.AllowsNotes,
+                    p.PreparationMinutes,
+                    tags = string.IsNullOrWhiteSpace(p.TagsCsv) ? Array.Empty<string>() : p.TagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    p.CustomTemplateKey,
+                    p.DisplayOrder,
+                    salesCount,
+                    primaryImageUrl = primaryImg,
+                    images = p.Images.OrderBy(i => i.DisplayOrder).Select(i => new { i.Id, i.ImageUrl, i.DisplayOrder, i.IsPrimary }),
+                    variations = p.Variations.Where(v => v.IsActive).OrderBy(v => v.DisplayOrder).Select(v => new
+                    {
+                        v.Id,
+                        variationName = v.Name,
+                        v.Description,
+                        price = v.Price.Amount,
+                        v.MeasureAmount,
+                        v.MeasureUnit,
+                        v.MaxFlavors,
+                        v.Sku,
+                        v.DisplayOrder
+                    }),
+                    modifierGroupIds = p.ModifierLinks.OrderBy(l => l.DisplayOrder).Select(l => l.ModifierGroupId),
+                    variationRules = p.VariationRules.Select(r => new
+                    {
+                        r.Id,
+                        variationId = r.ProductVariationId,
+                        r.ModifierGroupId,
+                        r.MinSelections,
+                        r.MaxSelections,
+                        r.FreeAllowance,
+                        r.IsRequired,
+                        r.IsHidden
+                    })
+                };
+            }).ToList();
+
+            var bestSellerIds = productDtos
+                .Where(p => p.salesCount > 0 || p.IsFeatured)
+                .OrderByDescending(p => p.salesCount)
+                .ThenByDescending(p => p.IsFeatured)
+                .Take(10)
+                .Select(p => p.Id)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                tenantId = tenant.Id,
+                storeTradeName = tenant.TradeName,
+                segmentCode = tenant.SegmentCode,
+                usesPitakoBranding = false,
+                operatingStatus,
+                categories = categories
+                    .Where(c => c.Status == CatalogItemStatus.Active)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.Name,
+                        c.Description,
+                        c.ImageUrl,
+                        c.DisplayOrder,
+                        c.SegmentTemplateCode,
+                        c.RuleNotes,
+                        status = c.Status.ToString()
+                    }),
+                products = productDtos,
+                bestSellerIds,
+                modifierGroups = modifierGroups
+                    .Where(g => g.IsActive)
+                    .OrderBy(g => g.DisplayOrder)
+                    .Select(g => new
+                    {
+                        g.Id,
+                        g.Name,
+                        groupType = g.Type.ToString(),
+                        selectionKind = (int)g.SelectionKind,
+                        selectionKindName = g.SelectionKind.ToString(),
+                        g.MinSelections,
+                        g.MaxSelections,
+                        g.FreeAllowance,
+                        g.IsRequired,
+                        countingMode = (int)g.CountingMode,
+                        g.CategoryTag,
+                        g.DisplayOrder,
+                        options = g.Options.OrderBy(o => o.DisplayOrder).Select(o => new
+                        {
+                            o.Id,
+                            o.Name,
+                            o.Description,
+                            additionalPrice = o.AdditionalPrice.Amount,
+                            o.MaxQuantity,
+                            o.DisplayOrder,
+                            o.IsAvailable,
+                            o.ReplacesLabel,
+                            incompatibleOptionIds = string.IsNullOrWhiteSpace(o.IncompatibleOptionIdsCsv)
+                                ? Array.Empty<string>()
+                                : o.IncompatibleOptionIdsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        })
+                    }),
+                combos = combos.Where(cb => cb.Status == CatalogItemStatus.Active).OrderBy(cb => cb.DisplayOrder).Select(cb => new
+                {
+                    cb.Id,
+                    cb.Name,
+                    cb.Description,
+                    comboPrice = cb.ComboPrice.Amount,
+                    originalPrice = cb.Items.Sum(it => (productMap.TryGetValue(it.ProductId, out var pr) ? pr.BasePrice.Amount : 0m) * it.Quantity),
+                    cb.PrimaryImageUrl,
+                    cb.IsFeatured,
+                    cb.DisplayOrder,
+                    items = cb.Items.Select(it => new
+                    {
+                        it.ProductId,
+                        productName = productMap.TryGetValue(it.ProductId, out var pr) ? pr.Name : "Item",
+                        it.Quantity,
+                        it.VariationId,
+                        it.Notes
+                    })
                 }),
+                promotions = activePromos.Select(pr => new
+                {
+                    pr.Id,
+                    pr.Name,
+                    discountType = pr.DiscountType.ToString(),
+                    pr.DiscountValue,
+                    pr.StartsAtUtc,
+                    pr.EndsAtUtc,
+                    targets = pr.Targets.Select(t => new { targetType = t.TargetType.ToString(), t.TargetId })
+                }),
+                delivery = deliveryPolicy is null ? null : new
+                {
+                    deliveryPolicy.IsDeliveryEnabled,
+                    deliveryPolicy.AllowPickup,
+                    deliveryPolicy.IsTemporarilyPaused,
+                    deliveryPolicy.PauseReason,
+                    calculationMode = deliveryPolicy.CalculationMode.ToString(),
+                    baseFee = deliveryPolicy.BaseFee.Amount,
+                    deliveryPolicy.BaseEstimatedMinutes,
+                    minimumOrderAmount = deliveryPolicy.MinimumOrderAmount.Amount,
+                    freeShippingThreshold = deliveryPolicy.FreeShippingThreshold?.Amount,
+                    zones = deliveryPolicy.ZoneRules.Where(z => !z.IsBlocked).Select(z => new { z.Id, z.ZoneName, fee = z.Fee.Amount, z.EstimatedMinutes })
+                },
                 acai = new
                 {
-                    cupSizes = acai.CupSizes.Select(c => new { c.Id, c.Name, c.VolumeMl, basePrice = c.BasePrice.Amount, c.FreeToppingsLimit }),
+                    cupSizes = acai.CupSizes.Select(c => new
+                    {
+                        c.Id,
+                        c.Name,
+                        c.VolumeMl,
+                        basePrice = c.BasePrice.Amount,
+                        c.FreeToppingsLimit,
+                        c.MinFreeToppings,
+                        countingMode = c.CountingMode.ToString(),
+                        c.MaxPaidAddonsPerCup
+                    }),
                     baseFlavors = acai.BaseFlavors.Select(f => new { f.Id, f.Name, extraPrice = f.ExtraPrice.Amount }),
                     freeToppings = acai.FreeToppings.Select(t => new { t.Id, t.Name, t.MaxPortionsPerCup }),
                     paidAddons = acai.PaidAddons.Select(a => new { a.Id, a.Name, price = a.AdditionalPrice.Amount, a.MaxQuantityPerCup })
@@ -876,11 +1075,10 @@ public static class PitakoV1Endpoints
             string slug,
             PublicCheckoutReq req,
             ITenantRepository tenantRepo,
+            IStoreVisualIdentityRepository identityRepo,
             ITenantContextSetter setter,
             ShoppingCartService cartSvc,
-            IOrderRepository orderRepo,
-            IOrderRealtimeNotifier realtimeNotifier,
-            IClock clock,
+            OrderManagementService orderSvc,
             CancellationToken ct) =>
         {
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
@@ -888,15 +1086,23 @@ public static class PitakoV1Endpoints
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
-            var sessionKey = string.IsNullOrWhiteSpace(req.CartSessionKey) ? $"web-{Guid.NewGuid():N}" : req.CartSessionKey.Trim();
 
+            var identity = await identityRepo.FindByTenantIdForPublicViewAsync(tenant.Id, ct);
+            if (identity?.IsTemporarilyPaused == true)
+            {
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict(
+                    "Store.TemporarilyPaused",
+                    identity.PauseReason ?? "Estabelecimento temporariamente fechado para novos pedidos."));
+            }
+
+            var sessionKey = string.IsNullOrWhiteSpace(req.CartSessionKey) ? $"web-{Guid.NewGuid():N}" : req.CartSessionKey.Trim();
             var cartRes = await cartSvc.GetOrCreateCartAsync(sessionKey, req.CustomerPhone ?? req.CustomerName, ct);
             if (cartRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(cartRes.Error);
 
             foreach (var item in req.Items ?? [])
             {
-                var addRes = await cartSvc.AddCatalogProductAsync(sessionKey, item.ProductId, null, null, item.Quantity, item.Notes, false, ct);
+                var addRes = await cartSvc.AddCatalogProductAsync(sessionKey, item.ProductId, item.VariationId, item.Modifiers, item.Quantity, item.Notes, false, ct);
                 if (addRes.IsFailure)
                     return ApiSecurityGuard.ProblemFromError(addRes.Error);
             }
@@ -911,38 +1117,55 @@ public static class PitakoV1Endpoints
                 }
             }
 
-            var updatedCart = (await cartSvc.GetOrCreateCartAsync(sessionKey, null, ct)).Value;
-            var seq = await orderRepo.CountAllAsync(ct) + 1;
-            var orderRes = Order.CreateFromCart(
-                updatedCart,
-                $"WEB-{seq:D5}",
-                OrderChannel.OwnDeliveryMenu,
-                req.FulfillmentMode,
-                req.CustomerName,
-                req.CustomerPhone,
-                req.DeliveryAddress,
-                Money.Zero(),
-                Money.Zero(),
-                updatedCart.ItemsDiscount,
-                updatedCart.AppliedCouponCode,
-                null,
-                null,
-                req.IdempotencyKey,
-                clock.UtcNow);
+            var transientActorRes = User.CreateEstablishmentUser(
+                tenant.Id,
+                "Cardápio Digital",
+                $"digital@{tenant.Slug}.local",
+                "StorefrontSystemActor!2026",
+                EstablishmentRole.Manager);
+            if (transientActorRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(transientActorRes.Error);
 
-            if (orderRes.IsFailure)
-                return ApiSecurityGuard.ProblemFromError(orderRes.Error);
+            var checkoutRes = await orderSvc.CheckoutCartAsync(
+                transientActorRes.Value,
+                new CheckoutCartRequest(
+                    CartSessionKey: sessionKey,
+                    Channel: OrderChannel.OwnDeliveryMenu,
+                    FulfillmentMode: req.FulfillmentMode,
+                    CustomerName: req.CustomerName,
+                    CustomerPhone: req.CustomerPhone,
+                    StoreUnitId: null,
+                    DeliveryAddressSummary: req.DeliveryAddress,
+                    DestinationLatitude: req.DestinationLatitude,
+                    DestinationLongitude: req.DestinationLongitude,
+                    Neighborhood: req.Neighborhood,
+                    ZipCode: req.ZipCode,
+                    PrecomputedDistanceKm: req.PrecomputedDistanceKm,
+                    IdempotencyKey: req.IdempotencyKey,
+                    PaymentMethod: req.PaymentMethod,
+                    LgpdConsentAccepted: req.LgpdConsentAccepted,
+                    AllowFallbackZeroFreightIfNoPolicy: true),
+                ct);
 
-            await orderRepo.AddAsync(orderRes.Value, ct);
-            await orderRepo.SaveChangesAsync(ct);
-            await realtimeNotifier.NotifyAsync(new OrderRealtimeEvent(tenant.Id, orderRes.Value.Id, orderRes.Value.OrderNumber, "OrderPlaced", orderRes.Value.Status, clock.UtcNow), ct);
+            if (checkoutRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(checkoutRes.Error);
 
-            return Results.Created($"/api/v1/orders/{orderRes.Value.Id}", new
+            if (req.ClearCartAfterCheckout)
+                await cartSvc.ClearCartAsync(sessionKey, ct);
+
+            var order = checkoutRes.Value;
+            return Results.Created($"/api/v1/orders/{order.Id}", new
             {
-                orderRes.Value.Id,
-                orderRes.Value.OrderNumber,
-                totalAmount = orderRes.Value.TotalAmount.Amount,
-                status = orderRes.Value.Status.ToString()
+                order.Id,
+                order.OrderNumber,
+                itemsSubtotal = order.ItemsSubtotal.Amount,
+                itemsDiscount = order.ItemsDiscount.Amount,
+                netDeliveryFee = order.NetDeliveryFee.Amount,
+                totalAmount = order.TotalAmount.Amount,
+                paymentMethod = order.PaymentMethod,
+                fulfillmentMode = order.FulfillmentMode.ToString(),
+                status = order.Status.ToString(),
+                order.PlacedAtUtc
             });
         });
     }
@@ -955,6 +1178,7 @@ public static class PitakoV1Endpoints
             ApiSecurityGuard guard,
             ICategoryRepository categoryRepo,
             IProductRepository productRepo,
+            IModifierGroupRepository groupRepo,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -964,18 +1188,97 @@ public static class PitakoV1Endpoints
 
             var categories = await categoryRepo.ListOrderedAsync(ct);
             var products = await productRepo.ListAllOrderedAsync(ct);
+            var groups = await groupRepo.ListAllAsync(ct);
             return Results.Ok(new
             {
-                categories = categories.Select(c => new { c.Id, c.Name, c.DisplayOrder, status = c.Status.ToString() }),
+                categories = categories.Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.Description,
+                    c.ImageUrl,
+                    c.DisplayOrder,
+                    c.SegmentTemplateCode,
+                    c.RuleNotes,
+                    status = c.Status.ToString()
+                }),
                 products = products.Select(p => new
                 {
                     p.Id,
                     p.CategoryId,
                     p.Name,
+                    p.Description,
                     p.Sku,
                     basePrice = p.BasePrice.Amount,
                     status = p.Status.ToString(),
-                    saleMode = p.SaleMode.ToString()
+                    saleMode = p.SaleMode.ToString(),
+                    pricingStrategy = (int)p.PricingStrategy,
+                    p.IsFeatured,
+                    p.IsNew,
+                    p.IsRecommended,
+                    p.AllowsNotes,
+                    p.PreparationMinutes,
+                    p.TagsCsv,
+                    p.CustomTemplateKey,
+                    p.DisplayOrder,
+                    primaryImageUrl = p.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl ?? p.Images.OrderBy(i => i.DisplayOrder).FirstOrDefault()?.ImageUrl,
+                    images = p.Images.OrderBy(i => i.DisplayOrder).Select(i => new { i.Id, i.ImageUrl, i.DisplayOrder, i.IsPrimary }),
+                    variations = p.Variations.OrderBy(v => v.DisplayOrder).Select(v => new
+                    {
+                        v.Id,
+                        variationName = v.Name,
+                        v.Description,
+                        price = v.Price.Amount,
+                        v.MeasureAmount,
+                        v.MeasureUnit,
+                        v.MaxFlavors,
+                        v.Sku,
+                        v.DisplayOrder,
+                        v.IsActive
+                    }),
+                    modifierGroupIds = p.ModifierLinks.OrderBy(l => l.DisplayOrder).Select(l => l.ModifierGroupId),
+                    variationRules = p.VariationRules.Select(r => new
+                    {
+                        r.Id,
+                        variationId = r.ProductVariationId,
+                        r.ModifierGroupId,
+                        r.MinSelections,
+                        r.MaxSelections,
+                        r.FreeAllowance,
+                        r.IsRequired,
+                        r.IsHidden
+                    })
+                }),
+                modifierGroups = groups.OrderBy(g => g.DisplayOrder).Select(g => new
+                {
+                    g.Id,
+                    g.Name,
+                    groupType = (int)g.Type,
+                    selectionKind = (int)g.SelectionKind,
+                    g.MinSelections,
+                    g.MaxSelections,
+                    g.FreeAllowance,
+                    g.IsRequired,
+                    countingMode = (int)g.CountingMode,
+                    g.CategoryTag,
+                    g.DisplayOrder,
+                    g.IsActive,
+                    options = g.Options.OrderBy(o => o.DisplayOrder).Select(o => new
+                    {
+                        o.Id,
+                        o.Name,
+                        o.Description,
+                        additionalPrice = o.AdditionalPrice.Amount,
+                        o.MaxQuantity,
+                        o.DisplayOrder,
+                        o.IsAvailable,
+                        o.SupplyItemId,
+                        o.ConsumptionQuantity,
+                        o.ConsumptionUnitCode,
+                        o.LossPercent,
+                        o.ReplacesLabel,
+                        o.IncompatibleOptionIdsCsv
+                    })
                 })
             });
         });
@@ -991,7 +1294,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateCategoryAsync(user!, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateCategoryAsync(user!, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.SegmentTemplateCode, req.RuleNotes, ct), StatusCodes.Status201Created);
         });
 
         catalog.MapPost("/products", async (
@@ -1005,7 +1308,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateProductAsync(user!, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.SaleMode, req.IsFeatured, req.DisplayOrder, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateProductAsync(user!, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.SaleMode, req.IsFeatured, req.DisplayOrder, req.IsNew, req.IsRecommended, req.PricingStrategy, req.TagsCsv, req.PreparationMinutes, req.CustomTemplateKey, req.AllowsNotes, ct), StatusCodes.Status201Created);
         });
 
         catalog.MapPost("/products/{id:guid}/pause", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -1486,10 +1789,10 @@ internal static class MasterSegmentCatalogStore
     }
 }
 public sealed record CreateStoreUserReq(string FullName, string Email, string Password, EstablishmentRole Role);
-public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, string? Notes = null);
-public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null);
-public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0);
-public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0);
+public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, string? Notes = null, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null);
+public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null, string? Neighborhood = null, string? ZipCode = null, double? DestinationLatitude = null, double? DestinationLongitude = null, decimal? PrecomputedDistanceKm = null, string? PaymentMethod = null, bool LgpdConsentAccepted = true, bool ClearCartAfterCheckout = true);
+public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, string? SegmentTemplateCode = null, string? RuleNotes = null);
+public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
 public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0);
 public sealed record CreateAcaiFlavorReq(string Name, decimal ExtraPrice = 0m);
 public sealed record CreateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1);

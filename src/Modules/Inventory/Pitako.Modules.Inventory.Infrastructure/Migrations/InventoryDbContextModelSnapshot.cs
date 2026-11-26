@@ -532,6 +532,11 @@ namespace Pitako.Modules.Inventory.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
+                    b.Property<decimal>("DefaultLossPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("default_loss_percent");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -771,6 +776,11 @@ namespace Pitako.Modules.Inventory.Infrastructure.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)")
                         .HasColumnName("calculated_cost");
+
+                    b.Property<decimal>("LossPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("loss_percent");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 4)

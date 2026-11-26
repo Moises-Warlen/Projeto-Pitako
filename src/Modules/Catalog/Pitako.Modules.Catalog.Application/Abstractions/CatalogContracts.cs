@@ -6,6 +6,13 @@ namespace Pitako.Modules.Catalog.Application.Abstractions;
 
 public sealed record CatalogModifierSelection(Guid ModifierGroupId, Guid ModifierOptionId, int Quantity = 1);
 
+public sealed record CatalogQuotedCustomIngredient(
+    Guid SupplyItemId,
+    decimal GrossQuantity,
+    string UnitCode,
+    string IngredientName,
+    decimal EstimatedCost);
+
 public sealed record CatalogProductQuote(
     Guid ProductId,
     Guid CategoryId,
@@ -15,12 +22,24 @@ public sealed record CatalogProductQuote(
     Money UnitPrice,
     bool HasNonCombinablePromotion,
     string CustomizationSummaryText,
-    string CanonicalSelectionsJson);
+    string CanonicalSelectionsJson,
+    IReadOnlyList<CatalogQuotedCustomIngredient>? CustomIngredients = null,
+    decimal EstimatedCostAmount = 0m);
 
-/// <summary>
-/// Contrato público para cotação autoritativa de produtos, variações, adicionais e promoções
-/// pelo Carrinho e Pedidos (Fases 11 e 13).
-/// </summary>
+public sealed record CatalogSupplyCostInfo(
+    Guid SupplyItemId,
+    string Name,
+    string ContentUnitCode,
+    decimal UnitCostInContentUnit,
+    decimal DefaultLossPercent);
+
+public interface ICatalogSupplyCostLookup
+{
+    Task<IReadOnlyDictionary<Guid, CatalogSupplyCostInfo>> GetSupplyCostsAsync(
+        IEnumerable<Guid> supplyIds,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ICatalogItemPricingService
 {
     Task<Result<CatalogProductQuote>> QuoteProductItemAsync(
@@ -30,11 +49,19 @@ public interface ICatalogItemPricingService
         CancellationToken cancellationToken = default);
 }
 
+public interface IUniversalCatalogQuoteService : ICatalogItemPricingService
+{
+    Task<Result<CatalogProductQuote>> QuoteComboAsync(
+        Guid comboId,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ICategoryRepository
 {
     Task<Category?> FindByIdAsync(Guid categoryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Category>> ListOrderedAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Category category, CancellationToken cancellationToken = default);
+    void Remove(Category category);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -53,6 +80,7 @@ public interface IModifierGroupRepository
     Task<ModifierGroup?> FindByIdAsync(Guid groupId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ModifierGroup>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(ModifierGroup group, CancellationToken cancellationToken = default);
+    void Remove(ModifierGroup group);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -61,6 +89,7 @@ public interface IComboRepository
     Task<Combo?> FindByIdAsync(Guid comboId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Combo>> ListAllOrderedAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Combo combo, CancellationToken cancellationToken = default);
+    void Remove(Combo combo);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -68,7 +97,9 @@ public interface IPromotionRepository
 {
     Task<Promotion?> FindByIdAsync(Guid promotionId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Promotion>> ListActiveCandidatesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Promotion>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Promotion promotion, CancellationToken cancellationToken = default);
+    void Remove(Promotion promotion);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

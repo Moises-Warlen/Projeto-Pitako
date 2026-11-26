@@ -31,6 +31,14 @@ public sealed class EfOrderRepository(OrdersDbContext db) : IOrderRepository
     public Task<Order?> FindByIdAsync(Guid orderId, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
 
+    public Task<Order?> FindByOrderNumberAsync(string orderNumber, CancellationToken cancellationToken = default)
+    {
+        var normalized = orderNumber.Trim().ToUpperInvariant();
+        if (!normalized.StartsWith('#'))
+            normalized = "#" + normalized;
+        return FullQuery().AsNoTracking().FirstOrDefaultAsync(o => o.OrderNumber == normalized, cancellationToken);
+    }
+
     public Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, cancellationToken);
 
@@ -45,6 +53,17 @@ public sealed class EfOrderRepository(OrdersDbContext db) : IOrderRepository
             .ToListAsync(cancellationToken);
 
         return list.OrderBy(o => o.PlacedAtUtc).ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetProductSalesCountsAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await db.OrderItems
+            .AsNoTracking()
+            .Where(i => i.ProductId.HasValue)
+            .Select(i => new { ProductId = i.ProductId!.Value, i.Quantity })
+            .ToListAsync(cancellationToken);
+
+        return rows.GroupBy(r => r.ProductId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
     }
 
     public Task<bool> HasProductReferencesAsync(Guid tenantId, Guid productId, CancellationToken cancellationToken = default) =>
