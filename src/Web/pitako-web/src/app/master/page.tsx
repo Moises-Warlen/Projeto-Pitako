@@ -151,13 +151,27 @@ export default function MasterPanelPage() {
     ]);
 
     if (plansRes.ok && plansRes.data) {
-      setPlans(plansRes.data);
-      if (!customerPlanId && plansRes.data[0]) setCustomerPlanId(plansRes.data[0].id);
+      const latestPlans = plansRes.data;
+      setPlans(latestPlans);
+      setCustomerPlanId((prev) =>
+        latestPlans.some((p) => p.id === prev)
+          ? prev
+          : (latestPlans.find((p) => p.isActive)?.id ?? latestPlans[0]?.id ?? "")
+      );
     }
     if (custRes.ok && custRes.data) {
-      setOverview(custRes.data);
-      if (!storeCustomerId && custRes.data.customers[0]) setStoreCustomerId(custRes.data.customers[0].id);
-      if (!storeSegment && custRes.data.segments[0]) setStoreSegment(custRes.data.segments[0].code);
+      const latestOverview = custRes.data;
+      setOverview(latestOverview);
+      setStoreCustomerId((prev) =>
+        latestOverview.customers.some((c) => c.id === prev)
+          ? prev
+          : (latestOverview.customers[0]?.id ?? "")
+      );
+      setStoreSegment((prev) =>
+        latestOverview.segments.some((s) => s.code === prev)
+          ? prev
+          : (latestOverview.segments[0]?.code ?? "")
+      );
     }
     if (!plansRes.ok) {
       setFeedback(plansRes.errorMessage || "Erro ao carregar Painel Master.");
@@ -254,17 +268,29 @@ export default function MasterPanelPage() {
       return;
     }
 
+    const effectiveCustomerId = overview.customers.some((c) => c.id === storeCustomerId)
+      ? storeCustomerId
+      : (overview.customers[0]?.id ?? "");
+    const effectiveSegment = overview.segments.some((s) => s.code === storeSegment)
+      ? storeSegment
+      : (overview.segments[0]?.code ?? "acaiteria");
+
+    if (!effectiveCustomerId) {
+      setFeedback("Cadastre um Cliente/Dono primeiro na aba 3. Clientes / Donos.");
+      return;
+    }
+
     const estRes = await apiFetch<{ tenant: { id: string } }>(
       "/api/v1/store/establishments",
       {
         method: "POST",
         body: JSON.stringify({
-          customerAccountId: storeCustomerId,
+          customerAccountId: effectiveCustomerId,
           legalName: storeLegalName,
           tradeName: storeTradeName,
           slug: cleanSlug,
           cnpj: storeCnpj,
-          segmentCode: storeSegment
+          segmentCode: effectiveSegment
         })
       },
       session.accessToken
@@ -416,6 +442,10 @@ export default function MasterPanelPage() {
     const session = loadSession();
     if (!session) return;
 
+    const effectivePlanId = plans.some((p) => p.id === customerPlanId)
+      ? customerPlanId
+      : (plans.find((p) => p.isActive)?.id ?? plans[0]?.id ?? "");
+
     if (editingCustomerId) {
       const res = await apiFetch(
         `/api/v1/master/customers/${editingCustomerId}`,
@@ -427,7 +457,7 @@ export default function MasterPanelPage() {
             billingEmail: customerEmail,
             phone: customerPhone,
             status: Number(customerStatus),
-            planId: customerPlanId || null
+            planId: effectivePlanId || null
           })
         },
         session.accessToken
@@ -442,6 +472,11 @@ export default function MasterPanelPage() {
       return;
     }
 
+    if (!effectivePlanId) {
+      setFeedback("Crie um plano ativo na aba 4. Planos & Módulos antes de cadastrar o cliente.");
+      return;
+    }
+
     const res = await apiFetch<{ customerId: string }>(
       "/api/v1/master/customers-subscriptions",
       {
@@ -451,7 +486,7 @@ export default function MasterPanelPage() {
           documentNumber: customerDoc,
           billingEmail: customerEmail,
           phone: customerPhone,
-          planId: customerPlanId,
+          planId: effectivePlanId,
           startWithTrial: false
         })
       },
