@@ -15,6 +15,9 @@ public sealed class EfCashRegisterRepository(PdvCashierDbContext db) : ICashRegi
     public Task<CashRegisterSession?> FindOpenByTerminalAsync(string normalizedTerminalCode, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(s => s.TerminalCode == normalizedTerminalCode && s.Status == CashRegisterStatus.Open, cancellationToken);
 
+    public async Task<IReadOnlyList<CashRegisterSession>> ListOpenAsync(CancellationToken cancellationToken = default) =>
+        await FullQuery().AsNoTracking().Where(s => s.Status == CashRegisterStatus.Open).ToListAsync(cancellationToken);
+
     public async Task AddAsync(CashRegisterSession session, CancellationToken cancellationToken = default) =>
         await db.CashRegisterSessions.AddAsync(session, cancellationToken);
 
@@ -32,6 +35,12 @@ public sealed class EfPdvSaleRepository(PdvCashierDbContext db) : IPdvSaleReposi
 
     public Task<PdvSale?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
         FullQuery().FirstOrDefaultAsync(s => s.IdempotencyKey == idempotencyKey, cancellationToken);
+
+    public async Task<IReadOnlyList<PdvSale>> ListBySessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        var list = await FullQuery().AsNoTracking().Where(s => s.CashRegisterSessionId == sessionId).ToListAsync(cancellationToken);
+        return list.OrderByDescending(s => s.SettledAtUtc).ToList();
+    }
 
     public Task<int> CountAllAsync(CancellationToken cancellationToken = default) =>
         db.PdvSales.CountAsync(cancellationToken);

@@ -23,6 +23,7 @@ public interface IDeliveryDispatchRunRepository
 {
     Task<DeliveryDispatchRun?> FindByIdAsync(Guid runId, CancellationToken cancellationToken = default);
     Task<int> CountAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DeliveryDispatchRun>> ListRecentAsync(int limit = 30, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DeliveryDispatchRun>> ListByCourierPeriodAsync(Guid courierId, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default);
     Task AddAsync(DeliveryDispatchRun run, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);

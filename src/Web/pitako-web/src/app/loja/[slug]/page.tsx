@@ -389,6 +389,23 @@ export default function PublicStorefrontPage() {
     return res.errorMessage || "Pedido não encontrado.";
   }
 
+  async function handleVerifyPix(orderNumber: string): Promise<string | null> {
+    const verifyRes = await apiFetch<{ isPaymentConfirmed?: boolean; message?: string }>(
+      `/api/v1/public/store/${slug}/orders/${encodeURIComponent(orderNumber)}/verify-pix`,
+      { method: "POST" }
+    );
+    if (!verifyRes.ok) {
+      return verifyRes.errorMessage || "Não foi possível consultar o PIX no momento.";
+    }
+    const refreshRes = await apiFetch<OrderTrackingResponse>(
+      `/api/v1/public/store/${slug}/orders/${encodeURIComponent(orderNumber)}`
+    );
+    if (refreshRes.ok && refreshRes.data) {
+      setTrackedOrder(refreshRes.data);
+    }
+    return verifyRes.data?.message || (verifyRes.data?.isPaymentConfirmed ? "Pagamento PIX confirmado!" : "Aguardando compensação bancária.");
+  }
+
   function renderProductCard(product: MenuProduct) {
     const hasCustomFlow = product.variations.length > 0 || product.modifierGroupIds.length > 0;
     const lowestVarPrice = product.variations.length > 0 ? Math.min(...product.variations.map((v) => v.price)) : product.effectivePrice;
@@ -868,6 +885,9 @@ export default function PublicStorefrontPage() {
         onClose={() => setTrackingOpen(false)}
         initialOrder={trackedOrder}
         onLookupOrder={handleLookupOrder}
+        onVerifyPix={handleVerifyPix}
+        storeTradeName={storeInfo?.tradeName || theme.tradeName}
+        storePhone={storeInfo?.branding.whatsAppNumber || storeInfo?.contactPhone}
       />
     </StoreBrandShell>
   );

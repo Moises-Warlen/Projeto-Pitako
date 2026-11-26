@@ -308,6 +308,29 @@ public sealed class OrderManagementService
         return Result.Success(order);
     }
 
+    public async Task<Result<Order>> ConfirmPaymentAsync(
+        User actor,
+        Guid orderId,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<Order>(guard.Error);
+
+        var order = await _orderRepo.FindByIdAsync(orderId, cancellationToken);
+        if (order is null)
+            return Result.Failure<Order>(Error.NotFound("Order.NotFound", "Pedido não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, order);
+        var res = order.ConfirmPayment(actor.Id, notes, _clock.UtcNow);
+        if (res.IsFailure)
+            return Result.Failure<Order>(res.Error);
+
+        await _orderRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(order);
+    }
+
     public async Task<Result<KanbanBoardView>> GetKanbanBoardAsync(User actor, CancellationToken cancellationToken = default)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.View);

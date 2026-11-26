@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { Store } from "lucide-react";
+import { useEffect, useState } from "react";
+import { apiFetch, loadSession } from "@/lib/api";
 
 export interface StoreBrandTheme {
   tradeName: string;
@@ -14,7 +16,7 @@ export interface StoreBrandTheme {
 
 const FALLBACK_STORE: StoreBrandTheme = {
   tradeName: "Estabelecimento",
-  formattedCnpj: "CNPJ da Loja",
+  formattedCnpj: "",
   logoUrl: null,
   primaryColorHex: "#1E293B",
   secondaryColorHex: "#F8FAFC",
@@ -26,7 +28,7 @@ const FALLBACK_STORE: StoreBrandTheme = {
  * Aplica exclusivamente cores, logo e CNPJ da loja — zero marca PITAKO.
  */
 export function StoreBrandShell({
-  theme = FALLBACK_STORE,
+  theme,
   activeSection,
   hideOpsNav = false,
   children
@@ -36,10 +38,54 @@ export function StoreBrandShell({
   hideOpsNav?: boolean;
   children: React.ReactNode;
 }) {
+  const [loadedTheme, setLoadedTheme] = useState<StoreBrandTheme | null>(null);
+
+  useEffect(() => {
+    if (theme) return;
+    const session = loadSession();
+    if (!session || session.scope !== "Establishment") return;
+
+    let cancelled = false;
+    apiFetch<{
+      tradeName?: string;
+      legalName?: string;
+      cnpj?: string;
+      draft?: {
+        logoUrl?: string | null;
+        primaryColorHex?: string;
+        secondaryColorHex?: string;
+        accentColorHex?: string;
+      };
+    }>("/api/v1/store/branding", {}, session.accessToken).then((res) => {
+      if (cancelled || !res.ok || !res.data) return;
+      const d = res.data;
+      setLoadedTheme({
+        tradeName: d.tradeName || d.legalName || "Estabelecimento",
+        formattedCnpj: d.cnpj || "",
+        logoUrl: d.draft?.logoUrl ?? null,
+        primaryColorHex: d.draft?.primaryColorHex || "#1E293B",
+        secondaryColorHex: d.draft?.secondaryColorHex || "#F8FAFC",
+        accentColorHex: d.draft?.accentColorHex || "#0F766E"
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [theme]);
+
+  const resolvedTheme = theme ?? loadedTheme ?? FALLBACK_STORE;
+
+  useEffect(() => {
+    if (typeof document !== "undefined" && resolvedTheme.tradeName && resolvedTheme.tradeName !== "Estabelecimento") {
+      document.title = resolvedTheme.tradeName;
+    }
+  }, [resolvedTheme.tradeName]);
+
   const styleVars = {
-    "--store-primary": theme.primaryColorHex,
-    "--store-secondary": theme.secondaryColorHex,
-    "--store-accent": theme.accentColorHex
+    "--store-primary": resolvedTheme.primaryColorHex,
+    "--store-secondary": resolvedTheme.secondaryColorHex,
+    "--store-accent": resolvedTheme.accentColorHex
   } as React.CSSProperties;
 
   const navItems = [
@@ -55,10 +101,10 @@ export function StoreBrandShell({
       <header style={{ backgroundColor: "var(--store-primary)" }} className="text-white shadow">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            {theme.logoUrl ? (
+            {resolvedTheme.logoUrl ? (
               <img
-                src={theme.logoUrl}
-                alt={`Logo ${theme.tradeName}`}
+                src={resolvedTheme.logoUrl}
+                alt={`Logo ${resolvedTheme.tradeName}`}
                 className="h-10 w-10 rounded-lg bg-white/10 object-contain p-1"
               />
             ) : (
@@ -67,9 +113,9 @@ export function StoreBrandShell({
               </div>
             )}
             <div>
-              <p className="text-base font-bold leading-tight">{theme.tradeName}</p>
-              {theme.formattedCnpj && (
-                <p className="text-xs opacity-80">CNPJ {theme.formattedCnpj}</p>
+              <p className="text-base font-bold leading-tight">{resolvedTheme.tradeName}</p>
+              {resolvedTheme.formattedCnpj && (
+                <p className="text-xs opacity-80">CNPJ {resolvedTheme.formattedCnpj}</p>
               )}
             </div>
           </div>

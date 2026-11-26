@@ -360,6 +360,10 @@ public static class PitakoUniversalMenuEndpoints
                 customerName = order.CustomerName,
                 deliveryAddressSummary = phoneVerified ? order.DeliveryAddressSummary : null,
                 order.PaymentMethod,
+                order.IsPaymentConfirmed,
+                pixBrCode = order.PaymentMethod != null && order.PaymentMethod.Contains("PIX", StringComparison.OrdinalIgnoreCase)
+                    ? PitakoPixPayloadGenerator.BuildBrCode(tenant, order.OrderNumber, order.TotalAmount.Amount)
+                    : null,
                 order.AppliedCouponCode,
                 itemsSubtotal = order.ItemsSubtotal.Amount,
                 itemsDiscount = order.ItemsDiscount.Amount,

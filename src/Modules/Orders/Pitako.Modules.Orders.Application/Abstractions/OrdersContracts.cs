@@ -17,6 +17,7 @@ public interface IOrderRepository
     Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default);
     Task<int> CountAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Order>> ListKanbanActiveAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Order>> ListRecentAllAsync(int limit = 200, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, int>> GetProductSalesCountsAsync(CancellationToken cancellationToken = default);
     Task<bool> HasProductReferencesAsync(Guid tenantId, Guid productId, CancellationToken cancellationToken = default);
     Task AddAsync(Order order, CancellationToken cancellationToken = default);

@@ -74,6 +74,9 @@ public sealed class EfPaymentGatewayConfigRepository(FinanceDbContext db) : IPay
     public Task<PaymentGatewayConfig?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.PaymentGatewayConfigs.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<PaymentGatewayConfig>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await db.PaymentGatewayConfigs.AsNoTracking().OrderBy(g => g.Provider).ToListAsync(cancellationToken);
+
     public async Task AddAsync(PaymentGatewayConfig config, CancellationToken cancellationToken = default) =>
         await db.PaymentGatewayConfigs.AddAsync(config, cancellationToken);
 

@@ -61,6 +61,12 @@ public sealed class EfDeliveryDispatchRunRepository(DeliveryLogisticsDbContext d
     public Task<int> CountAllAsync(CancellationToken cancellationToken = default) =>
         db.DispatchRuns.CountAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<DeliveryDispatchRun>> ListRecentAsync(int limit = 30, CancellationToken cancellationToken = default)
+    {
+        var items = await FullQuery().AsNoTracking().ToListAsync(cancellationToken);
+        return items.OrderByDescending(r => r.AssignedAtUtc).Take(Math.Clamp(limit, 1, 100)).ToList();
+    }
+
     public async Task<IReadOnlyList<DeliveryDispatchRun>> ListByCourierPeriodAsync(
         Guid courierId,
         DateTimeOffset fromUtc,

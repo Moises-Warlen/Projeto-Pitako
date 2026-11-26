@@ -413,4 +413,28 @@ public sealed class Order : TenantScopedAggregateRoot
 
         return Result.Success();
     }
+
+    public bool IsPaymentConfirmed =>
+        Status == OrderStatus.Completed ||
+        _statusHistory.Any(h => h.Reason.StartsWith("[PAYMENT_CONFIRMED]", StringComparison.Ordinal));
+
+    public Result ConfirmPayment(Guid? actorUserId, string? notes, DateTimeOffset utcNow)
+    {
+        if (Status == OrderStatus.Cancelled)
+            return Result.Failure(Error.Conflict("Order.Cancelled", "Não é possível confirmar pagamento de pedido cancelado."));
+        if (IsPaymentConfirmed)
+            return Result.Success();
+
+        _statusHistory.Add(new OrderStatusHistory(
+            Guid.NewGuid(),
+            TenantId,
+            Id,
+            Status,
+            Status,
+            actorUserId,
+            $"[PAYMENT_CONFIRMED] {(string.IsNullOrWhiteSpace(notes) ? "Pagamento confirmado" : notes.Trim())}",
+            utcNow));
+
+        return Result.Success();
+    }
 }

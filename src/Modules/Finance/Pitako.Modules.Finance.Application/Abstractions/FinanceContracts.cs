@@ -39,6 +39,7 @@ public interface ICashFlowLedgerRepository
 public interface IPaymentGatewayConfigRepository
 {
     Task<PaymentGatewayConfig?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PaymentGatewayConfig>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(PaymentGatewayConfig config, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

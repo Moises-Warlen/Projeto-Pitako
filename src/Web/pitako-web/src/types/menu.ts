@@ -227,6 +227,8 @@ export interface OrderTrackingResponse {
   customerName: string;
   deliveryAddressSummary?: string | null;
   paymentMethod?: string | null;
+  isPaymentConfirmed?: boolean;
+  pixBrCode?: string | null;
   appliedCouponCode?: string | null;
   itemsSubtotal: number;
   itemsDiscount: number;

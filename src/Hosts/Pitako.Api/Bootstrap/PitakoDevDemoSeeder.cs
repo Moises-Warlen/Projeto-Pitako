@@ -2,7 +2,10 @@ using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.DeliveryLogistics.Application.Services;
+using Pitako.Modules.DeliveryLogistics.Domain;
 using Pitako.Modules.DiningHall.Application.Services;
+using Pitako.Modules.DiningHall.Domain;
 using Pitako.Modules.Finance.Application.Services;
 using Pitako.Modules.Finance.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
@@ -66,6 +69,9 @@ public static class PitakoDevDemoSeeder
         var catalogService = sp.GetRequiredService<CatalogManagementService>();
         var acaiService = sp.GetRequiredService<AcaiBuilderManagementService>();
         var diningService = sp.GetRequiredService<DiningHallManagementService>();
+        var totemService = sp.GetRequiredService<TotemSelfServiceService>();
+        var deliveryPolicyService = sp.GetRequiredService<DeliveryPolicyAndFreightService>();
+        var courierService = sp.GetRequiredService<CourierDispatchAndGpsService>();
         var financeService = sp.GetRequiredService<FinanceManagementService>();
         var clock = sp.GetRequiredService<IClock>();
 
@@ -240,5 +246,10 @@ public static class PitakoDevDemoSeeder
         var entry = (await financeService.CreateEntryAsync(storeAdmin, FinancialEntryKind.Receivable, DreLineCategory.GrossSalesRevenue, "Vendas Balcão", "Fechamento inicial", 1250.00m, clock.UtcNow, "PDV-001", null, ct)).Value;
         await financeService.SettleEntryAsync(storeAdmin, entry.Id, 1215.00m, 35.00m, "PIX / Débito", cancellationToken: ct);
         await financeService.CreateEntryAsync(storeAdmin, FinancialEntryKind.Payable, DreLineCategory.CogsSuppliesAndInputs, "Distribuidora Amazônia", "Polpa de Açaí 40kg", 480.00m, clock.UtcNow.AddDays(3), "NF-9081", null, ct);
+
+        // 7. Totem de Autoatendimento, Política de Frete & Entregadores
+        await totemService.RegisterTerminalAsync(storeAdmin, "TOTEM-01", "Totem Salão Principal", TotemFulfillmentChoice.CounterPickup, false, false, 120, null, ct);
+        await deliveryPolicyService.CreatePolicyAsync(storeAdmin, -20.5386, -47.4008, 12m, FreightCalculationMode.FixedFlat, 6.00m, 3m, 2.00m, 35, 15.00m, 60.00m, null, true, true, ct);
+        await courierService.RegisterCourierAsync(storeAdmin, "João Silva (Motoboy 01)", "16999112233", CourierVehicleType.Motorcycle, CourierCommissionMode.FixedPerDelivery, 6.00m, 0m, null, "ABC-1234", ct);
     }
 }

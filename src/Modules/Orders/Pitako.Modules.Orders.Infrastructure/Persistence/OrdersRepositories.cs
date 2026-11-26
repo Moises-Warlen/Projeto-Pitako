@@ -33,10 +33,11 @@ public sealed class EfOrderRepository(OrdersDbContext db) : IOrderRepository
 
     public Task<Order?> FindByOrderNumberAsync(string orderNumber, CancellationToken cancellationToken = default)
     {
-        var normalized = orderNumber.Trim().ToUpperInvariant();
-        if (!normalized.StartsWith('#'))
-            normalized = "#" + normalized;
-        return FullQuery().AsNoTracking().FirstOrDefaultAsync(o => o.OrderNumber == normalized, cancellationToken);
+        var raw = orderNumber.Trim().ToUpperInvariant();
+        var withHash = raw.StartsWith('#') ? raw : "#" + raw;
+        return FullQuery().AsNoTracking().FirstOrDefaultAsync(
+            o => o.OrderNumber == raw || o.OrderNumber == withHash,
+            cancellationToken);
     }
 
     public Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
@@ -53,6 +54,12 @@ public sealed class EfOrderRepository(OrdersDbContext db) : IOrderRepository
             .ToListAsync(cancellationToken);
 
         return list.OrderBy(o => o.PlacedAtUtc).ToList();
+    }
+
+    public async Task<IReadOnlyList<Order>> ListRecentAllAsync(int limit = 200, CancellationToken cancellationToken = default)
+    {
+        var list = await FullQuery().AsNoTracking().ToListAsync(cancellationToken);
+        return list.OrderByDescending(o => o.PlacedAtUtc).Take(Math.Clamp(limit, 1, 500)).ToList();
     }
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetProductSalesCountsAsync(CancellationToken cancellationToken = default)

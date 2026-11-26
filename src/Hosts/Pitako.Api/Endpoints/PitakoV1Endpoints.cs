@@ -76,6 +76,7 @@ public static class PitakoV1Endpoints
         MapPrintingMarketplaceWhatsAppEndpoints(v1);
         MapFinanceReportsLifecycleOfflineEndpoints(v1);
         PitakoUniversalMenuEndpoints.MapUniversalMenuAndAdminExtensions(v1);
+        PitakoOperationsEndpoints.MapOperationalExtensions(v1);
 
         return app;
     }
@@ -1527,7 +1528,14 @@ public static class PitakoV1Endpoints
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
-            return ToHttp(await qrSvc.CallWaiterAsync(token, req.CallType, req.Notes, ct), StatusCodes.Status201Created);
+            var callRes = await qrSvc.CallWaiterAsync(token, req.CallType, req.Notes, ct);
+            if (callRes.IsFailure && callRes.Error.Code == "Qr.SessionNotFound")
+            {
+                var resumed = await qrSvc.StartOrResumeByQrTokenAsync(token, cancellationToken: ct);
+                if (resumed.IsSuccess)
+                    callRes = await qrSvc.CallWaiterAsync(resumed.Value.Session.SessionToken, req.CallType, req.Notes, ct);
+            }
+            return ToHttp(callRes, StatusCodes.Status201Created);
         });
     }
 
