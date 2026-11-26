@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Pitako.Api.Security;
 using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Abstractions;
@@ -11,6 +13,9 @@ using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.DiningHall.Domain;
 using Pitako.Modules.Finance.Application.Abstractions;
 using Pitako.Modules.Finance.Domain;
+using Pitako.Modules.Marketplaces.Application.Abstractions;
+using Pitako.Modules.Marketplaces.Application.Services;
+using Pitako.Modules.Marketplaces.Domain;
 using Pitako.Modules.Orders.Application.Abstractions;
 using Pitako.Modules.Orders.Application.Services;
 using Pitako.Modules.Orders.Domain;
@@ -35,6 +40,7 @@ public static class PitakoOperationsEndpoints
         MapFinanceExtendedEndpoints(v1);
         MapPdvExtendedEndpoints(v1);
         MapOrdersPixAndDeliveryRouteEndpoints(v1);
+        MapMarketplacesExtendedEndpoints(v1);
     }
 
     private static void MapTotemEndpoints(RouteGroupBuilder v1)
@@ -670,6 +676,514 @@ public static class PitakoOperationsEndpoints
         });
     }
 
+    private static void MapMarketplacesExtendedEndpoints(RouteGroupBuilder v1)
+    {
+        var mp = v1.MapGroup("/marketplaces");
+
+        mp.MapGet("/overview", async (
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            MarketplaceHubService hubSvc,
+            IMarketplacePartnerAccountRepository accRepo,
+            IMarketplaceStoreBindingRepository bindRepo,
+            IMarketplaceInboundEventRepository eventRepo,
+            IMarketplaceCatalogMappingRepository mapRepo,
+            IMarketplaceBulkJobRepository jobRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+
+            var tenant = user!.TenantId.HasValue ? await tenantRepo.FindByIdAsync(user.TenantId.Value, ct) : null;
+            var capabilities = hubSvc.ListCapabilitiesMatrix();
+            var accounts = await accRepo.ListAllAsync(ct);
+            var bindings = await bindRepo.ListAllAsync(ct);
+            var events = await eventRepo.ListRecentAsync(40, ct);
+            var mappings = await mapRepo.ListAllAsync(ct);
+            var jobs = await jobRepo.ListRecentAsync(20, ct);
+
+            return Results.Ok(new
+            {
+                storeSlug = tenant?.Slug ?? "",
+                storeTradeName = tenant?.TradeName ?? "",
+                capabilities = capabilities.Select(c => new
+                {
+                    provider = (int)c.Provider,
+                    providerKey = c.Provider.ToString(),
+                    c.DisplayName,
+                    authKind = c.AuthKind.ToString(),
+                    c.SupportsOrderConfirmation,
+                    c.SupportsOrderDispatch,
+                    c.SupportsOrderCancellation,
+                    c.SupportsItemPauseToggle,
+                    c.SupportsCatalogPriceSync,
+                    c.SupportsStoreOpenCloseToggle,
+                    c.SupportsWebhookHmacSignature,
+                    c.SupportsBulkMenuActions
+                }),
+                accounts = accounts.Select(a => new
+                {
+                    a.Id,
+                    provider = (int)a.Provider,
+                    providerName = a.Provider.ToString(),
+                    a.AccountLabel,
+                    a.ClientOrMerchantIdentifier,
+                    a.IsActive,
+                    a.LastHealthCheckUtc
+                }),
+                bindings = bindings.Select(b => new
+                {
+                    b.Id,
+                    b.PartnerAccountId,
+                    provider = (int)b.Provider,
+                    providerName = b.Provider.ToString(),
+                    b.ExternalMerchantId,
+                    b.ExternalStoreName,
+                    status = b.Status.ToString(),
+                    statusCode = (int)b.Status,
+                    b.AutoAcceptOrders,
+                    b.LastSyncUtc,
+                    b.LastError
+                }),
+                inboundEvents = events.Select(e => new
+                {
+                    e.Id,
+                    provider = e.Provider.ToString(),
+                    e.ExternalEventId,
+                    e.ExternalOrderId,
+                    e.ExternalMerchantId,
+                    e.EventType,
+                    syncStatus = e.SyncStatus.ToString(),
+                    e.SignatureVerified,
+                    e.NormalizedCustomerName,
+                    normalizedTotal = e.NormalizedTotal.Amount,
+                    e.InternalOrderId,
+                    e.FailureReason,
+                    e.ReceivedAtUtc
+                }),
+                mappings = mappings.Select(m => new
+                {
+                    m.Id,
+                    m.StoreBindingId,
+                    m.InternalProductId,
+                    m.InternalItemTitle,
+                    m.ExternalSkuCode,
+                    lastSyncedPrice = m.LastSyncedPrice.Amount,
+                    isPausedExternally = m.IsPausedAtPartner
+                }),
+                bulkJobs = jobs.Select(j => new
+                {
+                    j.Id,
+                    operationType = j.OperationType.ToString(),
+                    j.OperationSummary,
+                    j.TotalTargets,
+                    j.SucceededCount,
+                    j.FailedCount,
+                    j.CreatedAtUtc
+                })
+            });
+        });
+
+        mp.MapPost("/accounts", async (ConnectMarketplaceAccountReq req, ApiSecurityGuard guard, MarketplaceHubService hubSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+            var res = await hubSvc.ConnectPartnerAccountAsync(user!, req.Provider, req.AccountLabel, req.ClientOrMerchantIdentifier, req.RawSecretPayload, ct);
+            if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+            var a = res.Value;
+            return Results.Created($"/api/v1/marketplaces/accounts/{a.Id}", new
+            {
+                a.Id,
+                provider = (int)a.Provider,
+                providerName = a.Provider.ToString(),
+                a.AccountLabel,
+                a.ClientOrMerchantIdentifier,
+                a.IsActive
+            });
+        });
+
+        mp.MapPost("/bindings", async (BindMarketplaceStoreReq req, ApiSecurityGuard guard, MarketplaceHubService hubSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+            var res = await hubSvc.BindExternalStoreAsync(user!, req.PartnerAccountId, req.ExternalMerchantId, req.ExternalStoreName, null, req.AutoAcceptOrders, ct);
+            if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+            var b = res.Value;
+            return Results.Created($"/api/v1/marketplaces/bindings/{b.Id}", new
+            {
+                b.Id,
+                b.PartnerAccountId,
+                provider = (int)b.Provider,
+                providerName = b.Provider.ToString(),
+                b.ExternalMerchantId,
+                b.ExternalStoreName,
+                status = b.Status.ToString(),
+                b.AutoAcceptOrders
+            });
+        });
+
+        mp.MapPost("/catalog-mappings", async (MapMarketplaceCatalogReq req, ApiSecurityGuard guard, MarketplaceHubService hubSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+            var res = await hubSvc.MapCatalogProductAsync(user!, req.StoreBindingId, req.InternalProductId, req.InternalItemTitle, req.ExternalSkuCode, req.CurrentPrice, ct);
+            if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+            var m = res.Value;
+            return Results.Created($"/api/v1/marketplaces/catalog-mappings/{m.Id}", new
+            {
+                m.Id,
+                m.StoreBindingId,
+                m.InternalProductId,
+                m.InternalItemTitle,
+                m.ExternalSkuCode,
+                lastSyncedPrice = m.LastSyncedPrice.Amount
+            });
+        });
+
+        mp.MapPost("/bindings/{id:guid}/toggle-store", async (Guid id, ToggleMarketplaceStoreReq req, ApiSecurityGuard guard, MarketplaceBulkSyncService bulkSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+            return ToHttp(await bulkSvc.BulkToggleStoresOpenCloseAsync(user!, [id], req.PauseStore, req.Reason, ct));
+        });
+
+        mp.MapPost("/bindings/{id:guid}/simulate-order", async (
+            Guid id,
+            SimulateMarketplaceOrderReq? req,
+            ApiSecurityGuard guard,
+            IMarketplaceStoreBindingRepository bindRepo,
+            IMarketplacePartnerAccountRepository accRepo,
+            ISecretProtector secretProtector,
+            MarketplaceHubService hubSvc,
+            IOrderRepository orderRepo,
+            IOrderRealtimeNotifier realtimeNotifier,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Marketplaces, ct);
+            if (err is not null) return err;
+
+            var binding = await bindRepo.FindByIdAsync(id, ct);
+            if (binding is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Marketplace.StoreBindingNotFound", "Loja externa vinculada não encontrada."));
+
+            var account = await accRepo.FindByIdAsync(binding.PartnerAccountId, ct);
+            if (account is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Marketplace.AccountNotFound", "Conta parceira não encontrada."));
+
+            var extOrderCode = req?.ExternalOrderCode ?? $"MK-{Random.Shared.Next(1000, 9999)}";
+            var customer = string.IsNullOrWhiteSpace(req?.CustomerName) ? $"Cliente {binding.Provider}" : req.CustomerName.Trim();
+            var itemTitle = string.IsNullOrWhiteSpace(req?.ItemTitle) ? "Açaí Especial 500ml" : req.ItemTitle.Trim();
+            var unitPrice = req?.UnitPrice > 0 ? req.UnitPrice : 26.90m;
+            var deliveryFee = req?.DeliveryFee >= 0 ? req.DeliveryFee : 5.00m;
+            var total = unitPrice + deliveryFee;
+
+            var rawPayload = BuildProviderSampleOrderJson(binding.Provider, extOrderCode, customer, itemTitle, unitPrice, deliveryFee, total);
+            var rawSecret = secretProtector.Unprotect(account.EncryptedCredentialsBlob);
+            var hmacHex = Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(rawSecret.Trim()), Encoding.UTF8.GetBytes(rawPayload))).ToLowerInvariant();
+            var eventId = $"evt-{Guid.NewGuid():N}";
+
+            var inboundRes = await hubSvc.ReceiveAndNormalizeWebhookAsync(
+                binding.Provider,
+                eventId,
+                binding.ExternalMerchantId,
+                "ORDER_CREATED",
+                rawPayload,
+                $"sha256={hmacHex}",
+                ct);
+
+            if (inboundRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(inboundRes.Error);
+
+            var order = await DispatchNormalizedMarketplaceOrderAsync(
+                binding.TenantId,
+                binding,
+                inboundRes.Value,
+                customer,
+                itemTitle,
+                unitPrice,
+                deliveryFee,
+                orderRepo,
+                realtimeNotifier,
+                clock,
+                ct);
+
+            return Results.Created($"/api/v1/orders/{order.Id}", new
+            {
+                inboundEventId = inboundRes.Value.Id,
+                orderId = order.Id,
+                orderNumber = order.OrderNumber,
+                provider = binding.Provider.ToString(),
+                status = order.Status.ToString(),
+                totalAmount = order.TotalAmount.Amount
+            });
+        });
+
+        v1.MapPost("/public/webhooks/marketplaces/{provider}/{slug}", async (
+            string provider,
+            string slug,
+            ITenantRepository tenantRepo,
+            ITenantContextSetter setter,
+            MarketplaceHubService hubSvc,
+            IMarketplaceStoreBindingRepository bindRepo,
+            IOrderRepository orderRepo,
+            IOrderRealtimeNotifier realtimeNotifier,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            if (!Enum.TryParse<MarketplaceProvider>(provider, true, out var parsedProvider))
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Marketplace.UnknownProvider", $"Provedor '{provider}' desconhecido."));
+
+            var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
+            if (tenant is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+
+            setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
+
+            using var reader = new StreamReader(http.Request.Body, Encoding.UTF8);
+            var rawBody = await reader.ReadToEndAsync(ct);
+
+            var merchantId = http.Request.Headers["X-Merchant-Id"].FirstOrDefault();
+            var eventId = http.Request.Headers["X-Event-Id"].FirstOrDefault() ?? $"wh-{Guid.NewGuid():N}";
+            var signature = http.Request.Headers["X-Hub-Signature-256"].FirstOrDefault()
+                ?? http.Request.Headers["X-IFood-Signature"].FirstOrDefault()
+                ?? http.Request.Headers["X-Signature"].FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(merchantId) && !string.IsNullOrWhiteSpace(rawBody))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(rawBody);
+                    if (doc.RootElement.TryGetProperty("merchantId", out var mpProp))
+                        merchantId = mpProp.GetString();
+                }
+                catch { /* parsed below by connector */ }
+            }
+
+            if (string.IsNullOrWhiteSpace(merchantId))
+                merchantId = (await bindRepo.ListAllAsync(ct)).FirstOrDefault(b => b.Provider == parsedProvider)?.ExternalMerchantId ?? string.Empty;
+
+            var res = await hubSvc.ReceiveAndNormalizeWebhookAsync(parsedProvider, eventId, merchantId, "WEBHOOK_ORDER", rawBody, signature, ct);
+            if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            var binding = res.Value.StoreBindingId.HasValue ? await bindRepo.FindByIdAsync(res.Value.StoreBindingId.Value, ct) : null;
+            var order = await DispatchNormalizedMarketplaceOrderAsync(
+                tenant.Id,
+                binding,
+                res.Value,
+                res.Value.NormalizedCustomerName ?? $"Cliente {parsedProvider}",
+                "Pedido Marketplace",
+                Math.Max(0m, res.Value.NormalizedTotal.Amount),
+                0m,
+                orderRepo,
+                realtimeNotifier,
+                clock,
+                ct);
+
+            return Results.Ok(new
+            {
+                inboundEventId = res.Value.Id,
+                orderNumber = order.OrderNumber,
+                provider = parsedProvider.ToString(),
+                status = order.Status.ToString()
+            });
+        });
+    }
+
+    private static async Task<Order> DispatchNormalizedMarketplaceOrderAsync(
+        Guid tenantId,
+        MarketplaceStoreBinding? binding,
+        MarketplaceInboundEvent inbound,
+        string customerName,
+        string fallbackItemTitle,
+        decimal fallbackUnitPrice,
+        decimal deliveryFeeAmount,
+        IOrderRepository orderRepo,
+        IOrderRealtimeNotifier realtimeNotifier,
+        IClock clock,
+        CancellationToken ct)
+    {
+        var existingByKey = await orderRepo.FindByIdempotencyKeyAsync($"mp-{inbound.Provider}-{inbound.ExternalEventId}", ct);
+        if (existingByKey is not null)
+            return existingByKey;
+
+        var utcNow = clock.UtcNow;
+        var cart = ShoppingCart.Create(tenantId, $"mp-{Guid.NewGuid():N}", utcNow.AddHours(1)).Value;
+        var items = new List<MarketplaceNormalizedOrderItem>();
+        try
+        {
+            items = JsonSerializer.Deserialize<List<MarketplaceNormalizedOrderItem>>(inbound.NormalizedItemsJson) ?? [];
+        }
+        catch { /* fallback item used below */ }
+
+        if (items.Count == 0)
+        {
+            items.Add(new MarketplaceNormalizedOrderItem("MK-SKU-01", fallbackItemTitle, 1, fallbackUnitPrice, "Padrão Marketplace"));
+        }
+
+        foreach (var item in items)
+        {
+            cart.AddItem(
+                CartItemKind.CatalogProduct,
+                null,
+                null,
+                null,
+                null,
+                null,
+                item.Title,
+                item.CustomizationSummary,
+                "{}",
+                Money.Create(Math.Max(0m, item.UnitPriceAmount)).Value,
+                Math.Max(1, item.Quantity),
+                false,
+                item.Notes,
+                utcNow,
+                forceSeparateLine: true);
+        }
+
+        var seq = await orderRepo.CountAllAsync(ct) + 1;
+        var prefix = inbound.Provider switch
+        {
+            MarketplaceProvider.IFood => "IF",
+            MarketplaceProvider.Food99 => "99",
+            MarketplaceProvider.Rappi => "RP",
+            MarketplaceProvider.Aiqfome => "AQ",
+            _ => "MK"
+        };
+        var orderNumber = $"{prefix}-{seq:D4}";
+        var fulfillment = inbound.NormalizedFulfillment == MarketplaceFulfillmentKind.CounterPickup
+            ? FulfillmentMode.CounterPickup
+            : FulfillmentMode.Delivery;
+
+        var order = Order.CreateFromCart(
+            cart,
+            orderNumber,
+            OrderChannel.Marketplace,
+            fulfillment,
+            customerName,
+            null,
+            $"{inbound.Provider} · Pedido {inbound.ExternalOrderId}",
+            Money.Create(Math.Max(0m, deliveryFeeAmount)).Value,
+            Money.Zero(),
+            Money.Zero(),
+            null,
+            binding?.StoreUnitId,
+            null,
+            $"mp-{inbound.Provider}-{inbound.ExternalEventId}",
+            utcNow,
+            $"{inbound.Provider} (Online)").Value;
+
+        order.ConfirmPayment(Guid.Empty, $"Pago online via {inbound.Provider}", utcNow);
+        if (binding?.AutoAcceptOrders == true)
+        {
+            order.TransitionTo(OrderStatus.Accepted, Guid.Empty, $"Aceite automático {inbound.Provider}", utcNow);
+        }
+
+        await orderRepo.AddAsync(order, ct);
+        await orderRepo.SaveChangesAsync(ct);
+
+        await realtimeNotifier.NotifyAsync(new OrderRealtimeEvent(
+            order.TenantId,
+            order.Id,
+            order.OrderNumber,
+            "OrderPlaced",
+            order.Status,
+            utcNow), ct);
+
+        return order;
+    }
+
+    private static string BuildProviderSampleOrderJson(
+        MarketplaceProvider provider,
+        string extOrderCode,
+        string customer,
+        string itemTitle,
+        decimal unitPrice,
+        decimal deliveryFee,
+        decimal total) => provider switch
+        {
+            MarketplaceProvider.Food99 => JsonSerializer.Serialize(new
+            {
+                orderNo = extOrderCode,
+                pickupCode = extOrderCode[^4..],
+                buyerName = customer,
+                freightAmount = deliveryFee,
+                promoAmount = 0m,
+                payAmount = total,
+                deliverType = "DELIVERY",
+                dishes = new[] { new { dishCode = "SKU-99-01", dishName = itemTitle, count = 1, price = unitPrice, customization = "Padrão" } }
+            }),
+            MarketplaceProvider.Rappi => JsonSerializer.Serialize(new
+            {
+                order_id = extOrderCode,
+                short_code = extOrderCode[^4..],
+                client_name = customer,
+                delivery_fee = deliveryFee,
+                discount_value = 0m,
+                total_value = total,
+                delivery_method = "DELIVERY",
+                items = new[] { new { sku = "SKU-RP-01", name = itemTitle, units = 1, price = unitPrice, customization = "Padrão" } }
+            }),
+            MarketplaceProvider.Aiqfome => JsonSerializer.Serialize(new
+            {
+                pedido_id = extOrderCode,
+                codigo = extOrderCode[^4..],
+                cliente_nome = customer,
+                taxa_entrega = deliveryFee,
+                desconto = 0m,
+                valor_total = total,
+                modalidade = "DELIVERY",
+                itens = new[] { new { codigo_pdv = "SKU-AQ-01", nome = itemTitle, quantidade = 1, valor_unitario = unitPrice, customization = "Padrão" } }
+            }),
+            MarketplaceProvider.DeliveryMuch => JsonSerializer.Serialize(new
+            {
+                orderCode = extOrderCode,
+                shortCode = extOrderCode[^4..],
+                customer,
+                shipping = deliveryFee,
+                voucher = 0m,
+                totalValue = total,
+                fulfillment = "DELIVERY",
+                products = new[] { new { code = "SKU-DM-01", title = itemTitle, qty = 1, unitValue = unitPrice } }
+            }),
+            MarketplaceProvider.Keeta => JsonSerializer.Serialize(new
+            {
+                orderSn = extOrderCode,
+                daySeq = extOrderCode[^4..],
+                recipientName = customer,
+                deliveryAmount = deliveryFee,
+                discountAmount = 0m,
+                orderAmount = total,
+                deliveryMode = "DELIVERY",
+                skuList = new[] { new { outerSkuId = "SKU-KT-01", skuName = itemTitle, quantity = 1, price = unitPrice } }
+            }),
+            MarketplaceProvider.FoodToSave => JsonSerializer.Serialize(new
+            {
+                bagOrderCode = extOrderCode,
+                pickupPin = extOrderCode[^4..],
+                consumerName = customer,
+                deliveryFee,
+                discount = 0m,
+                totalAmount = total,
+                pickupType = "TAKEOUT",
+                bags = new[] { new { bagSku = "BAG-FTS-01", bagTitle = itemTitle, quantity = 1, bagPrice = unitPrice } }
+            }),
+            _ => JsonSerializer.Serialize(new
+            {
+                orderId = extOrderCode,
+                displayId = extOrderCode[^4..],
+                customerName = customer,
+                deliveryFee,
+                discounts = 0m,
+                totalAmount = total,
+                orderType = "DELIVERY",
+                items = new[] { new { externalCode = "SKU-IF-01", name = itemTitle, quantity = 1, unitPrice, customization = "Padrão" } }
+            })
+        };
+
     private static object ToTotemSessionDto(TotemOrderSession s) => new
     {
         s.Id,
@@ -790,3 +1304,8 @@ public sealed record ConfirmOrderPaymentReq(string? Notes = null);
 public sealed record RegisterCourierReq(string FullName, string Phone, CourierVehicleType VehicleType = CourierVehicleType.Motorcycle, CourierCommissionMode CommissionMode = CourierCommissionMode.FixedPerDelivery, decimal FixedCommissionAmount = 6m, decimal FreightCommissionPercentage = 0m, string? LicensePlate = null);
 public sealed record OptimizeStopDto(Guid? OrderId, string OrderNumber, string CustomerName, string DestinationAddress, double DestinationLatitude, double DestinationLongitude, decimal DeliveryFee);
 public sealed record OptimizeDispatchRunReq(Guid CourierId, double OriginLatitude, double OriginLongitude, IReadOnlyList<OptimizeStopDto> Stops, string? Notes = null);
+public sealed record ConnectMarketplaceAccountReq(MarketplaceProvider Provider, string AccountLabel, string ClientOrMerchantIdentifier, string RawSecretPayload);
+public sealed record BindMarketplaceStoreReq(Guid PartnerAccountId, string ExternalMerchantId, string ExternalStoreName, bool AutoAcceptOrders = false);
+public sealed record MapMarketplaceCatalogReq(Guid StoreBindingId, Guid InternalProductId, string InternalItemTitle, string ExternalSkuCode, decimal CurrentPrice);
+public sealed record ToggleMarketplaceStoreReq(bool PauseStore, string? Reason = null);
+public sealed record SimulateMarketplaceOrderReq(string? ExternalOrderCode = null, string? CustomerName = null, string? ItemTitle = null, decimal UnitPrice = 26.90m, decimal DeliveryFee = 5.00m);

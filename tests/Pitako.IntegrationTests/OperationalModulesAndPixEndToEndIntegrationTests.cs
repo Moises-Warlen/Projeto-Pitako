@@ -267,5 +267,95 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         Assert.Equal(HttpStatusCode.Created, optimizeRes.StatusCode);
         var optJson = await optimizeRes.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(1, optJson.GetProperty("stops")[0].GetProperty("sequenceNumber").GetInt32());
+
+        // 6. Per-Store Marketplaces (iFood / 99Food / Rappi) + Multi-Tenant Isolation
+        using var mpOverviewReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/marketplaces/overview");
+        mpOverviewReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        var mpOverviewRes = await client.SendAsync(mpOverviewReq);
+        Assert.Equal(HttpStatusCode.OK, mpOverviewRes.StatusCode);
+        var mpJson = await mpOverviewRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(7, mpJson.GetProperty("capabilities").GetArrayLength());
+        var food99Binding = mpJson.GetProperty("bindings").EnumerateArray().First(b => b.GetProperty("providerName").GetString() == "Food99");
+        var food99BindingId = food99Binding.GetProperty("id").GetGuid();
+
+        using var sim99Req = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/marketplaces/bindings/{food99BindingId}/simulate-order");
+        sim99Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        sim99Req.Content = JsonContent.Create(new { customerName = "Cliente 99Food E2E" });
+        var sim99Res = await client.SendAsync(sim99Req);
+        Assert.Equal(HttpStatusCode.Created, sim99Res.StatusCode);
+        var sim99Json = await sim99Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.StartsWith("99-", sim99Json.GetProperty("orderNumber").GetString());
+
+        // Provision a 2nd independent store and confirm ZERO cross-tenant marketplace leakage
+        var masterLogin = await client.PostAsJsonAsync("/api/v1/auth/login-saas", new
+        {
+            email = "master@pitako.com.br",
+            password = "Master@12345"
+        });
+        Assert.Equal(HttpStatusCode.OK, masterLogin.StatusCode);
+        var masterToken = (await masterLogin.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString()!;
+
+        using var plansReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/master/plans");
+        plansReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        var unlimitedPlanId = (await (await client.SendAsync(plansReq)).Content.ReadFromJsonAsync<JsonElement>())[0].GetProperty("id").GetGuid();
+
+        using var custReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/master/customers-subscriptions");
+        custReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        custReq.Content = JsonContent.Create(new
+        {
+            customerName = "Segunda Loja Holding",
+            documentNumber = "11444777000161",
+            billingEmail = "dono2@pitako.com.br",
+            phone = "16998887766",
+            planId = unlimitedPlanId,
+            startWithTrial = false
+        });
+        var custRes = await client.SendAsync(custReq);
+        Assert.Equal(HttpStatusCode.Created, custRes.StatusCode);
+        var cust2Id = (await custRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("customerId").GetGuid();
+
+        using var store2Req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/store/establishments");
+        store2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        store2Req.Content = JsonContent.Create(new
+        {
+            customerAccountId = cust2Id,
+            legalName = "Explosão Açaí Unidade 2 LTDA",
+            tradeName = "Explosão Açaí Filial",
+            slug = "explosao-filial",
+            cnpj = "22.333.444/0001-81",
+            segmentCode = "acaiteria"
+        });
+        var store2Res = await client.SendAsync(store2Req);
+        Assert.Equal(HttpStatusCode.Created, store2Res.StatusCode);
+        var store2Id = (await store2Res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("tenant").GetProperty("id").GetGuid();
+
+        using var admin2Req = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/master/establishments/{store2Id}/admin-user");
+        admin2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        admin2Req.Content = JsonContent.Create(new
+        {
+            fullName = "Gerente Filial",
+            email = "gerente@explosaofilial.com.br",
+            password = "Loja2@12345",
+            role = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, (await client.SendAsync(admin2Req)).StatusCode);
+
+        var login2Res = await client.PostAsJsonAsync("/api/v1/auth/login-store", new
+        {
+            storeSlug = "explosao-filial",
+            email = "gerente@explosaofilial.com.br",
+            password = "Loja2@12345"
+        });
+        Assert.Equal(HttpStatusCode.OK, login2Res.StatusCode);
+        var token2 = (await login2Res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString()!;
+
+        using var mp2Req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/marketplaces/overview");
+        mp2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var mp2Res = await client.SendAsync(mp2Req);
+        Assert.Equal(HttpStatusCode.OK, mp2Res.StatusCode);
+        var mp2Json = await mp2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("explosao-filial", mp2Json.GetProperty("storeSlug").GetString());
+        Assert.Equal(0, mp2Json.GetProperty("accounts").GetArrayLength());
+        Assert.Equal(0, mp2Json.GetProperty("bindings").GetArrayLength());
     }
 }

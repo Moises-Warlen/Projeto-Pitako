@@ -33,6 +33,7 @@ public interface IMarketplaceCatalogMappingRepository
 {
     Task<MarketplaceCatalogMapping?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MarketplaceCatalogMapping>> ListByBindingAsync(Guid storeBindingId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MarketplaceCatalogMapping>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MarketplaceCatalogMapping>> ListByInternalProductAsync(Guid internalProductId, CancellationToken cancellationToken = default);
     Task AddAsync(MarketplaceCatalogMapping mapping, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);

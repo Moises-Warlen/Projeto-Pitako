@@ -93,7 +93,8 @@ export function StoreBrandShell({
     { href: "/pdv", label: "PDV & Balança" },
     { href: "/pedidos", label: "Kanban Pedidos" },
     { href: "/salao", label: "Salão & Mesas" },
-    { href: "/financeiro", label: "Financeiro & DRE" }
+    { href: "/financeiro", label: "Financeiro & DRE" },
+    { href: "/integracoes", label: "Integrações" }
   ];
 
   return (

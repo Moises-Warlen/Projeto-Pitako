@@ -80,6 +80,9 @@ public sealed class EfMarketplaceCatalogMappingRepository(MarketplacesDbContext 
     public async Task<IReadOnlyList<MarketplaceCatalogMapping>> ListByBindingAsync(Guid storeBindingId, CancellationToken cancellationToken = default) =>
         await db.CatalogMappings.Where(m => m.StoreBindingId == storeBindingId).OrderBy(m => m.ExternalSkuCode).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<MarketplaceCatalogMapping>> ListAllAsync(CancellationToken cancellationToken = default) =>
+        await db.CatalogMappings.AsNoTracking().OrderBy(m => m.ExternalSkuCode).ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<MarketplaceCatalogMapping>> ListByInternalProductAsync(Guid internalProductId, CancellationToken cancellationToken = default) =>
         await db.CatalogMappings.Where(m => m.InternalProductId == internalProductId).ToListAsync(cancellationToken);
 

@@ -8,6 +8,8 @@ using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.DiningHall.Domain;
 using Pitako.Modules.Finance.Application.Services;
 using Pitako.Modules.Finance.Domain;
+using Pitako.Modules.Marketplaces.Application.Services;
+using Pitako.Modules.Marketplaces.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Abstractions;
@@ -73,6 +75,7 @@ public static class PitakoDevDemoSeeder
         var deliveryPolicyService = sp.GetRequiredService<DeliveryPolicyAndFreightService>();
         var courierService = sp.GetRequiredService<CourierDispatchAndGpsService>();
         var financeService = sp.GetRequiredService<FinanceManagementService>();
+        var marketplaceHubService = sp.GetRequiredService<MarketplaceHubService>();
         var clock = sp.GetRequiredService<IClock>();
 
         setter.SetMasterScope();
@@ -251,5 +254,22 @@ public static class PitakoDevDemoSeeder
         await totemService.RegisterTerminalAsync(storeAdmin, "TOTEM-01", "Totem Salão Principal", TotemFulfillmentChoice.CounterPickup, false, false, 120, null, ct);
         await deliveryPolicyService.CreatePolicyAsync(storeAdmin, -20.5386, -47.4008, 12m, FreightCalculationMode.FixedFlat, 6.00m, 3m, 2.00m, 35, 15.00m, 60.00m, null, true, true, ct);
         await courierService.RegisterCourierAsync(storeAdmin, "João Silva (Motoboy 01)", "16999112233", CourierVehicleType.Motorcycle, CourierCommissionMode.FixedPerDelivery, 6.00m, 0m, null, "ABC-1234", ct);
+
+        // 8. Conexões iniciais de Marketplace da loja demo (iFood & 99Food)
+        var ifoodAcc = await marketplaceHubService.ConnectPartnerAccountAsync(
+            storeAdmin, MarketplaceProvider.IFood, "iFood — Açaí Tropical Express", "ifood-client-acai-demo", "ifood-hmac-demo-secret-key", ct);
+        if (ifoodAcc.IsSuccess)
+        {
+            await marketplaceHubService.BindExternalStoreAsync(
+                storeAdmin, ifoodAcc.Value.Id, "IFOOD-TROPICAL-01", "Açaí Tropical Express (iFood)", null, true, ct);
+        }
+
+        var food99Acc = await marketplaceHubService.ConnectPartnerAccountAsync(
+            storeAdmin, MarketplaceProvider.Food99, "99Food — Açaí Tropical Express", "99food-app-acai-demo", "99food-hmac-demo-secret-key", ct);
+        if (food99Acc.IsSuccess)
+        {
+            await marketplaceHubService.BindExternalStoreAsync(
+                storeAdmin, food99Acc.Value.Id, "99FOOD-TROPICAL-01", "Açaí Tropical Express (99Food)", null, false, ct);
+        }
     }
 }

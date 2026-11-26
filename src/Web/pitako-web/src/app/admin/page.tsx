@@ -221,7 +221,22 @@ export default function AdminStorePage() {
             style={{ backgroundColor: "var(--store-accent)" }}
             className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-sm"
           >
-            Ver Cardápio (/loja/{slug}) <ExternalLink className="h-3.5 w-3.5" />
+            Cardápio (/loja/{slug}) <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+
+          <Link
+            href={`/totem?slug=${slug}`}
+            target="_blank"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 shadow-sm hover:bg-slate-50"
+          >
+            Totem desta Loja <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+
+          <Link
+            href="/integracoes"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-slate-800"
+          >
+            Marketplaces (iFood / 99Food)
           </Link>
         </div>
       </div>

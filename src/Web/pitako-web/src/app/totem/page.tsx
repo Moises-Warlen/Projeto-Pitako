@@ -60,7 +60,7 @@ export default function SelfServiceTotemPage() {
         tradeName: string;
         formattedCnpj: string;
         branding: { logoUrl?: string; primaryColorHex: string; secondaryColorHex: string; accentColorHex: string };
-      }>(`/api/v1/public/store/${targetSlug}/`),
+      }>(`/api/v1/public/store/${targetSlug}`),
       apiFetch<PublicMenuResponse>(`/api/v1/public/store/${targetSlug}/menu`)
     ]);
 
@@ -79,7 +79,8 @@ export default function SelfServiceTotemPage() {
   }, []);
 
   useEffect(() => {
-    const querySlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("loja") : null;
+    const search = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const querySlug = search?.get("slug") || search?.get("loja");
     const sessionSlug = loadSession()?.storeSlug;
     const target = (querySlug || sessionSlug || "acai-demo").trim().toLowerCase();
     setSlug(target);
