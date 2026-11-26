@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Store } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Bell, Power, Store } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch, loadSession } from "@/lib/api";
 
 export interface StoreBrandTheme {
@@ -31,48 +31,85 @@ export function StoreBrandShell({
   theme,
   activeSection,
   hideOpsNav = false,
+  onStoreStatusChanged,
   children
 }: {
   theme?: StoreBrandTheme;
   activeSection?: string;
   hideOpsNav?: boolean;
+  onStoreStatusChanged?: (isPaused: boolean) => void;
   children: React.ReactNode;
 }) {
   const [loadedTheme, setLoadedTheme] = useState<StoreBrandTheme | null>(null);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [statusKnown, setStatusKnown] = useState<boolean>(false);
+  const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
 
-  useEffect(() => {
-    if (theme) return;
+  const loadHeaderStatus = useCallback(async () => {
     const session = loadSession();
     if (!session || session.scope !== "Establishment") return;
 
-    let cancelled = false;
-    apiFetch<{
-      tradeName?: string;
-      legalName?: string;
-      cnpj?: string;
-      draft?: {
-        logoUrl?: string | null;
-        primaryColorHex?: string;
-        secondaryColorHex?: string;
-        accentColorHex?: string;
-      };
-    }>("/api/v1/store/branding", {}, session.accessToken).then((res) => {
-      if (cancelled || !res.ok || !res.data) return;
-      const d = res.data;
-      setLoadedTheme({
-        tradeName: d.tradeName || d.legalName || "Estabelecimento",
-        formattedCnpj: d.cnpj || "",
-        logoUrl: d.draft?.logoUrl ?? null,
-        primaryColorHex: d.draft?.primaryColorHex || "#1E293B",
-        secondaryColorHex: d.draft?.secondaryColorHex || "#F8FAFC",
-        accentColorHex: d.draft?.accentColorHex || "#0F766E"
-      });
-    });
+    const [brandRes, ordersRes] = await Promise.all([
+      apiFetch<{
+        tradeName?: string;
+        legalName?: string;
+        cnpj?: string;
+        draft?: {
+          logoUrl?: string | null;
+          primaryColorHex?: string;
+          secondaryColorHex?: string;
+          accentColorHex?: string;
+          isTemporarilyPaused?: boolean;
+        };
+      }>("/api/v1/store/branding", {}, session.accessToken),
+      !hideOpsNav
+        ? apiFetch<Array<{ status?: string }>>("/api/v1/orders/kanban", {}, session.accessToken)
+        : Promise.resolve({ ok: false, data: null })
+    ]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [theme]);
+    if (brandRes.ok && brandRes.data) {
+      const d = brandRes.data;
+      if (!theme) {
+        setLoadedTheme({
+          tradeName: d.tradeName || d.legalName || "Estabelecimento",
+          formattedCnpj: d.cnpj || "",
+          logoUrl: d.draft?.logoUrl ?? null,
+          primaryColorHex: d.draft?.primaryColorHex || "#1E293B",
+          secondaryColorHex: d.draft?.secondaryColorHex || "#F8FAFC",
+          accentColorHex: d.draft?.accentColorHex || "#0F766E"
+        });
+      }
+      setIsPaused(Boolean(d.draft?.isTemporarilyPaused));
+      setStatusKnown(true);
+    }
+
+    if (ordersRes.ok && Array.isArray(ordersRes.data)) {
+      const pending = ordersRes.data.filter(
+        (o) => o.status === "PendingConfirmation" || o.status === "Confirmed" || o.status === "Preparing"
+      ).length;
+      setPendingOrdersCount(pending);
+    }
+  }, [hideOpsNav, theme]);
+
+  useEffect(() => {
+    void loadHeaderStatus();
+  }, [loadHeaderStatus]);
+
+  async function toggleStoreOpenFromHeader() {
+    const session = loadSession();
+    if (!session || session.scope !== "Establishment") return;
+    const nextPaused = !isPaused;
+    const res = await apiFetch(
+      "/api/v1/store/pause",
+      { method: "POST", body: JSON.stringify({ isPaused: nextPaused, reason: nextPaused ? "Pausada no topo do painel" : null }) },
+      session.accessToken
+    );
+    if (res.ok) {
+      setIsPaused(nextPaused);
+      setStatusKnown(true);
+      onStoreStatusChanged?.(nextPaused);
+    }
+  }
 
   const resolvedTheme = theme ?? loadedTheme ?? FALLBACK_STORE;
 
@@ -114,7 +151,14 @@ export function StoreBrandShell({
               </div>
             )}
             <div>
-              <p className="text-base font-bold leading-tight">{resolvedTheme.tradeName}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-base font-bold leading-tight">{resolvedTheme.tradeName}</p>
+                {!hideOpsNav && (
+                  <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/95">
+                    GESTOR PRO
+                  </span>
+                )}
+              </div>
               {resolvedTheme.formattedCnpj && (
                 <p className="text-xs opacity-80">CNPJ {resolvedTheme.formattedCnpj}</p>
               )}
@@ -122,21 +166,52 @@ export function StoreBrandShell({
           </div>
 
           {!hideOpsNav && (
-            <nav className="flex flex-wrap items-center gap-2 text-sm">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-lg px-3 py-1.5 transition ${
-                    activeSection === item.href
-                      ? "bg-white/25 font-semibold text-white"
-                      : "text-white/85 hover:bg-white/15 hover:text-white"
+            <div className="flex flex-wrap items-center gap-3">
+              {statusKnown && (
+                <button
+                  type="button"
+                  onClick={() => void toggleStoreOpenFromHeader()}
+                  title="Clique para abrir ou fechar o cardápio digital agora"
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold shadow-sm transition ${
+                    !isPaused
+                      ? "bg-emerald-500 text-white hover:bg-emerald-400"
+                      : "bg-rose-500 text-white hover:bg-rose-400"
                   }`}
                 >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+                  <Power className="h-3.5 w-3.5" />
+                  {!isPaused ? "LOJA ABERTA" : "LOJA FECHADA"}
+                </button>
+              )}
+
+              <Link
+                href="/pedidos"
+                title="Pedidos pendentes no Kanban"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-white transition hover:bg-white/25"
+              >
+                <Bell className="h-4 w-4" />
+                {pendingOrdersCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-extrabold text-slate-900">
+                    {pendingOrdersCount}
+                  </span>
+                )}
+              </Link>
+
+              <nav className="flex flex-wrap items-center gap-1.5 text-sm">
+                {navItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-lg px-3 py-1.5 transition ${
+                      activeSection === item.href
+                        ? "bg-white/25 font-semibold text-white"
+                        : "text-white/85 hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
           )}
         </div>
       </header>

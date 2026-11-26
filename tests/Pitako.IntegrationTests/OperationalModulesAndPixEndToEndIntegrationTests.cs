@@ -357,5 +357,81 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         Assert.Equal("explosao-filial", mp2Json.GetProperty("storeSlug").GetString());
         Assert.Equal(0, mp2Json.GetProperty("accounts").GetArrayLength());
         Assert.Equal(0, mp2Json.GetProperty("bindings").GetArrayLength());
+
+        // 7. Auto-Provisionamento Completo na Loja 2 ("explosao-filial") + Novos Endpoints Operacionais
+        var pubStore2 = await client.GetAsync("/api/v1/public/store/explosao-filial/");
+        Assert.Equal(HttpStatusCode.OK, pubStore2.StatusCode);
+        var pubStore2Json = await pubStore2.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.StartsWith("data:image/svg+xml", pubStore2Json.GetProperty("branding").GetProperty("logoUrl").GetString());
+
+        using var sheets2Req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/inventory/technical-sheets/summary");
+        sheets2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var sheets2Res = await client.SendAsync(sheets2Req);
+        Assert.Equal(HttpStatusCode.OK, sheets2Res.StatusCode);
+        Assert.True((await sheets2Res.Content.ReadFromJsonAsync<JsonElement>()).GetArrayLength() >= 1);
+
+        using var printers2Req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/printing/printers");
+        printers2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var printers2Res = await client.SendAsync(printers2Req);
+        Assert.Equal(HttpStatusCode.OK, printers2Res.StatusCode);
+        var printersArr = (await printers2Res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("printers");
+        Assert.True(printersArr.GetArrayLength() >= 2);
+        var firstPrinterId = printersArr[0].GetProperty("id").GetGuid();
+
+        using var printTestReq = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/printing/printers/{firstPrinterId}/test");
+        printTestReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var printTestRes = await client.SendAsync(printTestReq);
+        Assert.Equal(HttpStatusCode.OK, printTestRes.StatusCode);
+        var printPreview = (await printTestRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("previewTicketText").GetString()!;
+        Assert.Contains("EXPLOS", printPreview.ToUpperInvariant());
+        Assert.DoesNotContain("PITAKO", printPreview.ToUpperInvariant());
+
+        using var coupons2Req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/coupons");
+        coupons2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var coupons2Res = await client.SendAsync(coupons2Req);
+        Assert.Equal(HttpStatusCode.OK, coupons2Res.StatusCode);
+        Assert.Contains((await coupons2Res.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray(), c => c.GetProperty("code").GetString() == "PRIMEIRACOMPRA");
+
+        var pubChatPost = await client.PostAsJsonAsync("/api/v1/public/store/explosao-filial/chat", new
+        {
+            customerName = "Maria Loja 2",
+            customerPhone = "16991234567",
+            message = "Boa noite, tem copo de 500ml?"
+        });
+        Assert.Equal(HttpStatusCode.OK, pubChatPost.StatusCode);
+        var convId2 = (await pubChatPost.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("conversationId").GetGuid();
+
+        using var reply2Req = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/whatsapp/conversations/{convId2}/reply");
+        reply2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        reply2Req.Content = JsonContent.Create(new { messageText = "Sim! Copo 500ml disponível no cardápio." });
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(reply2Req)).StatusCode);
+
+        using var waDashReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/whatsapp/dashboard");
+        waDashReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var waDashRes = await client.SendAsync(waDashReq);
+        Assert.Equal(HttpStatusCode.OK, waDashRes.StatusCode);
+        Assert.True((await waDashRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("conversations").GetArrayLength() >= 1);
+
+        using var execRepReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/reports/executive?days=7");
+        execRepReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(execRepReq)).StatusCode);
+
+        using var secLogsReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/security/audit-logs");
+        secLogsReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(secLogsReq)).StatusCode);
+
+        using var opsSetReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/store/operational-settings");
+        opsSetReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var opsSetRes = await client.SendAsync(opsSetReq);
+        Assert.Equal(HttpStatusCode.OK, opsSetRes.StatusCode);
+        var opsSetJson = await opsSetRes.Content.ReadFromJsonAsync<JsonElement>();
+        var scheduleDays = opsSetJson.GetProperty("schedule").EnumerateArray().Select(s => s.GetProperty("dayOfWeek").GetInt32()).ToArray();
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6], scheduleDays);
+
+        using var kitReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/catalog/import-spreadsheet-kit");
+        kitReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        kitReq.Content = JsonContent.Create(new { segmentCode = "pizzaria" });
+        var kitRes = await client.SendAsync(kitReq);
+        Assert.Equal(HttpStatusCode.OK, kitRes.StatusCode);
     }
 }

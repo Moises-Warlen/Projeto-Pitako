@@ -130,7 +130,9 @@ public static class StoreOperatingHoursHelper
             return DefaultSchedule;
         try
         {
-            var parsed = System.Text.Json.JsonSerializer.Deserialize<List<StoreOperatingHoursEntry>>(json);
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<List<StoreOperatingHoursEntry>>(
+                json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return parsed is { Count: > 0 } ? parsed.OrderBy(p => p.DayOfWeek).ToList() : DefaultSchedule;
         }
         catch

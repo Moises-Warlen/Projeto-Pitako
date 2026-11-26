@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pitako.Api.Bootstrap;
 using Pitako.Api.Security;
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
@@ -77,6 +78,7 @@ public static class PitakoV1Endpoints
         MapFinanceReportsLifecycleOfflineEndpoints(v1);
         PitakoUniversalMenuEndpoints.MapUniversalMenuAndAdminExtensions(v1);
         PitakoOperationsEndpoints.MapOperationalExtensions(v1);
+        PitakoStoreSuiteEndpoints.MapStoreSuiteExtensions(v1);
 
         return app;
     }
@@ -708,6 +710,7 @@ public static class PitakoV1Endpoints
             CreateEstablishmentCommand req,
             ApiSecurityGuard guard,
             TenantProvisioningService provSvc,
+            IServiceScopeFactory scopeFactory,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -715,7 +718,17 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await provSvc.CreateEstablishmentAsync(user!, req, ct), StatusCodes.Status201Created);
+            var res = await provSvc.CreateEstablishmentAsync(user!, req, ct);
+            if (res.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            using (var provScope = scopeFactory.CreateScope())
+            {
+                var starter = provScope.ServiceProvider.GetRequiredService<StoreStarterProvisioner>();
+                await starter.ProvisionCompleteNewStoreAsync(res.Value.Tenant, ct);
+            }
+
+            return Results.Json(res.Value, statusCode: StatusCodes.Status201Created);
         });
 
         store.MapGet("/branding", async (

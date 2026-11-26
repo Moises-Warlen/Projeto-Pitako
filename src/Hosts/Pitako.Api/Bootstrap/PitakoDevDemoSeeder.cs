@@ -10,6 +10,10 @@ using Pitako.Modules.Finance.Application.Services;
 using Pitako.Modules.Finance.Domain;
 using Pitako.Modules.Marketplaces.Application.Services;
 using Pitako.Modules.Marketplaces.Domain;
+using Pitako.Modules.Printing.Application.Services;
+using Pitako.Modules.Printing.Domain;
+using Pitako.Modules.WhatsAppSupport.Application.Services;
+using Pitako.Modules.WhatsAppSupport.Domain;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Abstractions;
@@ -76,6 +80,9 @@ public static class PitakoDevDemoSeeder
         var courierService = sp.GetRequiredService<CourierDispatchAndGpsService>();
         var financeService = sp.GetRequiredService<FinanceManagementService>();
         var marketplaceHubService = sp.GetRequiredService<MarketplaceHubService>();
+        var printingService = sp.GetRequiredService<PrintingManagementService>();
+        var couponsService = sp.GetRequiredService<Pitako.Modules.Coupons.Application.Services.CouponsManagementService>();
+        var waService = sp.GetRequiredService<WhatsAppSupportService>();
         var clock = sp.GetRequiredService<IClock>();
 
         setter.SetMasterScope();
@@ -271,5 +278,11 @@ public static class PitakoDevDemoSeeder
             await marketplaceHubService.BindExternalStoreAsync(
                 storeAdmin, food99Acc.Value.Id, "99FOOD-TROPICAL-01", "Açaí Tropical Express (99Food)", null, false, ct);
         }
+
+        // 9. Impressoras Térmicas, Cupom e Canal WhatsApp Bot + IA demo
+        await printingService.RegisterPrinterAsync(storeAdmin, "COZINHA-01", "Impressora Cozinha / Produção (1ª Via)", PrinterConnectionKind.NetworkTcpEscPos, "192.168.0.100:9100", PaperWidthMm.Mm80, null, true, null, ct);
+        await printingService.RegisterPrinterAsync(storeAdmin, "CAIXA-01", "Impressora Caixa / Balcão & Entrega (2ª Via)", PrinterConnectionKind.UsbSpooler, "USB001", PaperWidthMm.Mm80, null, true, null, ct);
+        await couponsService.CreateCouponAsync(storeAdmin, "PRIMEIRACOMPRA", Pitako.Modules.Coupons.Domain.CouponDiscountType.FixedAmount, 5.00m, clock.UtcNow.AddDays(-1), clock.UtcNow.AddYears(2), 25.00m, null, 200, null, cancellationToken: ct);
+        await waService.ConfigureChannelAsync(storeAdmin, tenantRes.Value.Tenant.TradeName, "5516991098863", "wa-acai-demo", "waba-acai-demo", "wa-cloud-demo", "wa-secret-demo", "verify-acai-demo", WhatsAppAutoReplyMode.HybridBotThenAi, "/loja/acai-demo", null, ct);
     }
 }

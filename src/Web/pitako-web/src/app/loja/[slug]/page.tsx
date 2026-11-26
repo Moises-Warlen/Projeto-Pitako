@@ -22,6 +22,7 @@ import {
   ProductCustomizationModal
 } from "@/components/storefront/ProductCustomizationModal";
 import { formatBrl, ProductMediaFrame } from "@/components/storefront/ProductMediaFrame";
+import { CustomerChatDrawer } from "@/components/storefront/CustomerChatDrawer";
 import { OperatingHoursModal, OrderTrackingModal } from "@/components/storefront/StorefrontModals";
 import { apiFetch } from "@/lib/api";
 import {
@@ -889,6 +890,8 @@ export default function PublicStorefrontPage() {
         storeTradeName={storeInfo?.tradeName || theme.tradeName}
         storePhone={storeInfo?.branding.whatsAppNumber || storeInfo?.contactPhone}
       />
+
+      <CustomerChatDrawer slug={slug} storeTradeName={storeInfo?.tradeName || theme.tradeName} />
     </StoreBrandShell>
   );
 }

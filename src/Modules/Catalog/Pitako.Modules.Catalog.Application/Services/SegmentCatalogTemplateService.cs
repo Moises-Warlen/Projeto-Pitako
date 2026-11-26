@@ -61,6 +61,9 @@ public sealed class SegmentCatalogTemplateService
             "hamburgueria" => await ApplyHamburgueriaAsync(tenantId, cancellationToken),
             "pastelaria" => await ApplyPastelariaAsync(tenantId, cancellationToken),
             "sorveteria" => await ApplySorveteriaAsync(tenantId, cancellationToken),
+            "adega" => await ApplyAdegaAsync(tenantId, cancellationToken),
+            "padaria" => await ApplyPadariaAsync(tenantId, cancellationToken),
+            "doceria" => await ApplyDoceriaAsync(tenantId, cancellationToken),
             "restaurante" or "lanchonete" => await ApplyRestauranteLanchoneteAsync(tenantId, code, cancellationToken),
             _ => await ApplyGenericFoodAsync(tenantId, code, cancellationToken)
         };
@@ -448,6 +451,74 @@ public sealed class SegmentCatalogTemplateService
         await _productRepo.AddAsync(prato, ct);
         await _categoryRepo.SaveChangesAsync(ct);
         return Result.Success(new AppliedSegmentTemplateSummary(code, 1, 1, 3));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyAdegaAsync(Guid tenantId, CancellationToken ct)
+    {
+        var cat = Category.Create(tenantId, "Copões 700ml & Drinks", "Monte seu copão escolhendo destilado, energético e gelo de sabor", null, 1, "adega").Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpGelo = CreateGroup(tenantId, "Gelo de Sabor", ModifierGroupType.Complement, 1, 2, true, 1, ModifierGroupKind.FreeIncluded, 1, OptionCountingMode.ByDistinctOption, "gelo", [
+            ("Gelo de Coco", 0m, 1, null),
+            ("Gelo de Maracujá", 0m, 1, null),
+            ("Gelo de Melancia", 0m, 1, null)
+        ]);
+        var grpExtra = CreateGroup(tenantId, "Dose Extra / Energético", ModifierGroupType.Addon, 0, 3, false, 2, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "extras", [
+            ("Dose Extra Whisky 50ml", 7.00m, 2, null),
+            ("Lata Red Bull 250ml", 11.00m, 2, null)
+        ]);
+
+        await _modifierRepo.AddAsync(grpGelo, ct);
+        await _modifierRepo.AddAsync(grpExtra, ct);
+
+        var copao = Product.Create(tenantId, cat.Id, "Copão Whisky + Energético + Gelo", Money.Create(22.90m).Value, "Copão 700ml montado na hora com dose generosa e energético gelado.", "ADEGA-COPAO", ProductSaleMode.Unit, true, 1, false, true, ProductPricingStrategy.FixedPlusAddons, "adega,drinks", 5, "adega").Value;
+        copao.AddVariation("Copão Red Label + Baly 700ml", Money.Create(22.90m).Value, "ADEGA-RL", 1, "80ml Red Label + Baly", 700m, "ml");
+        copao.AddVariation("Copão Jack Daniel's + Red Bull 700ml", Money.Create(32.90m).Value, "ADEGA-JD", 2, "80ml Jack Daniel's + Red Bull", 700m, "ml");
+        copao.AttachModifierGroup(grpGelo.Id, 1);
+        copao.AttachModifierGroup(grpExtra.Id, 2);
+
+        await _productRepo.AddAsync(copao, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("adega", 1, 1, 2));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyPadariaAsync(Guid tenantId, CancellationToken ct)
+    {
+        var cat = Category.Create(tenantId, "Padaria & Lanches na Chapa", "Pães quentinhos, salgados e cafés para viagem", null, 1, "padaria").Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpExtras = CreateGroup(tenantId, "Adicionais na Chapa", ModifierGroupType.Addon, 0, 3, false, 1, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "extras", [
+            ("Requeijão Cremoso Extra", 3.00m, 2, null),
+            ("Muçarela Extra", 4.00m, 2, null),
+            ("Ovo na Chapa", 2.00m, 2, null)
+        ]);
+        await _modifierRepo.AddAsync(grpExtras, ct);
+
+        var misto = Product.Create(tenantId, cat.Id, "Misto Quente Caprichado", Money.Create(11.90m).Value, "Pão tostado na manteiga com presunto e muçarela derretida.", "PAD-MISTO", ProductSaleMode.Unit, true, 1, false, true, ProductPricingStrategy.FixedPlusAddons, "padaria", 10, "padaria").Value;
+        misto.AttachModifierGroup(grpExtras.Id, 1);
+        await _productRepo.AddAsync(misto, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("padaria", 1, 1, 1));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyDoceriaAsync(Guid tenantId, CancellationToken ct)
+    {
+        var cat = Category.Create(tenantId, "Doces, Copos da Felicidade & Bolos", "Sobremesas artesanais preparadas com chocolate nobre", null, 1, "doceria").Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpExtras = CreateGroup(tenantId, "Coberturas & Extras Gourmet", ModifierGroupType.Addon, 0, 4, false, 1, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "extras", [
+            ("Creme de Nutella Original", 5.00m, 2, null),
+            ("Morango Fresco Picado", 4.00m, 2, null),
+            ("Chantilly Profissional", 3.00m, 1, null)
+        ]);
+        await _modifierRepo.AddAsync(grpExtras, ct);
+
+        var copo = Product.Create(tenantId, cat.Id, "Copo da Felicidade Kinder / Nutella", Money.Create(21.90m).Value, "Camadas de creme de Ninho, Nutella pura, brownie, morangos e chantilly.", "DOCE-COPO", ProductSaleMode.Unit, true, 1, true, true, ProductPricingStrategy.FixedPlusAddons, "doceria", 10, "doceria").Value;
+        copo.AddVariation("300 ml", Money.Create(21.90m).Value, "DOCE-300", 1, "300 ml", 300m, "ml");
+        copo.AttachModifierGroup(grpExtras.Id, 1);
+        await _productRepo.AddAsync(copo, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("doceria", 1, 1, 1));
     }
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyGenericFoodAsync(Guid tenantId, string code, CancellationToken ct) =>

@@ -173,13 +173,14 @@ public sealed class UniversalMenuEndToEndIntegrationTests : IAsyncLifetime
 
         // Recuperar pizza, variações e grupos
         var catJson = await (await _client.SendAsync(AuthReq(HttpMethod.Get, "/api/v1/catalog/products", pizzaToken))).Content.ReadFromJsonAsync<JsonElement>();
-        var pizzaProd = catJson.GetProperty("products")[0];
+        var pizzaProd = catJson.GetProperty("products").EnumerateArray().First(p => p.GetProperty("variations").EnumerateArray().Any(v => v.GetProperty("variationName").GetString()!.Contains("Grande")));
         var pizzaId = pizzaProd.GetProperty("id").GetGuid();
         var grandeVarId = pizzaProd.GetProperty("variations").EnumerateArray().First(v => v.GetProperty("variationName").GetString()!.Contains("Grande")).GetProperty("id").GetGuid();
         var brotoVarId = pizzaProd.GetProperty("variations").EnumerateArray().First(v => v.GetProperty("variationName").GetString()!.Contains("Broto")).GetProperty("id").GetGuid();
 
         var groupsArr = catJson.GetProperty("modifierGroups").EnumerateArray().ToList();
-        var flavorGroup = groupsArr.First(g => g.GetProperty("selectionKind").GetInt32() == 6);
+        var pizzaGroupIds = pizzaProd.GetProperty("modifierGroupIds").EnumerateArray().Select(x => x.GetGuid()).ToHashSet();
+        var flavorGroup = groupsArr.First(g => pizzaGroupIds.Contains(g.GetProperty("id").GetGuid()) && g.GetProperty("selectionKind").GetInt32() == 6);
         var flavorGroupId = flavorGroup.GetProperty("id").GetGuid();
         var flavorOpt0 = flavorGroup.GetProperty("options").EnumerateArray().First();
         var flavorOpt0Id = flavorOpt0.GetProperty("id").GetGuid();

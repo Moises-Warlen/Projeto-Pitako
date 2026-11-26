@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Pitako.Api.Bootstrap;
 using Pitako.Api.Security;
 using Pitako.Modules.AcaiBuilder.Application.Abstractions;
 using Pitako.Modules.AcaiBuilder.Application.Services;
@@ -412,6 +413,7 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IReportDataAggregator, MultiModuleReportDataAggregator>();
         services.AddScoped<ITenantDataLifecycleGateway, MultiModuleTenantDataLifecycleGateway>();
         services.AddScoped<IOfflineOperationServerApplier, OfflineOperationServerApplierAdapter>();
+        services.AddScoped<StoreStarterProvisioner>();
 
         return services;
     }

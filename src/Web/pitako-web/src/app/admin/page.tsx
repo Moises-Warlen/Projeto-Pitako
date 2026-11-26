@@ -9,6 +9,15 @@ import { AdminCategoryDto, AdminCatalogTab, AdminProductDto } from "@/components
 import { AdminBrandingAndStoreTab, AdminComboDto, AdminCommercialTab, AdminCouponDto, AdminDeliveryPolicyDto, AdminMarginDto } from "@/components/admin/AdminCommercialAndStoreTab";
 import { AdminInventoryTab, AdminSupplyDto, AdminTechnicalSheetDto } from "@/components/admin/AdminInventoryTab";
 import { AdminModifierGroupDto, AdminModifiersTab } from "@/components/admin/AdminModifiersTab";
+import { AdminCustomerChatPanel, AdminWhatsAppBotPanel } from "@/components/admin/AdminChatAndBotPanel";
+import {
+  AdminCouponsPanel,
+  AdminOperationalSettingsPanel,
+  AdminPrintersPanel,
+  AdminSecurityFirewallPanel
+} from "@/components/admin/AdminOpsPrintersCouponsSecurityPanel";
+import { AdminReportsAndSettlementPanel } from "@/components/admin/AdminReportsAndSettlementPanel";
+import { AdminTechSheetPdfModal, TechnicalSheetSummaryItem } from "@/components/admin/AdminTechSheetPdfModal";
 import { apiFetch, loadSession } from "@/lib/api";
 import { StoreBannerSnapshot, StoreOperatingHoursEntry } from "@/types/menu";
 
@@ -22,7 +31,21 @@ const DEFAULT_HOURS: StoreOperatingHoursEntry[] = [
   { dayOfWeek: 6, isOpen: true, openTime: "11:00", closeTime: "23:30" }
 ];
 
-type AdminTabKey = "catalog" | "modifiers" | "acai" | "inventory" | "commercial" | "branding" | "team";
+type AdminTabKey =
+  | "catalog"
+  | "chat"
+  | "whatsapp"
+  | "reports"
+  | "modifiers"
+  | "acai"
+  | "inventory"
+  | "coupons"
+  | "printers"
+  | "commercial"
+  | "settings"
+  | "branding"
+  | "security"
+  | "team";
 
 export default function AdminStorePage() {
   const [token, setToken] = useState("");
@@ -43,6 +66,9 @@ export default function AdminStorePage() {
   const [acai, setAcai] = useState<AdminAcaiConfigDto>({ cupSizes: [], baseFlavors: [], freeToppings: [], paidAddons: [] });
   const [supplies, setSupplies] = useState<AdminSupplyDto[]>([]);
   const [sheets, setSheets] = useState<AdminTechnicalSheetDto[]>([]);
+  const [techSheetSummaries, setTechSheetSummaries] = useState<TechnicalSheetSummaryItem[]>([]);
+  const [pdfSheetModal, setPdfSheetModal] = useState<TechnicalSheetSummaryItem | null>(null);
+  const [chatPrefill, setChatPrefill] = useState<string | null>(null);
   const [margins, setMargins] = useState<AdminMarginDto[]>([]);
   const [combos, setCombos] = useState<AdminComboDto[]>([]);
   const [coupons, setCoupons] = useState<AdminCouponDto[]>([]);
@@ -76,7 +102,7 @@ export default function AdminStorePage() {
     setToken(session.accessToken);
     if (session.storeSlug) setSlug(session.storeSlug);
 
-    const [brandRes, catRes, acaiRes, supRes, sheetRes, marginRes, comboRes, couponRes, delivRes, userRes] = await Promise.all([
+    const [brandRes, catRes, acaiRes, supRes, sheetRes, sheetSummaryRes, marginRes, comboRes, couponRes, delivRes, userRes] = await Promise.all([
       apiFetch<{
         legalName?: string;
         tradeName?: string;
@@ -107,6 +133,7 @@ export default function AdminStorePage() {
       apiFetch<AdminAcaiConfigDto>("/api/v1/acai/config", {}, session.accessToken),
       apiFetch<AdminSupplyDto[]>("/api/v1/inventory/supplies", {}, session.accessToken),
       apiFetch<AdminTechnicalSheetDto[]>("/api/v1/inventory/technical-sheets", {}, session.accessToken),
+      apiFetch<TechnicalSheetSummaryItem[]>("/api/v1/inventory/technical-sheets/summary", {}, session.accessToken),
       apiFetch<AdminMarginDto[]>("/api/v1/catalog/analytics/margins", {}, session.accessToken),
       apiFetch<AdminComboDto[]>("/api/v1/catalog/combos", {}, session.accessToken),
       apiFetch<AdminCouponDto[]>("/api/v1/coupons", {}, session.accessToken),
@@ -166,6 +193,7 @@ export default function AdminStorePage() {
     if (acaiRes.ok && acaiRes.data) setAcai(acaiRes.data);
     if (supRes.ok && supRes.data) setSupplies(supRes.data);
     if (sheetRes.ok && sheetRes.data) setSheets(sheetRes.data);
+    if (sheetSummaryRes.ok && sheetSummaryRes.data) setTechSheetSummaries(sheetSummaryRes.data);
     if (marginRes.ok && marginRes.data) setMargins(marginRes.data);
     if (comboRes.ok && comboRes.data) setCombos(comboRes.data);
     if (couponRes.ok && couponRes.data) setCoupons(couponRes.data);
@@ -193,7 +221,11 @@ export default function AdminStorePage() {
   }
 
   return (
-    <StoreBrandShell theme={theme} activeSection="/admin">
+    <StoreBrandShell
+      theme={theme}
+      activeSection="/admin"
+      onStoreStatusChanged={(paused) => setIsPaused(paused)}
+    >
       {/* Cabeçalho Administrativo */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
@@ -249,16 +281,23 @@ export default function AdminStorePage() {
       )}
 
       {/* Abas */}
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap gap-2 print:hidden">
         {(
           [
-            { key: "catalog", label: "1. Cardápio & Segmentos" },
-            { key: "modifiers", label: "2. Grupos & Opções" },
-            { key: "acai", label: "3. Montador Açaí Clássico" },
-            { key: "inventory", label: "4. Estoque & Ficha Técnica" },
-            { key: "commercial", label: "5. Margem, Combos & Frete" },
-            { key: "branding", label: "6. Loja, Horários & Visual" },
-            { key: "team", label: "7. Equipe & Acessos" }
+            { key: "catalog", label: "Cardápio & Kit Planilha" },
+            { key: "chat", label: "Chat de Clientes" },
+            { key: "whatsapp", label: "Bot WhatsApp & IA" },
+            { key: "reports", label: "Relatórios & Motoboys" },
+            { key: "modifiers", label: "Grupos & Adicionais" },
+            { key: "acai", label: "Montador Açaí" },
+            { key: "inventory", label: "Estoque & Ficha Técnica" },
+            { key: "coupons", label: "Cupons" },
+            { key: "printers", label: "Impressoras" },
+            { key: "commercial", label: "Combos & Margem" },
+            { key: "settings", label: "Configurações & PIX" },
+            { key: "branding", label: "Visual & Vitrine" },
+            { key: "security", label: "Segurança / Firewall" },
+            { key: "team", label: "Equipe" }
           ] as const
         ).map((t) => (
           <button
@@ -281,10 +320,50 @@ export default function AdminStorePage() {
           categories={categories}
           products={products}
           modifierGroups={modifierGroups}
+          techSheetSummaries={techSheetSummaries}
+          onOpenTechSheetPdf={(s) => setPdfSheetModal(s)}
           onNotify={setMsg}
           onReload={refreshStoreData}
         />
       )}
+
+      {tab === "chat" && (
+        <AdminCustomerChatPanel
+          token={token}
+          storeTradeName={theme.tradeName}
+          prefillMessage={chatPrefill}
+          onNotify={setMsg}
+        />
+      )}
+
+      {tab === "whatsapp" && (
+        <AdminWhatsAppBotPanel token={token} storeTradeName={theme.tradeName} onNotify={setMsg} />
+      )}
+
+      {tab === "reports" && (
+        <AdminReportsAndSettlementPanel token={token} storeTradeName={theme.tradeName} />
+      )}
+
+      {tab === "coupons" && (
+        <AdminCouponsPanel
+          token={token}
+          coupons={coupons}
+          onSendInChat={(txt) => {
+            setChatPrefill(txt);
+            setTab("chat");
+          }}
+          onNotify={setMsg}
+          onReload={refreshStoreData}
+        />
+      )}
+
+      {tab === "printers" && <AdminPrintersPanel token={token} onNotify={setMsg} />}
+
+      {tab === "settings" && (
+        <AdminOperationalSettingsPanel token={token} onNotify={setMsg} onReload={refreshStoreData} />
+      )}
+
+      {tab === "security" && <AdminSecurityFirewallPanel token={token} />}
 
       {tab === "modifiers" && (
         <AdminModifiersTab
@@ -338,6 +417,12 @@ export default function AdminStorePage() {
       {tab === "team" && (
         <AdminTeamTab token={token} team={team} onNotify={setMsg} onReload={refreshStoreData} />
       )}
+
+      <AdminTechSheetPdfModal
+        sheet={pdfSheetModal}
+        storeTradeName={theme.tradeName}
+        onClose={() => setPdfSheetModal(null)}
+      />
     </StoreBrandShell>
   );
 }
