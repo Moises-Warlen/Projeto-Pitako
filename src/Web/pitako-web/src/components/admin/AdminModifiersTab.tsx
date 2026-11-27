@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Edit3, Pause, Play, Plus, Sliders, Trash2, Upload } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 
 export interface AdminModifierOptionDto {
@@ -106,6 +106,20 @@ export function AdminModifiersTab({
   const [optImageUrl, setOptImageUrl] = useState("");
   const [optSku, setOptSku] = useState("");
   const [uploadingOptImg, setUploadingOptImg] = useState(false);
+
+  const groupFormRef = useRef<HTMLFormElement | null>(null);
+  const groupNameInputRef = useRef<HTMLInputElement | null>(null);
+  const optionFormRef = useRef<HTMLFormElement | null>(null);
+  const optNameInputRef = useRef<HTMLInputElement | null>(null);
+
+  function focusEditorCard(target: "group" | "option") {
+    const form = target === "group" ? groupFormRef.current : optionFormRef.current;
+    const input = target === "group" ? groupNameInputRef.current : optNameInputRef.current;
+    window.requestAnimationFrame(() => {
+      form?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      input?.focus();
+    });
+  }
 
   async function handleOptionPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -315,12 +329,24 @@ export function AdminModifiersTab({
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         {orderedGroups.map((g, gIdx) => (
-          <section key={g.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section
+            key={g.id}
+            className={`rounded-2xl border bg-white p-5 shadow-sm transition-all ${
+              editingGroupId === g.id
+                ? "border-2 border-amber-500 ring-2 ring-amber-200"
+                : "border-slate-200"
+            }`}
+          >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold">#{g.displayOrder}</span>
                   <h3 className="text-base font-extrabold text-slate-900">{g.name}</h3>
+                  {editingGroupId === g.id && (
+                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-extrabold uppercase text-white">
+                      Editando →
+                    </span>
+                  )}
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${g.isRequired || g.minSelections >= 1 ? "bg-rose-100 text-rose-800" : "bg-slate-200 text-slate-700"}`}>
                     {g.isRequired || g.minSelections >= 1 ? "Obrigatório" : "Opcional"}
                   </span>
@@ -343,6 +369,7 @@ export function AdminModifiersTab({
                 <button
                   type="button"
                   onClick={() => {
+                    setEditingOptId(null);
                     setEditingGroupId(g.id);
                     setGName(g.name);
                     setGKind(String(g.selectionKind));
@@ -352,8 +379,11 @@ export function AdminModifiersTab({
                     setGFree(String(g.freeAllowance));
                     setGCounting(String(g.countingMode));
                     setGRequired(g.isRequired);
+                    focusEditorCard("group");
                   }}
-                  className="rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                    editingGroupId === g.id ? "border-amber-500 bg-amber-500 text-white" : "hover:bg-slate-50"
+                  }`}
                 >
                   <Edit3 className="inline h-3.5 w-3.5" /> Editar
                 </button>
@@ -369,8 +399,16 @@ export function AdminModifiersTab({
                 .map((o) => {
                   const cost = o.costPrice ?? 0;
                   const profit = o.additionalPrice - cost;
+                  const isEditingOpt = editingOptId === o.id;
                   return (
-                    <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                    <div
+                      key={o.id}
+                      className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs transition-all ${
+                        isEditingOpt
+                          ? "border-2 border-amber-500 bg-amber-50/70 ring-2 ring-amber-200"
+                          : "border-slate-100 bg-slate-50"
+                      }`}
+                    >
                       {resolveMediaUrl(o.imageUrl) && (
                         <img
                           src={resolveMediaUrl(o.imageUrl)!}
@@ -427,6 +465,7 @@ export function AdminModifiersTab({
                         <button
                           type="button"
                           onClick={() => {
+                            setEditingGroupId(null);
                             setActiveGroupForOpt(g.id);
                             setEditingOptId(o.id);
                             setOptName(o.name);
@@ -442,10 +481,15 @@ export function AdminModifiersTab({
                             setOptIncompatibleCsv(o.incompatibleOptionIdsCsv || "");
                             setOptImageUrl(o.imageUrl || "");
                             setOptSku(o.sku || "");
+                            focusEditorCard("option");
                           }}
-                          className="rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-200"
+                          className={`rounded px-2 py-1 font-semibold ${
+                            isEditingOpt
+                              ? "bg-amber-500 text-white"
+                              : "text-slate-700 hover:bg-slate-200"
+                          }`}
                         >
-                          Editar
+                          {isEditingOpt ? "Editando →" : "Editar"}
                         </button>
                         <button type="button" onClick={() => toggleOptionAvailability(g.id, o)} className="rounded px-2 py-1 hover:bg-slate-200">
                           {o.isAvailable ? <Pause className="inline h-3 w-3" /> : <Play className="inline h-3 w-3" />}
@@ -463,12 +507,27 @@ export function AdminModifiersTab({
       </div>
 
       {/* Formulários Laterais: Categoria de Adicionais & Item Adicional */}
-      <div className="space-y-6">
-        <form onSubmit={saveGroup} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-xs">
-          <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-            <Sliders className="h-4 w-4" /> {editingGroupId ? "Editar Categoria de Adicionais" : "Nova Categoria de Adicionais"}
-          </h3>
-          <input value={gName} onChange={(e) => setGName(e.target.value)} required placeholder="Ex: Frutas / Acompanhamentos Grátis / Pagos" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+      <div className="space-y-6 lg:sticky lg:top-4 lg:self-start">
+        <form
+          ref={groupFormRef}
+          onSubmit={saveGroup}
+          className={`space-y-3 rounded-2xl border p-5 text-xs transition-all ${
+            editingGroupId
+              ? "border-2 border-amber-500 bg-amber-50/40 shadow-lg ring-4 ring-amber-200/70"
+              : "border-slate-200 bg-white shadow-sm"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
+              <Sliders className="h-4 w-4" /> {editingGroupId ? "Editar Categoria de Adicionais" : "Nova Categoria de Adicionais"}
+            </h3>
+            {editingGroupId && (
+              <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-white">
+                Editando
+              </span>
+            )}
+          </div>
+          <input ref={groupNameInputRef} value={gName} onChange={(e) => setGName(e.target.value)} required placeholder="Ex: Frutas / Acompanhamentos Grátis / Pagos" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" />
           <label className="block font-semibold text-slate-700">
             Tipo de Cobrança
             <select value={gKind} onChange={(e) => setGKind(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
@@ -545,13 +604,28 @@ export function AdminModifiersTab({
           </div>
         </form>
 
-        <form onSubmit={saveOption} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-xs">
-          <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-            <Plus className="h-4 w-4" /> {editingOptId ? "Editar Adicional / Fruta" : "Novo Adicional / Fruta"}
-          </h3>
+        <form
+          ref={optionFormRef}
+          onSubmit={saveOption}
+          className={`space-y-3 rounded-2xl border p-5 text-xs transition-all ${
+            editingOptId
+              ? "border-2 border-amber-500 bg-amber-50/40 shadow-lg ring-4 ring-amber-200/70"
+              : "border-slate-200 bg-white shadow-sm"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
+              <Plus className="h-4 w-4" /> {editingOptId ? "Editar Adicional / Fruta" : "Novo Adicional / Fruta"}
+            </h3>
+            {editingOptId && (
+              <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-white">
+                Editando
+              </span>
+            )}
+          </div>
           <label className="block font-semibold text-slate-700">
             Categoria de Adicionais
-            <select value={activeGroupForOpt || groups[0]?.id || ""} onChange={(e) => setActiveGroupForOpt(e.target.value)} required className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
+            <select value={activeGroupForOpt || groups[0]?.id || ""} onChange={(e) => setActiveGroupForOpt(e.target.value)} required className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2">
               {orderedGroups.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name} ({GROUP_KIND_LABELS[g.selectionKind] || "Grupo"})
@@ -559,7 +633,7 @@ export function AdminModifiersTab({
               ))}
             </select>
           </label>
-          <input value={optName} onChange={(e) => setOptName(e.target.value)} required placeholder="Nome (ex: Morango Fresco, Nutella, Leite Ninho)" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          <input ref={optNameInputRef} value={optName} onChange={(e) => setOptName(e.target.value)} required placeholder="Nome (ex: Morango Fresco, Nutella, Leite Ninho)" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" />
           <div className="grid grid-cols-3 gap-2">
             <input value={optDescription} onChange={(e) => setOptDescription(e.target.value)} placeholder="Descrição / Porção" className="col-span-2 rounded-xl border border-slate-300 px-3 py-2" />
             <input value={optSku} onChange={(e) => setOptSku(e.target.value)} placeholder="SKU PDV" className="rounded-xl border border-slate-300 px-2.5 py-2 font-mono uppercase" />
