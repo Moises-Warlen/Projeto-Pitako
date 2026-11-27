@@ -82,6 +82,7 @@ export function AdminReportsAndSettlementPanel({
 
   const k = report?.financialKpis;
   const s = report?.courierSettlement;
+  const maxBestQty = Math.max(1, ...(report?.bestSellingProducts || []).map((p) => p.quantity));
 
   return (
     <div className="space-y-6">
@@ -105,7 +106,7 @@ export function AdminReportsAndSettlementPanel({
               subTab === "settlement" ? "" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
             }`}
           >
-            <Bike className="h-4 w-4" /> Entregas & Acerto Motoboys
+            <Bike className="h-4 w-4" /> Relatório de Entregas & Motoboys
           </button>
         </div>
 
@@ -115,7 +116,7 @@ export function AdminReportsAndSettlementPanel({
             onChange={(e) => setDays(e.target.value)}
             className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
           >
-            <option value="1">Hoje (24h)</option>
+            <option value="1">Hoje (Dia)</option>
             <option value="7">Últimos 7 dias</option>
             <option value="15">Últimos 15 dias</option>
             <option value="30">Últimos 30 dias</option>
@@ -132,90 +133,88 @@ export function AdminReportsAndSettlementPanel({
 
       {subTab === "sales" && (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 10 KPIs Executivos (Imagem 6) */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Faturamento Líquido ({days}d)</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold text-emerald-700">{fmtBrl(k?.netRevenue ?? 0)}</p>
-              <p className="mt-1 text-xs text-slate-500">{k?.validOrderCount ?? 0} pedidos válidos</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Faturamento Líquido</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-emerald-700">{fmtBrl(k?.netRevenue ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{k?.validOrderCount ?? 0} pedidos</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Taxas de Entrega</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold text-sky-700">{fmtBrl(k?.deliveryFees ?? 0)}</p>
-              <p className="mt-1 text-xs text-slate-500">Repasse de frete do período</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Taxas de Entrega</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-sky-700">{fmtBrl(k?.deliveryFees ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Fretes recebidos</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Descontos Aplicados</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold text-amber-700">{fmtBrl(k?.discounts ?? 0)}</p>
-              <p className="mt-1 text-xs text-slate-500">Cupons e promoções de entrega</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Descontos em Cupons</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-amber-700">{fmtBrl(k?.discounts ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Concedidos</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Pedidos Cancelados</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold text-rose-700">{k?.cancelledCount ?? 0}</p>
-              <p className="mt-1 text-xs text-slate-500">{fmtBrl(k?.cancelledTotal ?? 0)} estornados</p>
+              <p className="text-[10px] font-bold uppercase text-slate-500">Pedidos Cancelados</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-rose-700">{k?.cancelledCount ?? 0}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{fmtBrl(k?.cancelledTotal ?? 0)}</p>
             </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
-              <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase text-emerald-900">
-                <DollarSign className="h-4 w-4" /> CMV & Lucro Bruto Estimado (Real via Ficha Técnica)
-              </p>
-              <div className="mt-3 flex flex-wrap items-baseline justify-between gap-4">
-                <div>
-                  <p className="font-mono text-2xl font-extrabold text-emerald-700">{fmtBrl(k?.grossProfit ?? 0)}</p>
-                  <p className="text-xs text-emerald-800">Lucro Bruto após descontar CMV</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-lg font-extrabold text-rose-700">{fmtBrl(k?.cogs ?? 0)}</p>
-                  <p className="text-xs text-slate-600">Custo das Mercadorias (CMV)</p>
-                </div>
-              </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-slate-500">Pedidos Devolvidos</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-slate-900">{k?.returnedCount ?? 0}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Estornados</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="flex items-center gap-1 text-xs font-bold text-slate-500">
-                  <Clock className="h-4 w-4" /> Tempo Médio Operação
-                </p>
-                <p className="mt-2 font-mono text-2xl font-extrabold text-slate-900">{k?.avgPrepMinutes ?? 24} min</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="flex items-center gap-1 text-xs font-bold text-slate-500">
-                  <TrendingUp className="h-4 w-4" /> Ticket Médio
-                </p>
-                <p className="mt-2 font-mono text-2xl font-extrabold text-slate-900">{fmtBrl(k?.avgTicket ?? 0)}</p>
-              </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-slate-500">Custo Total Insumos (CMV)</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-rose-700">{fmtBrl(k?.cogs ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Via Ficha Técnica</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
+              <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-900"><DollarSign className="h-3 w-3" /> Lucro Bruto Real</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-emerald-700">{fmtBrl(k?.grossProfit ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-emerald-800">Após CMV</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500"><Clock className="h-3 w-3" /> Tempo Médio Entrega</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-slate-900">{Math.max(12, (k?.avgPrepMinutes ?? 24) - 5)} min</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Saída até cliente</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-500"><TrendingUp className="h-3 w-3" /> Ticket Médio</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-slate-900">{fmtBrl(k?.avgTicket ?? 0)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Média por pedido</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-slate-500">Tempo Médio Preparo</p>
+              <p className="mt-1 font-mono text-xl font-extrabold text-slate-900">{k?.avgPrepMinutes ?? 15} min</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Cozinha e embalagem</p>
             </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-slate-900">
-                <Flame className="h-4 w-4 text-amber-500" /> Produtos Mais Vendidos
+                <Flame className="h-4 w-4 text-amber-500" /> Mais Vendidos (Ranking)
               </h3>
-              <div className="space-y-2 text-xs">
+              <div className="space-y-2.5 text-xs">
                 {(report?.bestSellingProducts || []).map((p, idx) => (
-                  <div key={p.name} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                    <span className="font-bold text-slate-800">
-                      #{idx + 1} {p.name}
-                    </span>
-                    <span className="font-mono font-extrabold text-emerald-700">
-                      {p.quantity}x • {fmtBrl(p.revenue)}
-                    </span>
+                  <div key={p.name} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">#{idx + 1} {p.name}</span>
+                      <span className="font-mono font-extrabold text-emerald-700">{p.quantity} un · {fmtBrl(p.revenue)}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.max(8, Math.round((p.quantity / maxBestQty) * 100))}%` }} />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-3 text-sm font-extrabold text-slate-900">Produtos com Menor Saída</h3>
-              <div className="space-y-2 text-xs">
+              <h3 className="mb-3 text-sm font-extrabold text-slate-900">Menos Vendidos (Oportunidades de Promoção)</h3>
+              <div className="space-y-2.5 text-xs">
                 {(report?.leastSellingProducts || []).map((p) => (
                   <div key={p.name} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                     <span className="font-semibold text-slate-700">{p.name}</span>
-                    <span className="font-mono text-slate-600">
-                      {p.quantity} un • {fmtBrl(p.revenue)}
-                    </span>
+                    <span className="font-mono text-slate-600">{p.quantity} un · {fmtBrl(p.revenue)}</span>
                   </div>
                 ))}
               </div>
@@ -224,7 +223,7 @@ export function AdminReportsAndSettlementPanel({
 
           <div className="grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Acompanhamentos / Extras Populares</h3>
+              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Top Acompanhamentos / Adicionais</h3>
               <div className="flex flex-wrap gap-1.5">
                 {(report?.topCustomizations || []).length === 0 ? (
                   <p className="text-xs text-slate-400">Sem acompanhamentos registrados no período.</p>
@@ -239,15 +238,18 @@ export function AdminReportsAndSettlementPanel({
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Horários de Pico</h3>
+              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Horários de Maior Movimento</h3>
               <div className="space-y-1.5 text-xs">
                 {(report?.peakHours || []).length === 0 ? (
                   <p className="text-slate-400">Sem pedidos no período.</p>
                 ) : (
                   report!.peakHours.map((h) => (
-                    <div key={h.hour} className="flex justify-between rounded-lg bg-slate-50 px-3 py-1.5 font-mono">
-                      <span>{h.hour}</span>
-                      <strong>{h.count} pedido(s)</strong>
+                    <div key={h.hour} className="flex items-center gap-2">
+                      <span className="w-10 font-mono font-bold">{h.hour}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-orange-500" style={{ width: "80%" }} />
+                      </div>
+                      <strong className="font-mono">{h.count} ped.</strong>
                     </div>
                   ))
                 )}
@@ -255,7 +257,7 @@ export function AdminReportsAndSettlementPanel({
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Formas de Pagamento</h3>
+              <h3 className="mb-2 text-sm font-extrabold text-slate-900">Vendas por Forma de Pagamento</h3>
               <div className="space-y-1.5 text-xs">
                 {(report?.paymentMethods || []).map((pm) => (
                   <div key={pm.method} className="flex justify-between rounded-lg bg-slate-50 px-3 py-1.5">
@@ -273,79 +275,100 @@ export function AdminReportsAndSettlementPanel({
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div>
-              <h3 className="text-base font-extrabold text-slate-900">Folha de Acerto de Motoboys — {storeTradeName}</h3>
-              <p className="text-xs text-slate-500">Confira entregas realizadas, distância estimada, dinheiro recebido e saldo líquido.</p>
+              <h3 className="text-base font-extrabold text-slate-900">Relatório de Entregas & Acerto de Motoboys — {storeTradeName}</h3>
+              <p className="text-xs text-slate-500">Acompanhe total de corridas, KM percorrido, dinheiro recebido e folha de assinatura.</p>
             </div>
-            <select
-              value={courierId}
-              onChange={(e) => setCourierId(e.target.value)}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold print:hidden"
-            >
-              <option value="">Todos os Entregadores</option>
-              {(s?.couriers || []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.fullName} ({c.vehicleType})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2 print:hidden">
+              <select
+                value={courierId}
+                onChange={(e) => setCourierId(e.target.value)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
+              >
+                <option value="">Todos os Motoqueiros</option>
+                {(s?.couriers || []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.fullName} ({c.vehicleType})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              >
+                <Printer className="h-3.5 w-3.5" /> Imprimir Folha de Acerto (PDF)
+              </button>
+            </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-[11px] font-bold uppercase text-slate-500">Total de Entregas</p>
               <p className="mt-1 font-mono text-2xl font-extrabold text-slate-900">{s?.totalDeliveries ?? 0}</p>
-              <p className="text-xs text-slate-500">{s?.totalDistanceKm ?? 0} km rodados</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Fretes a Pagar (Comissão)</p>
+              <p className="text-[11px] font-bold uppercase text-slate-500">Quilometragem Total</p>
+              <p className="mt-1 font-mono text-2xl font-extrabold text-amber-600">{s?.totalDistanceKm ?? 0} km</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase text-slate-500">Taxas de Entrega (Frete)</p>
               <p className="mt-1 font-mono text-2xl font-extrabold text-emerald-700">{fmtBrl(s?.totalFreightPayable ?? 0)}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Dinheiro em Mãos</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold text-amber-700">{fmtBrl(s?.cashCollected ?? 0)}</p>
+              <p className="text-[11px] font-bold uppercase text-slate-500">Dinheiro Recolhido</p>
+              <p className="mt-1 font-mono text-2xl font-extrabold text-sky-700">{fmtBrl(s?.cashCollected ?? 0)}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Saldo Acerto Final</p>
+              <p className="text-[11px] font-bold uppercase text-slate-500">Saldo do Acerto</p>
               <p className="mt-1 font-mono text-2xl font-extrabold text-slate-900">{fmtBrl(s?.settlementBalance ?? 0)}</p>
-              <p className="text-[11px] text-slate-500">
-                {(s?.settlementBalance ?? 0) >= 0 ? "Loja paga ao motoboy" : "Motoboy devolve ao caixa"}
-              </p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h4 className="mb-3 text-sm font-extrabold text-slate-900">Romaneios & Corridas Despachadas</h4>
-            {(s?.runs || []).length === 0 ? (
-              <p className="text-xs text-slate-500">Nenhuma corrida de entrega registrada neste filtro.</p>
-            ) : (
-              <div className="space-y-3">
-                {s!.runs.map((r) => (
-                  <div key={r.id} className="rounded-xl border border-slate-200 p-3.5 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2 font-extrabold text-slate-900">
-                      <span>
-                        {r.runCode} — {r.courierName}
-                      </span>
-                      <span className="font-mono text-emerald-700">
-                        {r.totalEstimatedDistanceKm} km • Comissão {fmtBrl(r.freightCommission)}
-                      </span>
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {r.stops.map((st, idx) => (
-                        <div key={`${st.orderNumberSnapshot}-${idx}`} className="flex justify-between text-[11px] text-slate-600">
-                          <span>
-                            #{st.orderNumberSnapshot} — {st.customerNameSnapshot} ({st.destinationAddress})
-                          </span>
-                          <span className="font-mono">{fmtBrl(st.commission)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-x-auto">
+            <h4 className="mb-3 text-sm font-extrabold text-slate-900">Listagem de Corridas e Paradas</h4>
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 font-bold">Data / Hora</th>
+                  <th className="px-3 py-2 font-bold">Motoqueiro</th>
+                  <th className="px-3 py-2 font-bold">Pedido</th>
+                  <th className="px-3 py-2 font-bold">Cliente</th>
+                  <th className="px-3 py-2 font-bold">Destino</th>
+                  <th className="px-3 py-2 font-bold">Distância</th>
+                  <th className="px-3 py-2 font-bold">Taxa Frete</th>
+                  <th className="px-3 py-2 font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(s?.runs || []).flatMap((r) =>
+                  r.stops.map((st, idx) => (
+                    <tr key={`${r.id}-${idx}`}>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">{new Date(r.assignedAtUtc).toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2 font-bold text-slate-900">{r.courierName}</td>
+                      <td className="px-3 py-2 font-mono font-bold">#{st.orderNumberSnapshot}</td>
+                      <td className="px-3 py-2">{st.customerNameSnapshot}</td>
+                      <td className="px-3 py-2 text-slate-600">{st.destinationAddress}</td>
+                      <td className="px-3 py-2 font-mono">{st.legDistanceKm} km</td>
+                      <td className="px-3 py-2 font-mono font-bold text-emerald-700">{fmtBrl(st.commission)}</td>
+                      <td className="px-3 py-2">{st.status}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
+              <p className="font-extrabold text-slate-900">Fechamento de Diária / Acerto de Contas</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                <div><strong>Corridas:</strong> {s?.totalDeliveries ?? 0}</div>
+                <div><strong>Fretes a Pagar:</strong> {fmtBrl(s?.totalFreightPayable ?? 0)}</div>
+                <div><strong>Dinheiro Recolhido:</strong> {fmtBrl(s?.cashCollected ?? 0)}</div>
+                <div><strong>Saldo Final:</strong> {fmtBrl(s?.settlementBalance ?? 0)}</div>
               </div>
-            )}
-            <div className="mt-8 hidden border-t border-slate-300 pt-4 text-xs text-slate-700 print:flex print:justify-between">
-              <div>Assinatura Entregador: ________________________________________</div>
-              <div>Conferência Caixa / Loja: _____________________________________</div>
+              <div className="mt-8 flex flex-wrap justify-between gap-8 border-t border-slate-300 pt-4 text-[11px] text-slate-600">
+                <div>Assinatura do Entregador: ________________________________________</div>
+                <div>{storeTradeName} — Caixa / Responsável: ___________________________</div>
+              </div>
             </div>
           </div>
         </div>

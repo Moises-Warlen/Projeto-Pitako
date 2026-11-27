@@ -119,6 +119,19 @@ public sealed class StoreStarterProvisioner(
         }
         await ImportSpreadsheetKitAsync(actor, tenant.SegmentCode, ct);
 
+        // Garantir foto visual padrão de segmento em todos os produtos gerados pelo template universal também
+        var allTenantProducts = await productRepo.ListAllOrderedAsync(ct);
+        var updatedImg = false;
+        foreach (var p in allTenantProducts)
+        {
+            if (p.Images.Count == 0)
+            {
+                p.AddImage(BuildSegmentProductArtPath(tenant.SegmentCode, p.Name), 0, true);
+                updatedImg = true;
+            }
+        }
+        if (updatedImg) await productRepo.SaveChangesAsync(ct);
+
         // 3. Salão & QR Mesas
         if ((await sectorRepo.ListOrderedAsync(ct)).Count == 0)
         {
@@ -248,9 +261,14 @@ public sealed class StoreStarterProvisioner(
                     tagsCsv: prodDef.Tags,
                     preparationMinutes: 15).Value;
 
+                prod.AddImage(BuildSegmentProductArtPath(segmentCode, prodDef.Name), 0, true);
                 await productRepo.AddAsync(prod, ct);
                 existingProducts[prodDef.Name] = prod;
                 productsCreated++;
+            }
+            else if (prod.Images.Count == 0)
+            {
+                prod.AddImage(BuildSegmentProductArtPath(segmentCode, prodDef.Name), 0, true);
             }
 
             if (!existingSheets.Contains(prod.Id) && prodDef.Recipe.Length > 0)
@@ -310,6 +328,19 @@ public sealed class StoreStarterProvisioner(
         if (combosCreated > 0) await comboRepo.SaveChangesAsync(ct);
 
         return new KitImportSummary(suppliesCreated, productsCreated, sheetsCreated, combosCreated);
+    }
+
+    public static string BuildSegmentProductArtPath(string? segmentCode, string productName)
+    {
+        var seg = string.IsNullOrWhiteSpace(segmentCode) ? "outros" : segmentCode.Trim().ToLowerInvariant();
+        var slugPart = string.Concat(productName.Trim().ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-'))
+            .Trim('-');
+        while (slugPart.Contains("--", StringComparison.Ordinal))
+            slugPart = slugPart.Replace("--", "-", StringComparison.Ordinal);
+        if (slugPart.Length > 48) slugPart = slugPart[..48];
+        if (string.IsNullOrWhiteSpace(slugPart)) slugPart = "item";
+        return $"/api/v1/public/segment-art/{seg}/{slugPart}";
     }
 
     private static string BuildDefaultMonogramLogoDataUrl(string tradeName, string primaryHex, string accentHex)

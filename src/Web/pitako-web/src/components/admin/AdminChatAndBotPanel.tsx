@@ -57,6 +57,17 @@ export interface WhatsAppDashboardDto {
     createdAtUtc: string;
     status: string;
   }>;
+  weeklySchedule?: {
+    enabled: boolean;
+    dayOfWeek: string;
+    time: string;
+  };
+  feedbacks?: Array<{
+    id: string;
+    customerPhone: string;
+    messageText: string;
+    createdAtUtc: string;
+  }>;
 }
 
 const CHAT_SHORTCUTS = [
@@ -84,6 +95,7 @@ export function AdminCustomerChatPanel({
   const [agentName, setAgentName] = useState(storeTradeName);
   const [replyText, setReplyText] = useState(prefillMessage || "");
   const [sending, setSending] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (prefillMessage) setReplyText(prefillMessage);
@@ -93,16 +105,23 @@ export function AdminCustomerChatPanel({
     if (!token) return;
     const res = await apiFetch<WhatsAppDashboardDto>("/api/v1/whatsapp/dashboard", {}, token);
     if (res.ok && res.data) {
+      setLoadErr(null);
       setData(res.data);
       if (res.data.chatAgentName) setAgentName(res.data.chatAgentName);
       if (!selectedId && res.data.conversations.length > 0) {
         setSelectedId(res.data.conversations[0].id);
       }
+    } else if (!res.ok) {
+      setLoadErr(res.errorMessage || "Erro ao carregar conversas.");
     }
   }, [selectedId, token]);
 
   useEffect(() => {
     void loadData();
+    const timer = setInterval(() => {
+      void loadData();
+    }, 4500);
+    return () => clearInterval(timer);
   }, [loadData]);
 
   const activeConv = data?.conversations.find((c) => c.id === selectedId) || data?.conversations[0] || null;
@@ -165,6 +184,12 @@ export function AdminCustomerChatPanel({
             Atualizar
           </button>
         </div>
+
+        {loadErr && (
+          <div className="mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-800">
+            {loadErr}
+          </div>
+        )}
 
         {(!data || data.conversations.length === 0) ? (
           <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
@@ -317,6 +342,9 @@ export function AdminWhatsAppBotPanel({
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
   const [campTitle, setCampTitle] = useState("Oferta do Fim de Semana");
   const [campText, setCampText] = useState(`Aproveite hoje na ${storeTradeName}! Peça no cardápio digital com desconto especial.`);
+  const [schedEnabled, setSchedEnabled] = useState(false);
+  const [schedDay, setSchedDay] = useState("Sexta-feira");
+  const [schedHour, setSchedHour] = useState("17:00");
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -325,6 +353,11 @@ export function AdminWhatsAppBotPanel({
       setData(res.data);
       setPhoneInput(res.data.channel?.displayPhoneNumber || "");
       setAiEnabled(res.data.aiEnabled);
+      if (res.data.weeklySchedule) {
+        setSchedEnabled(res.data.weeklySchedule.enabled);
+        setSchedDay(res.data.weeklySchedule.dayOfWeek || "Sexta-feira");
+        setSchedHour(res.data.weeklySchedule.time || "17:00");
+      }
     }
   }, [token]);
 
@@ -547,9 +580,46 @@ export function AdminWhatsAppBotPanel({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-extrabold text-amber-800">⏰ Programação Automática Semanal</h3>
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <input type="checkbox" checked={schedEnabled} onChange={(e) => setSchedEnabled(e.target.checked)} />
+              Ativar Disparo Automático Semanal
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <label className="font-bold text-slate-700">
+              Dia da Semana
+              <select value={schedDay} onChange={(e) => setSchedDay(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+                {["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"].map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </label>
+            <label className="font-bold text-slate-700">
+              Horário
+              <input type="time" value={schedHour} onChange={(e) => setSchedHour(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono" />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const r = await apiFetch("/api/v1/whatsapp/weekly-schedule", { method: "PUT", body: JSON.stringify({ enabled: schedEnabled, dayOfWeek: schedDay, time: schedHour }) }, token);
+              if (r.ok) {
+                onNotify("Programação semanal salva com sucesso!");
+                await load();
+              }
+            }}
+            className="w-full rounded-xl bg-emerald-600 py-2 text-xs font-extrabold text-white hover:bg-emerald-700"
+          >
+            Salvar Programação
+          </button>
+        </div>
+
         <form onSubmit={createCampaign} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
-            <Megaphone className="h-4 w-4 text-rose-600" /> Campanhas Semanais & Reengajamento LGPD
+            <Megaphone className="h-4 w-4 text-rose-600" /> Criador de Ofertas & Reengajamento LGPD
           </h3>
           <p className="mt-1 text-xs text-slate-500">
             Dispara somente para clientes que já interagiram com a loja, com opção de descadastro automático (&quot;sair&quot;).
@@ -558,7 +628,7 @@ export function AdminWhatsAppBotPanel({
             <input
               value={campTitle}
               onChange={(e) => setCampTitle(e.target.value)}
-              placeholder="Título da campanha"
+              placeholder="Produto / Título da oferta"
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
             />
             <textarea
@@ -570,17 +640,54 @@ export function AdminWhatsAppBotPanel({
             <button
               type="submit"
               style={{ backgroundColor: "var(--store-primary)" }}
-              className="rounded-xl px-4 py-2 text-xs font-bold text-white hover:opacity-90"
+              className="w-full rounded-xl px-4 py-2 text-xs font-bold text-white hover:opacity-90"
             >
-              Registrar Campanha
+              Disparar / Registrar Campanha ({m?.customersInBase ?? 0})
             </button>
           </div>
         </form>
+      </div>
 
+      {/* Ouvidoria WhatsApp */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-extrabold text-slate-900">
+            📋 Ouvidoria WhatsApp & Chat: Sugestões & Reclamações ({data?.feedbacks?.length ?? 0})
+          </h3>
+        </div>
+        {(data?.feedbacks || []).length === 0 ? (
+          <p className="text-xs text-slate-400">Nenhuma reclamação ou ocorrência pendente na Ouvidoria.</p>
+        ) : (
+          <div className="space-y-2">
+            {data!.feedbacks!.map((fb) => (
+              <div key={fb.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-3.5 py-2.5 text-xs">
+                <div>
+                  <span className="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">Ocorrência</span>{" "}
+                  <strong className="font-mono">{fb.customerPhone}</strong>
+                  <p className="mt-1 text-slate-800">&quot;{fb.messageText}&quot;</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await apiFetch(`/api/v1/whatsapp/feedbacks/${fb.id}/resolve`, { method: "POST" }, token);
+                    onNotify("Ocorrência marcada como resolvida.");
+                    await load();
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1 font-bold text-slate-800 hover:bg-slate-100"
+                >
+                  Resolver
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(data?.campaigns || []).length > 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-sm font-extrabold text-slate-900">Campanhas Registradas ({data?.campaigns.length ?? 0})</h3>
-          <div className="mt-3 space-y-2">
-            {(data?.campaigns || []).map((c) => (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {data!.campaigns.map((c) => (
               <div key={c.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
                 <div className="flex items-center justify-between font-bold text-slate-900">
                   <span>{c.title}</span>
@@ -592,7 +699,7 @@ export function AdminWhatsAppBotPanel({
             ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

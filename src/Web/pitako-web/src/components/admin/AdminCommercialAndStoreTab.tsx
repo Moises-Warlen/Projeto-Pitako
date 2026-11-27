@@ -1,8 +1,8 @@
 "use client";
 
-import { BarChart3, Clock, Eye, Percent, Plus, Store, Tag, Trash2, Truck } from "lucide-react";
+import { BarChart3, Clock, Eye, Percent, Plus, Store, Tag, Trash2, Truck, Upload } from "lucide-react";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 import { StoreBannerSnapshot, StoreOperatingHoursEntry } from "@/types/menu";
 
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -427,9 +427,35 @@ export function AdminBrandingAndStoreTab({
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3 text-xs">
           <h3 className="text-base font-extrabold text-slate-900">Identidade Visual & Banners Whitelabel</h3>
           <input value={slogan} onChange={(e) => setSlogan(e.target.value)} placeholder="Slogan da loja" className="w-full rounded-xl border px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-2">
-            <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="URL do Logotipo" className="rounded-xl border px-3 py-2" />
-            <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} placeholder="URL da Capa / Banner" className="rounded-xl border px-3 py-2" />
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              {resolveMediaUrl(logoUrl) && (
+                <img src={resolveMediaUrl(logoUrl)!} alt="Logo" className="h-12 w-12 rounded-xl border bg-white object-contain p-1" />
+              )}
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-800 hover:bg-slate-100">
+                <Upload className="h-3.5 w-3.5" /> Enviar Logo do Computador
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const compressed = await compressImageFileToDataUrl(file, 360, 0.8);
+                    const up = await apiFetch<{ url: string }>("/api/v1/store/branding/upload-logo", { method: "POST", body: JSON.stringify({ base64DataUrl: compressed, fileName: file.name }) }, token);
+                    if (up.ok && up.data?.url) {
+                      setLogoUrl(up.data.url);
+                      onNotify("Logotipo enviado e publicado na loja!");
+                      await onReload();
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="URL do Logotipo" className="rounded-xl border bg-white px-3 py-2" />
+              <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} placeholder="URL da Capa / Banner" className="rounded-xl border bg-white px-3 py-2" />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <label>Cor Primária<input type="color" value={primaryHex} onChange={(e) => setPrimaryHex(e.target.value)} className="mt-1 h-9 w-full rounded border" /></label>

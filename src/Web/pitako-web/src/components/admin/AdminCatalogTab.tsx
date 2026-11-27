@@ -1,8 +1,11 @@
 "use client";
 
-import { AlertTriangle, ArrowDown, ArrowUp, Edit3, FileSpreadsheet, FileText, Flame, Image as ImageIcon, Layers, Pause, Play, Plus, Sliders, Sparkles, Star, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Edit3, FileSpreadsheet, FileText, Flame, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Sparkles, Star, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
+import { ProductMediaFrame } from "../storefront/ProductMediaFrame";
+import { AdminFlyerModal } from "./AdminFlyerModal";
+import { AdminCategoryEditModal, AdminProductFullModal, ModifierGroupDetailedDto } from "./AdminProductAndCategoryModals";
 import { TechnicalSheetSummaryItem } from "./AdminTechSheetPdfModal";
 
 export interface AdminCategoryDto {
@@ -86,6 +89,13 @@ const SEGMENT_TEMPLATES = [
 
 export function AdminCatalogTab({
   token,
+  slug = "acai-demo",
+  segmentCode = "acaiteria",
+  storeTradeName = "Estabelecimento",
+  logoUrl,
+  slogan,
+  primaryColorHex = "#4C1D95",
+  accentColorHex = "#F59E0B",
   categories,
   products,
   modifierGroups,
@@ -95,16 +105,31 @@ export function AdminCatalogTab({
   onReload
 }: {
   token: string;
+  slug?: string;
+  segmentCode?: string;
+  storeTradeName?: string;
+  logoUrl?: string | null;
+  slogan?: string | null;
+  primaryColorHex?: string;
+  accentColorHex?: string;
   categories: AdminCategoryDto[];
   products: AdminProductDto[];
-  modifierGroups: AdminModifierGroupSummary[];
+  modifierGroups: ModifierGroupDetailedDto[];
   techSheetSummaries?: TechnicalSheetSummaryItem[];
   onOpenTechSheetPdf?: (sheet: TechnicalSheetSummaryItem) => void;
   onNotify: (msg: string) => void;
   onReload: () => Promise<void>;
 }) {
   const [tplLoading, setTplLoading] = useState(false);
-  const [kitSegmentCode, setKitSegmentCode] = useState("pizzaria");
+  const [kitSegmentCode, setKitSegmentCode] = useState(segmentCode || "pizzaria");
+  const [viewMode, setViewMode] = useState<"table" | "cards">("cards");
+  const [catModalOpen, setCatModalOpen] = useState(false);
+  const [modalCategory, setModalCategory] = useState<AdminCategoryDto | null>(null);
+  const [prodModalOpen, setProdModalOpen] = useState(false);
+  const [modalProduct, setModalProduct] = useState<AdminProductDto | null>(null);
+  const [flyerOpen, setFlyerOpen] = useState(false);
+  const [bestSellerPickId, setBestSellerPickId] = useState("");
+  const [sidebarUploadingImg, setSidebarUploadingImg] = useState(false);
 
   // Categoria form
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -159,7 +184,29 @@ export function AdminCatalogTab({
     } else onNotify(res.errorMessage || "Erro ao importar kit de planilha.");
   }
 
-  async function toggleBestSeller(p: AdminProductDto) {
+  async function handleSidebarPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSidebarUploadingImg(true);
+    try {
+      const compressed = await compressImageFileToDataUrl(file, 480, 0.75);
+      const up = await apiFetch<{ url: string }>(
+        "/api/v1/catalog/upload-image",
+        { method: "POST", body: JSON.stringify({ base64DataUrl: compressed, fileName: file.name }) },
+        token
+      );
+      if (up.ok && up.data?.url) {
+        setProdImgUrl(up.data.url);
+        onNotify("Foto carregada do computador!");
+      } else onNotify(up.errorMessage || "Erro ao enviar foto.");
+    } catch {
+      onNotify("Erro ao ler imagem do computador.");
+    }
+    setSidebarUploadingImg(false);
+  }
+
+  async function toggleBestSeller(p: AdminProductDto, forceState?: boolean) {
+    const nextFeatured = forceState !== undefined ? forceState : !p.isFeatured;
     const res = await apiFetch(
       `/api/v1/catalog/products/${p.id}`,
       {
@@ -170,7 +217,7 @@ export function AdminCatalogTab({
           basePrice: p.basePrice,
           description: p.description ?? null,
           sku: p.sku ?? null,
-          isFeatured: !p.isFeatured,
+          isFeatured: nextFeatured,
           displayOrder: 1,
           saleMode: 1,
           isNew: p.isNew,
@@ -185,7 +232,7 @@ export function AdminCatalogTab({
       token
     );
     if (res.ok) {
-      onNotify(!p.isFeatured ? `"${p.name}" destacado em Mais Vendidos!` : `"${p.name}" removido de Mais Vendidos.`);
+      onNotify(nextFeatured ? `"${p.name}" destacado em Mais Vendidos!` : `"${p.name}" removido de Mais Vendidos.`);
       await onReload();
     }
   }
@@ -449,13 +496,64 @@ export function AdminCatalogTab({
         </div>
       </section>
 
-      {/* Gestor Visual de Mais Vendidos */}
-      <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+      {/* Gestor Visual de Mais Vendidos (Imagem 4 & 10) */}
+      <section className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-amber-900">
-            <Flame className="h-4 w-4 text-amber-600" /> Gestão de Mais Vendidos & Destaques na Vitrine ({products.filter((x) => x.isFeatured).length} ativos)
+          <h3 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-amber-950">
+            <Flame className="h-4 w-4 text-amber-600" /> Gestão da Seção &quot;Mais Vendidos&quot; no Cardápio ({products.filter((x) => x.isFeatured).length} ativos)
           </h3>
-          <span className="text-[11px] text-amber-800">Clique na estrela de qualquer produto abaixo para fixar em &quot;Mais Vendidos&quot;.</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={bestSellerPickId}
+              onChange={(e) => setBestSellerPickId(e.target.value)}
+              className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800"
+            >
+              <option value="">-- Selecione para adicionar --</option>
+              {products.filter((p) => !p.isFeatured).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!bestSellerPickId}
+              onClick={() => {
+                const target = products.find((p) => p.id === bestSellerPickId);
+                if (target) {
+                  setBestSellerPickId("");
+                  void toggleBestSeller(target, true);
+                }
+              }}
+              className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              + Adicionar
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {products
+            .filter((p) => p.isFeatured)
+            .map((p, idx) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-2.5 py-1.5 text-xs shadow-sm"
+              >
+                <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-7 w-7 rounded-lg" iconSize={14} />
+                <div>
+                  <p className="font-bold text-slate-900">{p.name}</p>
+                  <p className="text-[10px] font-extrabold text-amber-700">★ #{idx + 1} em Mais Vendidos</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void toggleBestSeller(p, false)}
+                  className="rounded-lg bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-rose-700"
+                >
+                  Remover ×
+                </button>
+              </div>
+            ))}
         </div>
       </section>
 
@@ -463,12 +561,29 @@ export function AdminCatalogTab({
         {/* Lista de Categorias e Produtos */}
         <div className="space-y-6 lg:col-span-2">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-base font-extrabold text-slate-900">Categorias ({categories.length})</h3>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-base font-extrabold text-slate-900">Categorias & Ordem ({categories.length})</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalCategory(null);
+                  setCatModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                <Plus className="h-3.5 w-3.5" /> Nova Categoria
+              </button>
+            </div>
             <div className="space-y-2">
-              {categories.map((c, idx) => (
+              {[...categories]
+                .sort((a, b) => a.displayOrder - b.displayOrder)
+                .map((c, idx) => (
                 <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 text-xs">
                   <div>
-                    <p className="font-bold text-slate-900">{c.name}</p>
+                    <p className="font-bold text-slate-900">
+                      <span className="mr-2 rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px]">#{c.displayOrder}</span>
+                      {c.name}
+                    </p>
                     {c.description && <p className="text-slate-500">{c.description}</p>}
                   </div>
                   <div className="flex items-center gap-1">
@@ -481,14 +596,12 @@ export function AdminCatalogTab({
                     <button
                       type="button"
                       onClick={() => {
-                        setEditingCatId(c.id);
-                        setCatName(c.name);
-                        setCatDesc(c.description || "");
-                        setCatNotes(c.ruleNotes || "");
+                        setModalCategory(c);
+                        setCatModalOpen(true);
                       }}
-                      className="rounded p-1 text-slate-600 hover:bg-slate-200"
+                      className="rounded px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
                     >
-                      <Edit3 className="h-3.5 w-3.5" />
+                      <Edit3 className="inline h-3.5 w-3.5" /> Ordem/Editar
                     </button>
                     <button type="button" onClick={() => deleteCategory(c.id)} className="rounded p-1 text-rose-600 hover:bg-rose-50">
                       <Trash2 className="h-3.5 w-3.5" />
@@ -500,47 +613,182 @@ export function AdminCatalogTab({
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-base font-extrabold text-slate-900">Produtos do Cardápio ({products.length})</h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">Gestão de Produtos, Ficha Técnica & Alerta de Prejuízo ({products.length})</h3>
+                <p className="text-[11px] text-slate-500">Fotos do computador, limites por tamanho e lucro automático por ficha técnica.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-bold ${viewMode === "table" ? "bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                >
+                  <List className="h-3.5 w-3.5" /> Tabela
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("cards")}
+                  className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-bold ${viewMode === "cards" ? "bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" /> Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFlyerOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-amber-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+                >
+                  📄 Cardápio Panfleto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalProduct(null);
+                    setProdModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700"
+                >
+                  + Novo Produto
+                </button>
+              </div>
+            </div>
+            {viewMode === "table" ? (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full min-w-[780px] text-left text-xs">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
+                    <tr>
+                      <th className="px-3 py-2.5">Produto</th>
+                      <th className="px-3 py-2.5">Tamanhos / Preços</th>
+                      <th className="px-3 py-2.5">Margem &amp; FT</th>
+                      <th className="px-3 py-2.5 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {products.map((p) => {
+                      const catNameLookup = categories.find((c) => c.id === p.categoryId)?.name || "";
+                      const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50/70">
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white" iconSize={16} />
+                              <div>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="font-extrabold text-slate-900">{p.name}</span>
+                                  {p.isFeatured && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">Top</span>}
+                                  {p.isNew && <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">Novo</span>}
+                                </div>
+                                <span className="text-[11px] text-slate-500">{catNameLookup || "Sem categoria"} · {p.modifierGroupIds.length} grupo(s)</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-700">
+                            {p.variations.length > 0
+                              ? p.variations.map((v) => `${v.variationName}: R$ ${v.price.toFixed(2)}`).join(" | ")
+                              : `R$ ${p.basePrice.toFixed(2)}`}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {matchedSheet ? (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  matchedSheet.isLossAlert
+                                    ? "bg-rose-100 text-rose-800"
+                                    : matchedSheet.isLowMarginAlert
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-emerald-100 text-emerald-800"
+                                }`}
+                              >
+                                {matchedSheet.marginPercent}% (+R$ {matchedSheet.profitPerUnit.toFixed(2)})
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Sem FT</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <div className="inline-flex flex-wrap justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void toggleBestSeller(p)}
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                                  p.isFeatured ? "border-amber-400 bg-amber-100 text-amber-900" : "border-slate-300 bg-white text-slate-600"
+                                }`}
+                              >
+                                <Star className="inline h-3 w-3" /> {p.isFeatured ? "Topo" : "+ Topo"}
+                              </button>
+                              {matchedSheet && onOpenTechSheetPdf && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenTechSheetPdf(matchedSheet)}
+                                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-800"
+                                >
+                                  FT PDF
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setModalProduct(p);
+                                  setProdModalOpen(true);
+                                }}
+                                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-800"
+                              >
+                                Editar
+                              </button>
+                              <button type="button" onClick={() => toggleProduct(p)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px]">
+                                {p.status === "Active" ? <Pause className="inline h-3 w-3" /> : <Play className="inline h-3 w-3" />}
+                              </button>
+                              <button type="button" onClick={() => deleteProduct(p.id)} className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-600">
+                                <Trash2 className="inline h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
             <div className="space-y-3">
               {products.map((p) => {
                 const isExpanded = expandedProdId === p.id;
+                const catNameLookup = categories.find((c) => c.id === p.categoryId)?.name || "";
+                const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
                 return (
                   <div key={p.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
+                      <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-14 w-14 shrink-0 rounded-xl border border-slate-200 bg-white" iconSize={20} />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-sm font-extrabold text-slate-900">{p.name}</span>
+                          {catNameLookup && <span className="text-[11px] text-slate-500">({catNameLookup})</span>}
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
                             {p.status}
                           </span>
                           {p.isFeatured && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Mais Vendido</span>}
                           {p.isNew && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">Lançamento</span>}
-                          {(() => {
-                            const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
-                            if (!matchedSheet) return null;
-                            if (matchedSheet.isLossAlert) {
-                              return (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
-                                  <AlertTriangle className="h-3 w-3" /> Prejuízo (CMV {matchedSheet.cmvPercent}%)
-                                </span>
-                              );
-                            }
-                            if (matchedSheet.isLowMarginAlert) {
-                              return (
-                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                                  Margem {matchedSheet.marginPercent}%
-                                </span>
-                              );
-                            }
-                            return (
-                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                          {p.tagsCsv?.toLowerCase().includes("promo") && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>}
+                          {matchedSheet && (
+                            matchedSheet.isLossAlert ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                                <AlertTriangle className="h-3 w-3" /> Prejuízo (CMV {matchedSheet.cmvPercent}%)
+                              </span>
+                            ) : matchedSheet.isLowMarginAlert ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                                 Margem {matchedSheet.marginPercent}%
                               </span>
-                            );
-                          })()}
+                            ) : (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                                Margem {matchedSheet.marginPercent}% (+R$ {matchedSheet.profitPerUnit.toFixed(2)})
+                              </span>
+                            )
+                          )}
                         </div>
                         <p className="mt-0.5 text-xs text-slate-600">
-                          Preço base: <strong>R$ {p.basePrice.toFixed(2)}</strong> · {p.variations.length} tamanho(s) · {p.modifierGroupIds.length} grupo(s)
+                          {p.variations.length > 0
+                            ? p.variations.map((v) => `${v.variationName}: R$ ${v.price.toFixed(2)}`).join(" · ")
+                            : <>Preço base: <strong>R$ {p.basePrice.toFixed(2)}</strong></>}
+                          {" "}· {p.modifierGroupIds.length} grupo(s)
                         </p>
                       </div>
 
@@ -548,35 +796,38 @@ export function AdminCatalogTab({
                         <button
                           type="button"
                           onClick={() => void toggleBestSeller(p)}
-                          title={p.isFeatured ? "Remover de Mais Vendidos" : "Destacar em Mais Vendidos"}
+                          title={p.isFeatured ? "Remover de Mais Vendidos" : "Fixar em Mais Vendidos"}
                           className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold ${
                             p.isFeatured ? "border-amber-400 bg-amber-100 text-amber-900" : "border-slate-300 bg-white text-slate-600"
                           }`}
                         >
-                          <Star className="h-3.5 w-3.5" />
+                          <Star className="h-3.5 w-3.5" /> {p.isFeatured ? "No Topo" : "+ Topo"}
                         </button>
-                        {(() => {
-                          const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
-                          if (!matchedSheet || !onOpenTechSheetPdf) return null;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => onOpenTechSheetPdf(matchedSheet)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
-                            >
-                              <FileText className="h-3.5 w-3.5" /> Receita & FT PDF
-                            </button>
-                          );
-                        })()}
+                        {matchedSheet && onOpenTechSheetPdf && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenTechSheetPdf(matchedSheet)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
+                          >
+                            <FileText className="h-3.5 w-3.5" /> Receita & FT PDF
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalProduct(p);
+                            setProdModalOpen(true);
+                          }}
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                        >
+                          Editar
+                        </button>
                         <button
                           type="button"
                           onClick={() => setExpandedProdId(isExpanded ? null : p.id)}
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700"
                         >
-                          <Sliders className="h-3.5 w-3.5" /> Tamanhos & Regras
-                        </button>
-                        <button type="button" onClick={() => startEditProduct(p)} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold">
-                          Editar
+                          <Sliders className="h-3.5 w-3.5" /> Regras
                         </button>
                         <button type="button" onClick={() => toggleProduct(p)} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold">
                           {p.status === "Active" ? <Pause className="inline h-3.5 w-3.5" /> : <Play className="inline h-3.5 w-3.5" />}
@@ -687,6 +938,7 @@ export function AdminCatalogTab({
                 );
               })}
             </div>
+            )}
           </section>
         </div>
 
@@ -729,8 +981,17 @@ export function AdminCatalogTab({
               <input value={prodSku} onChange={(e) => setProdSku(e.target.value)} placeholder="SKU (opcional)" className="rounded-xl border border-slate-300 px-3 py-2" />
             </div>
             <label className="block text-xs font-semibold text-slate-600">
-              <ImageIcon className="mr-1 inline h-3.5 w-3.5" /> URL da Foto Principal
-              <input value={prodImgUrl} onChange={(e) => setProdImgUrl(e.target.value)} placeholder="https://..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-xs" />
+              <ImageIcon className="mr-1 inline h-3.5 w-3.5" /> Foto do Produto (Upload do PC ou URL)
+              <div className="mt-1 flex items-center gap-2">
+                {resolveMediaUrl(prodImgUrl) && (
+                  <img src={resolveMediaUrl(prodImgUrl)!} alt="Preview" className="h-10 w-10 rounded-lg border object-cover" />
+                )}
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100">
+                  <Upload className="h-3.5 w-3.5" /> {sidebarUploadingImg ? "Enviando..." : "Escolher do PC"}
+                  <input type="file" accept="image/*" onChange={handleSidebarPhotoUpload} className="hidden" />
+                </label>
+              </div>
+              <input value={prodImgUrl} onChange={(e) => setProdImgUrl(e.target.value)} placeholder="URL ou /api/v1/public/media/..." className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-1.5 text-[11px]" />
             </label>
             <div className="grid grid-cols-2 gap-2">
               <select value={prodPricingStrategy} onChange={(e) => setProdPricingStrategy(e.target.value)} className="rounded-xl border border-slate-300 px-2.5 py-2 text-xs">
@@ -760,6 +1021,44 @@ export function AdminCatalogTab({
           </form>
         </div>
       </div>
+
+      {catModalOpen && (
+        <AdminCategoryEditModal
+          token={token}
+          category={modalCategory}
+          nextDisplayOrder={categories.length + 1}
+          onClose={() => setCatModalOpen(false)}
+          onNotify={onNotify}
+          onSaved={onReload}
+        />
+      )}
+
+      {prodModalOpen && (
+        <AdminProductFullModal
+          token={token}
+          segmentCode={segmentCode}
+          categories={categories}
+          modifierGroups={modifierGroups}
+          product={modalProduct}
+          estimatedSheetCost={techSheetSummaries.find((s) => s.productId === modalProduct?.id)?.costPerPortion}
+          onClose={() => setProdModalOpen(false)}
+          onNotify={onNotify}
+          onSaved={onReload}
+        />
+      )}
+
+      <AdminFlyerModal
+        open={flyerOpen}
+        slug={slug}
+        storeTradeName={storeTradeName}
+        logoUrl={logoUrl}
+        slogan={slogan}
+        primaryColorHex={primaryColorHex}
+        accentColorHex={accentColorHex}
+        categories={categories}
+        products={products}
+        onClose={() => setFlyerOpen(false)}
+      />
     </div>
   );
 }

@@ -357,12 +357,38 @@ export default function StoreMarketplacesPage() {
 
           {/* Partners Capability Matrix Grid */}
           <section className="mb-6">
-            <h2 className="mb-3 text-base font-extrabold text-slate-900">Conectores Disponíveis para esta Loja</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-extrabold text-slate-900">Conectores Disponíveis para esta Loja</h2>
+              <span className="text-xs text-slate-500">
+                Clique em qualquer marketplace abaixo para adicionar uma ou várias contas / lojas vinculadas
+              </span>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {(overview?.capabilities ?? []).map((cap) => {
                 const countBindings = (overview?.bindings ?? []).filter((b) => b.provider === cap.provider).length;
+                const isSelected = provider === cap.provider;
                 return (
-                  <div key={cap.provider} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <button
+                    type="button"
+                    key={cap.provider}
+                    onClick={() => {
+                      setProvider(cap.provider);
+                      const nextIndex = countBindings + 1;
+                      const storeName = overview?.storeTradeName || "Loja";
+                      setAccountLabel(`Conta ${cap.displayName} #${nextIndex} — ${storeName}`);
+                      setExtMerchantId(
+                        `MERCH-${cap.displayName.toUpperCase().replace(/[^A-Z0-9]/g, "")}-${String(nextIndex).padStart(2, "0")}`
+                      );
+                      setExtStoreName(`${storeName} (${cap.displayName}${nextIndex > 1 ? ` #${nextIndex}` : ""})`);
+                      const el = document.getElementById("marketplace-connect-form");
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+                      isSelected
+                        ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/15"
+                        : "border-slate-200 bg-white hover:border-slate-400"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-extrabold text-slate-900">{cap.displayName}</span>
                       <span
@@ -385,14 +411,17 @@ export default function StoreMarketplacesPage() {
                         <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">HMAC-SHA256</span>
                       )}
                     </div>
-                  </div>
+                    <div className="mt-2.5 text-[11px] font-bold text-indigo-700">
+                      {isSelected ? "Selecionado no formulário →" : "+ Adicionar conta / loja"}
+                    </div>
+                  </button>
                 );
               })}
             </div>
           </section>
 
           {/* Accounts + Bindings Management */}
-          <div className="grid gap-6 lg:grid-cols-12">
+          <div id="marketplace-connect-form" className="grid gap-6 lg:grid-cols-12">
             {/* Step 1: Partner Credentials */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-5">
               <h2 className="mb-3 text-base font-extrabold text-slate-900">1. Conectar Credencial de Parceiro</h2>

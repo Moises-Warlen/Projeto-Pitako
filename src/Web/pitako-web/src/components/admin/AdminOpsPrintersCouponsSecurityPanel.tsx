@@ -337,13 +337,25 @@ export function AdminSecurityFirewallPanel({ token }: { token: string }) {
             Monitoramento ativo de força bruta (429), acessos 401/403 não autorizados e bloqueios de linguagem imprópria da loja.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
-        >
-          Atualizar Logs
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          >
+            Atualizar Logs
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              await apiFetch("/api/v1/security/audit-logs/clear", { method: "POST" }, token);
+              await load();
+            }}
+            className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+          >
+            Limpar Histórico
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

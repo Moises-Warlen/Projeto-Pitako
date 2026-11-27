@@ -4,6 +4,8 @@ using System.Text.RegularExpressions;
 using Pitako.Api.Bootstrap;
 using Pitako.Api.Security;
 using Pitako.Modules.Catalog.Application.Abstractions;
+using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.Coupons.Application.Abstractions;
 using Pitako.Modules.DeliveryLogistics.Application.Abstractions;
 using Pitako.Modules.Inventory.Application.Abstractions;
 using Pitako.Modules.MasterPanel.Application.Abstractions;
@@ -45,6 +47,8 @@ public static partial class PitakoStoreSuiteEndpoints
         MapReportsAndSettlementEndpoints(v1);
         MapSecurityAuditEndpoints(v1);
         MapOperationalSettingsEndpoints(v1);
+        MapMediaAndSegmentArtEndpoints(v1);
+        MapProductFullConfigAndQrPayEndpoints(v1);
     }
 
     private static void MapCatalogKitAndBestSellersEndpoints(RouteGroupBuilder v1)
@@ -210,14 +214,59 @@ public static partial class PitakoStoreSuiteEndpoints
                         m.Id,
                         direction = m.Direction.ToString(),
                         m.ContentText,
-                        deliveryStatus = m.DeliveryStatus.ToString(),
+                    deliveryStatus = m.DeliveryStatus.ToString(),
                         m.DeliveryError,
                         m.GroundedByFacts,
                         m.SentAtUtc
                     })
                 }),
-                campaigns = botState.Campaigns
+                campaigns = botState.Campaigns,
+                weeklySchedule = new
+                {
+                    enabled = botState.WeeklyScheduleEnabled,
+                    dayOfWeek = botState.WeeklyScheduleDay,
+                    time = botState.WeeklyScheduleHour
+                },
+                feedbacks = botState.Feedbacks
             });
+        });
+
+        wa.MapPut("/weekly-schedule", async (
+            UpdateWeeklyScheduleReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
+            botState.WeeklyScheduleEnabled = req.Enabled;
+            botState.WeeklyScheduleDay = string.IsNullOrWhiteSpace(req.DayOfWeek) ? "Sexta-feira" : req.DayOfWeek.Trim();
+            botState.WeeklyScheduleHour = string.IsNullOrWhiteSpace(req.Time) ? "17:00" : req.Time.Trim();
+            await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            return Results.Ok(new { saved = true });
+        });
+
+        wa.MapPost("/feedbacks/{id:guid}/resolve", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
+            botState.Feedbacks = botState.Feedbacks.Where(f => f.Id != id).ToList();
+            await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            return Results.Ok(new { resolved = true });
         });
 
         wa.MapPut("/channel", async (
@@ -450,9 +499,10 @@ public static partial class PitakoStoreSuiteEndpoints
             ITenantContextSetter setter,
             IWhatsAppChannelConfigRepository channelRepo,
             IWhatsAppConversationRepository convRepo,
-            WhatsAppSupportService waSvc,
             IGlobalSettingRepository settingRepo,
             IStoreVisualIdentityRepository identityRepo,
+            IProductRepository productRepo,
+            ICouponRepository couponRepo,
             ISecurityAuditRepository auditRepo,
             SecurityDbContext secDb,
             IClock clock,
@@ -470,7 +520,7 @@ public static partial class PitakoStoreSuiteEndpoints
 
             var cleanPhone = NormalizeDigits(req.CustomerPhone);
             if (string.IsNullOrWhiteSpace(cleanPhone))
-                cleanPhone = "16999990001";
+                cleanPhone = $"web-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
 
             var channels = await channelRepo.ListAllAsync(ct);
             var channel = channels.FirstOrDefault();
@@ -492,7 +542,11 @@ public static partial class PitakoStoreSuiteEndpoints
                 await channelRepo.SaveChangesAsync(ct);
             }
 
-            if (ContainsProfanity(req.Message))
+            var textTrimmed = req.Message.Trim();
+            var lowerText = textTrimmed.ToLowerInvariant();
+            var botState = await LoadBotOpsStateAsync(settingRepo, tenant.Id, ct);
+
+            if (ContainsProfanity(textTrimmed))
             {
                 var ip = http.Connection.RemoteIpAddress?.ToString() ?? "WebChat";
                 await auditRepo.AddAsync(new SecurityAuditLog(
@@ -509,8 +563,16 @@ public static partial class PitakoStoreSuiteEndpoints
                     clock.UtcNow), ct);
                 await secDb.SaveChangesAsync(ct);
 
-                var botState = await LoadBotOpsStateAsync(settingRepo, tenant.Id, ct);
                 botState.ProfanityBlockedCount += 1;
+                await SaveBotOpsStateAsync(settingRepo, tenant.Id, botState, clock.UtcNow, ct);
+            }
+
+            var isComplaint = lowerText.Contains("reclam") || lowerText.Contains("atras") || lowerText.Contains("errado") || lowerText.Contains("ruim") || lowerText.Contains("demor");
+            if (isComplaint)
+            {
+                botState.Feedbacks.Insert(0, new BotFeedbackEntry(Guid.NewGuid(), cleanPhone, textTrimmed, clock.UtcNow));
+                if (botState.Feedbacks.Count > 20)
+                    botState.Feedbacks = botState.Feedbacks.Take(20).ToList();
                 await SaveBotOpsStateAsync(settingRepo, tenant.Id, botState, clock.UtcNow, ct);
             }
 
@@ -519,41 +581,71 @@ public static partial class PitakoStoreSuiteEndpoints
             var pub = identity?.GetPublishedView();
             var opStatus = StoreOperatingHoursHelper.Evaluate(pub?.OperatingHoursJson, pub?.IsTemporarilyPaused ?? false, pub?.PauseReason, clock.UtcNow);
 
-            WhatsAppConversation? conv = null;
-            if (channel.IsActive)
-            {
-                var res = await waSvc.ReceiveInboundWebhookAsync(
-                    channel.PhoneNumberId,
-                    $"web-{Guid.NewGuid():N}",
-                    cleanPhone,
-                    string.IsNullOrWhiteSpace(req.CustomerName) ? "Cliente da Vitrine" : req.CustomerName.Trim(),
-                    req.Message.Trim(),
-                    null,
-                    null,
-                    ct);
-                if (res.IsSuccess) conv = res.Value;
-            }
-
+            var conv = await convRepo.FindByCustomerPhoneAsync(channel.Id, cleanPhone, ct);
             if (conv is null)
             {
-                conv = await convRepo.FindByCustomerPhoneAsync(channel.Id, cleanPhone, ct);
-                if (conv is null)
+                var st = WhatsAppConversation.Start(tenant.Id, channel.Id, cleanPhone, string.IsNullOrWhiteSpace(req.CustomerName) ? "Cliente Vitrine" : req.CustomerName.Trim(), clock.UtcNow);
+                conv = st.Value;
+                await convRepo.AddAsync(conv, ct);
+            }
+            conv.RecordInbound($"web-{Guid.NewGuid():N}", textTrimmed, clock.UtcNow);
+
+            if (ContainsProfanity(textTrimmed))
+            {
+                conv.RecordOutbound(WhatsAppMessageDirection.OutboundTraditionalBot, null, "Por favor, mantenha o respeito no atendimento. Nossa equipe está pronta para ajudar de forma cordial!", true, null, true, clock.UtcNow);
+            }
+            else if (!opStatus.IsOpenNow && ops.AutoReplyWhenClosedEnabled && !string.IsNullOrWhiteSpace(ops.AutoReplyWhenClosedMessage))
+            {
+                var formatted = ops.AutoReplyWhenClosedMessage.Replace("{HORARIO}", opStatus.DetailText, StringComparison.OrdinalIgnoreCase);
+                conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, formatted, true, null, true, clock.UtcNow);
+            }
+            else if (lowerText.Contains("atendente") || lowerText.Contains("humano") || lowerText.Contains("gerente") || isComplaint)
+            {
+                conv.RequestHumanHandoff(isComplaint ? "Ouvidoria / Reclamação registrada no chat" : "Cliente solicitou atendimento humano", clock.UtcNow);
+                conv.RecordOutbound(
+                    WhatsAppMessageDirection.OutboundTraditionalBot,
+                    null,
+                    $"Encaminhei sua mensagem para a equipe da {tenant.TradeName}! Um atendente responderá aqui mesmo em instantes.",
+                    true,
+                    null,
+                    true,
+                    clock.UtcNow);
+            }
+            else if (botState.AiEnabled && channel.IsActive && channel.AutoReplyMode != WhatsAppAutoReplyMode.HumanOnly)
+            {
+                var allProducts = (await productRepo.ListAllOrderedAsync(ct))
+                    .Where(p => p.Status == CatalogItemStatus.Active)
+                    .ToList();
+                var activeCoupons = (await couponRepo.ListAllAsync(ct)).Where(c => c.IsActive).ToList();
+
+                string replyText;
+                if (lowerText.Contains("cupom") || lowerText.Contains("desconto") || lowerText.Contains("promo"))
                 {
-                    var st = WhatsAppConversation.Start(tenant.Id, channel.Id, cleanPhone, string.IsNullOrWhiteSpace(req.CustomerName) ? "Cliente Vitrine" : req.CustomerName.Trim(), clock.UtcNow);
-                    conv = st.Value;
-                    await convRepo.AddAsync(conv, ct);
+                    replyText = activeCoupons.Count > 0
+                        ? $"Temos cupom ativo hoje na {tenant.TradeName}: use {activeCoupons[0].Code} no carrinho! Confira também nossos destaques no cardápio digital."
+                        : $"Nossos combos e destaques já estão com valores especiais no cardápio da {tenant.TradeName}!";
                 }
-                conv.RecordInbound($"web-{Guid.NewGuid():N}", req.Message.Trim(), clock.UtcNow);
-                await convRepo.SaveChangesAsync(ct);
+                else if (lowerText.Contains("hora") || lowerText.Contains("abert") || lowerText.Contains("fech") || lowerText.Contains("onde") || lowerText.Contains("endere"))
+                {
+                    replyText = $"{tenant.TradeName}: {(opStatus.IsOpenNow ? "estamos ABERTOS agora!" : opStatus.DetailText)} {(string.IsNullOrWhiteSpace(tenant.Address) ? "" : $"Endereço: {tenant.Address}.")}";
+                }
+                else
+                {
+                    var matchingProducts = allProducts
+                        .Where(p => lowerText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(w => w.Length >= 4 && p.Name.Contains(w, StringComparison.OrdinalIgnoreCase)))
+                        .Take(3)
+                        .ToList();
+                    var showcase = matchingProducts.Count > 0 ? matchingProducts : allProducts.Take(4).ToList();
+                    var itemsText = showcase.Count > 0
+                        ? string.Join(" | ", showcase.Select(p => $"{p.Name} (R$ {p.BasePrice.Amount:0.00})"))
+                        : "Confira todos os itens disponíveis acima no cardápio!";
+                    replyText = $"Olá! Na {tenant.TradeName} temos: {itemsText}. Você pode personalizar tamanhos e ingredientes clicando no item ou, se preferir falar com alguém da equipe, digite \"atendente\".";
+                }
+
+                conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, replyText, true, null, true, clock.UtcNow);
             }
 
-            if (!opStatus.IsOpenNow && ops.AutoReplyWhenClosedEnabled && !string.IsNullOrWhiteSpace(ops.AutoReplyWhenClosedMessage))
-            {
-                var formatted = ops.AutoReplyWhenClosedMessage
-                    .Replace("{HORARIO}", opStatus.DetailText, StringComparison.OrdinalIgnoreCase);
-                conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, formatted, true, null, true, clock.UtcNow);
-                await convRepo.SaveChangesAsync(ct);
-            }
+            await convRepo.SaveChangesAsync(ct);
 
             return Results.Ok(new
             {
@@ -918,6 +1010,7 @@ public static partial class PitakoStoreSuiteEndpoints
             string? severity,
             ApiSecurityGuard guard,
             ISecurityAuditRepository auditRepo,
+            IGlobalSettingRepository settingRepo,
             IClock clock,
             HttpContext http,
             CancellationToken ct) =>
@@ -926,7 +1019,11 @@ public static partial class PitakoStoreSuiteEndpoints
             if (err is not null) return err;
 
             var tenantId = user!.TenantId!.Value;
-            var logs = await auditRepo.ListByTenantAsync(tenantId, ct);
+            var clearSetting = await settingRepo.FindByKeyAsync($"sec_clear:{tenantId:N}", ct);
+            DateTimeOffset? clearedAfter = clearSetting is not null && DateTimeOffset.TryParse(clearSetting.Value, out var dt) ? dt : null;
+            var logs = (await auditRepo.ListByTenantAsync(tenantId, ct))
+                .Where(l => !clearedAfter.HasValue || l.OccurredAtUtc > clearedAfter.Value)
+                .ToList();
             var cutoff24h = clock.UtcNow.AddHours(-24);
 
             var mapped = logs.OrderByDescending(l => l.OccurredAtUtc).Take(80).Select(l =>
@@ -1261,10 +1358,16 @@ public static partial class PitakoStoreSuiteEndpoints
         public int ProfanityBlockedCount { get; set; }
         public int MenuReturnCount { get; set; }
         public int OptOutCount { get; set; }
+        public bool WeeklyScheduleEnabled { get; set; }
+        public string WeeklyScheduleDay { get; set; } = "Sexta-feira";
+        public string WeeklyScheduleHour { get; set; } = "17:00";
         public List<BotCampaignEntry> Campaigns { get; set; } = [];
+        public List<BotFeedbackEntry> Feedbacks { get; set; } = [];
     }
 
     public sealed record BotCampaignEntry(Guid Id, string Title, string MessageText, int AudienceCount, DateTimeOffset CreatedAtUtc, string Status);
+    public sealed record BotFeedbackEntry(Guid Id, string CustomerPhone, string MessageText, DateTimeOffset CreatedAtUtc);
+    public sealed record UpdateWeeklyScheduleReq(bool Enabled, string DayOfWeek, string Time);
     public sealed record ImportKitReq(string SegmentCode);
     public sealed record UpdateWhatsAppChannelReq(string? DisplayPhoneNumber, bool IsActive = true, bool AiEnabled = true, string? GeminiApiKey = null, string? ChatAgentName = null);
     public sealed record ReplyChatReq(string MessageText);

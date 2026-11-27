@@ -2,6 +2,7 @@
 
 import { Utensils } from "lucide-react";
 import { useState } from "react";
+import { resolveMediaUrl } from "@/lib/api";
 
 export function formatBrl(value: number): string {
   return `R$ ${value.toFixed(2).replace(".", ",")}`;
@@ -19,11 +20,12 @@ export function ProductMediaFrame({
   iconSize?: number;
 }) {
   const [failed, setFailed] = useState(false);
+  const resolved = resolveMediaUrl(src);
 
-  if (src && !failed) {
+  if (resolved && !failed) {
     return (
       <img
-        src={src}
+        src={resolved}
         alt={alt}
         onError={() => setFailed(true)}
         className={`object-cover ${className}`}

@@ -1238,9 +1238,11 @@ public static class PitakoOperationsEndpoints
 
 internal static class PitakoPixPayloadGenerator
 {
-    public static string BuildBrCode(Tenant tenant, string orderNumber, decimal amount)
+    public static string BuildBrCode(Tenant tenant, string orderNumber, decimal amount, string? overridePixKey = null)
     {
-        var rawKey = !string.IsNullOrWhiteSpace(tenant.Cnpj.Digits) ? tenant.Cnpj.Digits : "00000000000191";
+        var rawKey = !string.IsNullOrWhiteSpace(overridePixKey)
+            ? overridePixKey.Trim()
+            : (!string.IsNullOrWhiteSpace(tenant.Cnpj.Digits) ? tenant.Cnpj.Digits : "00000000000191");
         var gui = Tlv("00", "br.gov.bcb.pix") + Tlv("01", rawKey);
         var merchantAccountInfo = Tlv("26", gui);
         var merchantName = TruncateAscii(tenant.TradeName, 25);

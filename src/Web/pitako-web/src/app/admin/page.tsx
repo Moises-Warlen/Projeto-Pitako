@@ -50,6 +50,7 @@ type AdminTabKey =
 export default function AdminStorePage() {
   const [token, setToken] = useState("");
   const [slug, setSlug] = useState("acai-demo");
+  const [segmentCode, setSegmentCode] = useState("acaiteria");
   const [theme, setTheme] = useState<StoreBrandTheme>({
     tradeName: "Administração da Loja",
     primaryColorHex: "#1e293b",
@@ -107,6 +108,7 @@ export default function AdminStorePage() {
         legalName?: string;
         tradeName?: string;
         slug?: string;
+        segmentCode?: string;
         address?: string;
         contactPhone?: string;
         contactEmail?: string;
@@ -151,6 +153,7 @@ export default function AdminStorePage() {
         accentColorHex: d.accentColorHex
       });
       if (brandRes.data.slug) setSlug(brandRes.data.slug);
+      if (brandRes.data.segmentCode) setSegmentCode(brandRes.data.segmentCode);
       setIsPaused(Boolean(d.isTemporarilyPaused));
       setStoreProfile({
         legalName: brandRes.data.legalName || brandRes.data.tradeName || "",
@@ -317,6 +320,13 @@ export default function AdminStorePage() {
       {tab === "catalog" && (
         <AdminCatalogTab
           token={token}
+          slug={slug}
+          segmentCode={segmentCode}
+          storeTradeName={theme.tradeName}
+          logoUrl={brandingData.logoUrl}
+          slogan={brandingData.slogan}
+          primaryColorHex={brandingData.primaryColorHex}
+          accentColorHex={brandingData.accentColorHex}
           categories={categories}
           products={products}
           modifierGroups={modifierGroups}
@@ -419,8 +429,17 @@ export default function AdminStorePage() {
       )}
 
       <AdminTechSheetPdfModal
+        token={token}
         sheet={pdfSheetModal}
+        supplies={supplies.map((s) => ({
+          id: s.id,
+          name: s.name,
+          contentUnitCode: s.contentUnitCode,
+          costPerContentUnit: s.costPerContentUnit
+        }))}
         storeTradeName={theme.tradeName}
+        onSaved={refreshStoreData}
+        onNotify={setMsg}
         onClose={() => setPdfSheetModal(null)}
       />
     </StoreBrandShell>

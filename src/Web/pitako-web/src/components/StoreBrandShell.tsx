@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Bell, Power, Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, loadSession } from "@/lib/api";
+import { apiFetch, loadSession, resolveMediaUrl } from "@/lib/api";
 
 export interface StoreBrandTheme {
   tradeName: string;
@@ -139,9 +139,9 @@ export function StoreBrandShell({
       <header style={{ backgroundColor: "var(--store-primary)" }} className="text-white shadow">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            {resolvedTheme.logoUrl ? (
+            {resolveMediaUrl(resolvedTheme.logoUrl) ? (
               <img
-                src={resolvedTheme.logoUrl}
+                src={resolveMediaUrl(resolvedTheme.logoUrl)!}
                 alt={`Logo ${resolvedTheme.tradeName}`}
                 className="h-10 w-10 rounded-lg bg-white/10 object-contain p-1"
               />

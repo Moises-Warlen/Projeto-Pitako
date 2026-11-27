@@ -399,7 +399,11 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
             message = "Boa noite, tem copo de 500ml?"
         });
         Assert.Equal(HttpStatusCode.OK, pubChatPost.StatusCode);
-        var convId2 = (await pubChatPost.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("conversationId").GetGuid();
+        var pubChatJson = await pubChatPost.Content.ReadFromJsonAsync<JsonElement>();
+        var convId2 = pubChatJson.GetProperty("conversationId").GetGuid();
+        var chatMessages2 = pubChatJson.GetProperty("messages").EnumerateArray().ToList();
+        Assert.True(chatMessages2.Count >= 2, $"Expected automatic grounded reply in chat, got {chatMessages2.Count} messages");
+        Assert.Contains(chatMessages2, m => m.GetProperty("direction").GetString()!.StartsWith("Outbound", StringComparison.OrdinalIgnoreCase));
 
         using var reply2Req = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/whatsapp/conversations/{convId2}/reply");
         reply2Req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
@@ -433,5 +437,114 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         kitReq.Content = JsonContent.Create(new { segmentCode = "pizzaria" });
         var kitRes = await client.SendAsync(kitReq);
         Assert.Equal(HttpStatusCode.OK, kitRes.StatusCode);
+
+        // 8. Media PC Upload, Segment Artwork, Full Product Config, Quick Tech Sheet & QR PIX Direct Settlement
+        var segArtRes = await client.GetAsync("/api/v1/public/segment-art/pizzaria/mussarela");
+        Assert.Equal(HttpStatusCode.OK, segArtRes.StatusCode);
+        Assert.Equal("image/svg+xml", segArtRes.Content.Headers.ContentType?.MediaType);
+
+        // 1x1 PNG pixel base64
+        const string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+        using var uploadReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/catalog/upload-image");
+        uploadReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        uploadReq.Content = JsonContent.Create(new { base64DataUrl = tinyPng, fileName = "pizza.png" });
+        var uploadRes = await client.SendAsync(uploadReq);
+        Assert.Equal(HttpStatusCode.OK, uploadRes.StatusCode);
+        var uploadedUrl = (await uploadRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
+        Assert.StartsWith("/api/v1/public/media/", uploadedUrl);
+
+        var mediaGetRes = await client.GetAsync(uploadedUrl);
+        Assert.Equal(HttpStatusCode.OK, mediaGetRes.StatusCode);
+        Assert.Equal("image/png", mediaGetRes.Content.Headers.ContentType?.MediaType);
+
+        var menu2Res = await client.GetAsync("/api/v1/public/store/explosao-filial/menu");
+        Assert.Equal(HttpStatusCode.OK, menu2Res.StatusCode);
+        var prods2Arr = (await menu2Res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("products").EnumerateArray().ToList();
+        Assert.NotEmpty(prods2Arr);
+        var prod2 = prods2Arr[0];
+        var prod2Id = prod2.GetProperty("id").GetGuid();
+        var cat2Id = prod2.GetProperty("categoryId").GetGuid();
+
+        using var fullCfgReq = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/catalog/products/{prod2Id}/full-config");
+        fullCfgReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        fullCfgReq.Content = JsonContent.Create(new
+        {
+            categoryId = cat2Id,
+            name = "Pizza Especial Configurada",
+            description = "Teste completo",
+            basePrice = 49.90m,
+            isNew = true,
+            isPromotion = true,
+            isFeatured = true,
+            displayOrder = 1,
+            pricingStrategy = 1,
+            imageUrl = uploadedUrl,
+            attachedGroupIds = Array.Empty<Guid>(),
+            sizes = new[]
+            {
+                new
+                {
+                    id = (Guid?)null,
+                    variationName = "Grande 8 fatias",
+                    price = 54.90m,
+                    measureAmount = (decimal?)8m,
+                    measureUnit = "fatias",
+                    maxFlavors = 2,
+                    freeAllowance = 3,
+                    costAmount = (decimal?)19.50m,
+                    allowPaidExtras = true,
+                    description = "Custo R$ 19,50"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(fullCfgReq)).StatusCode);
+
+        using var sheetsAgainReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/inventory/technical-sheets/summary");
+        sheetsAgainReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var sheet2Id = (await (await client.SendAsync(sheetsAgainReq)).Content.ReadFromJsonAsync<JsonElement>())[0].GetProperty("id").GetGuid();
+
+        using var quickSheetReq = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/inventory/technical-sheets/{sheet2Id}/quick-ingredients");
+        quickSheetReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        quickSheetReq.Content = JsonContent.Create(new
+        {
+            name = "Ficha Atualizada Teste",
+            yieldQuantity = 1m,
+            yieldUnitCode = "un",
+            notes = "Editada no teste E2E",
+            ingredients = new[]
+            {
+                new
+                {
+                    supplyItemId = (Guid?)null,
+                    newSupplyName = "Catupiry Original Teste",
+                    quantity = 80m,
+                    unitCode = "g",
+                    unitPriceAmount = (decimal?)0.06m,
+                    lossPercent = 0m
+                }
+            },
+            packagings = Array.Empty<object>()
+        });
+        var quickSheetRes = await client.SendAsync(quickSheetReq);
+        Assert.Equal(HttpStatusCode.OK, quickSheetRes.StatusCode);
+
+        var qrPixGen = await client.PostAsJsonAsync($"/api/v1/public/qr/acai-demo/{qrToken}/pay", new
+        {
+            paymentMethod = "PIX",
+            splitCount = 1,
+            confirmImmediatePayment = false
+        });
+        Assert.Equal(HttpStatusCode.OK, qrPixGen.StatusCode);
+        var qrPixJson = await qrPixGen.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("BR.GOV.BCB.PIX", qrPixJson.GetProperty("pixBrCode").GetString(), StringComparison.OrdinalIgnoreCase);
+
+        var qrPixPay = await client.PostAsJsonAsync($"/api/v1/public/qr/acai-demo/{qrToken}/pay", new
+        {
+            paymentMethod = "PIX",
+            splitCount = 1,
+            confirmImmediatePayment = true
+        });
+        Assert.Equal(HttpStatusCode.OK, qrPixPay.StatusCode);
+        Assert.True((await qrPixPay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("alreadyPaid").GetBoolean());
     }
 }

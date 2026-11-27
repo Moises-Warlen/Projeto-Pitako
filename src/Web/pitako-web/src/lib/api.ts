@@ -1,6 +1,46 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "http://localhost:5000";
 
+export function resolveMediaUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/api/")) return `${API_BASE_URL}${trimmed}`;
+  return trimmed;
+}
+
+export async function compressImageFileToDataUrl(file: File, maxDim = 480, quality = 0.72): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Falha ao ler arquivo selecionado."));
+    reader.readAsDataURL(file);
+  });
+
+  if (file.type === "image/svg+xml" || dataUrl.length < 45_000) {
+    return dataUrl;
+  }
+
+  return await new Promise<string>((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const ratio = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(dataUrl);
+      ctx.drawImage(img, 0, 0, w, h);
+      const webp = canvas.toDataURL("image/webp", quality);
+      resolve(webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export interface AuthSession {
   accessToken: string;
   scope: "Saas" | "Establishment";

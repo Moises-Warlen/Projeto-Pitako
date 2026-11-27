@@ -1,5 +1,6 @@
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
+using Pitako.Modules.Catalog.Application.Abstractions;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
 using Pitako.Modules.DeliveryLogistics.Application.Services;
@@ -151,12 +152,7 @@ public static class PitakoDevDemoSeeder
                 BillingCycle.Monthly,
                 14,
                 proQuotas,
-                [
-                    SystemModules.Tenants, SystemModules.Catalog, SystemModules.Acai,
-                    SystemModules.Orders, SystemModules.Pdv, SystemModules.DiningHall,
-                    SystemModules.Delivery, SystemModules.Printing, SystemModules.Reports,
-                    SystemModules.Finance, SystemModules.Security
-                ]),
+                SystemModules.EstablishmentModules),
             ct);
 
         // 3. Cliente SaaS e Estabelecimento Demo (marca exclusiva da loja, sem marca PITAKO)
@@ -233,9 +229,27 @@ public static class PitakoDevDemoSeeder
         var catAcai = (await catalogService.CreateCategoryAsync(storeAdmin, "Tigelas & Copos", "Monte do seu jeito", null, 1, ct)).Value;
         var catBebidas = (await catalogService.CreateCategoryAsync(storeAdmin, "Sucos & Vitaminas", "Bebidas naturais", null, 2, ct)).Value;
 
-        await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Tradicional 500ml Pronto", 22.90m, "Batido puro com banana", "ACAI-500", ProductSaleMode.Unit, true, 1, ct);
-        await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Self-Service por Quilo", 64.90m, "Pesagem na balança do balcão", "ACAI-KG", ProductSaleMode.Weight, false, 2, ct);
-        await catalogService.CreateProductAsync(storeAdmin, catBebidas.Id, "Vitamina de Açaí c/ Guaraná 400ml", 16.50m, "Refrescante", "VIT-400", ProductSaleMode.Unit, false, 1, ct);
+        var p1 = (await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Tradicional 500ml Pronto", 22.90m, "Batido puro com banana", "ACAI-500", ProductSaleMode.Unit, true, 1, ct)).Value;
+        await catalogService.AddProductImageAsync(storeAdmin, p1.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p1.Name), 0, true, ct);
+        var p2 = (await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Self-Service por Quilo", 64.90m, "Pesagem na balança do balcão", "ACAI-KG", ProductSaleMode.Weight, false, 2, ct)).Value;
+        await catalogService.AddProductImageAsync(storeAdmin, p2.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p2.Name), 0, true, ct);
+        var p3 = (await catalogService.CreateProductAsync(storeAdmin, catBebidas.Id, "Vitamina de Açaí c/ Guaraná 400ml", 16.50m, "Refrescante", "VIT-400", ProductSaleMode.Unit, false, 1, ct)).Value;
+        await catalogService.AddProductImageAsync(storeAdmin, p3.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p3.Name), 0, true, ct);
+        await sp.GetRequiredService<SegmentCatalogTemplateService>().ApplyTemplateAsync(storeAdmin, "acaiteria", ct);
+        var starterProv = sp.GetRequiredService<StoreStarterProvisioner>();
+        await starterProv.ImportSpreadsheetKitAsync(storeAdmin, "acaiteria", ct);
+        var demoProdRepo = sp.GetRequiredService<IProductRepository>();
+        var allDemoProds = await demoProdRepo.ListAllOrderedAsync(ct);
+        var imgsAdded = false;
+        foreach (var dp in allDemoProds)
+        {
+            if (dp.Images.Count == 0)
+            {
+                dp.AddImage(StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", dp.Name), 0, true);
+                imgsAdded = true;
+            }
+        }
+        if (imgsAdded) await demoProdRepo.SaveChangesAsync(ct);
 
         await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 300ml", 300, 15.90m, 3, 0, AcaiFreeCountingMode.ByPortion, 5, null, "CUP-300", 1, ct);
         await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 500ml", 500, 21.90m, 4, 0, AcaiFreeCountingMode.ByPortion, 6, null, "CUP-500", 2, ct);

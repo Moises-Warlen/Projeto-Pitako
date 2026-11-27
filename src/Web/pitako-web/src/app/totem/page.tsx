@@ -47,6 +47,7 @@ export default function SelfServiceTotemPage() {
   const [totemSession, setTotemSession] = useState<TotemSessionDto | null>(null);
   const [receipt, setReceipt] = useState<TotemReceiptDto | null>(null);
   const [customerName, setCustomerName] = useState("");
+  const [fulfillmentChoice, setFulfillmentChoice] = useState<1 | 2>(1);
   const [activeCatId, setActiveCatId] = useState("all");
   const [modalProduct, setModalProduct] = useState<MenuProduct | null>(null);
   const [paymentChoice, setPaymentChoice] = useState<1 | 2 | 3>(2);
@@ -102,28 +103,27 @@ export default function SelfServiceTotemPage() {
     return () => clearInterval(timer);
   }, [totemSession, receipt]);
 
-  async function startKioskSession(choice: 1 | 2) {
-    setBusy(true);
-    setErrorMsg(null);
-    setReceipt(null);
+  async function ensureSession(choiceOverride?: 1 | 2): Promise<TotemSessionDto | null> {
+    if (totemSession) return totemSession;
+    const chosen = choiceOverride ?? fulfillmentChoice;
     const res = await apiFetch<{ sessionToken: string; fulfillmentChoice: string }>(`/api/v1/public/totem/${slug}/start`, {
       method: "POST",
-      body: JSON.stringify({ choice, customerName: customerName.trim() || "Cliente Totem" })
+      body: JSON.stringify({ choice: chosen, customerName: customerName.trim() || "Cliente Totem" })
     });
-    setBusy(false);
     if (res.ok && res.data) {
-      setIdleSeconds(120);
-      setTotemSession({
+      const created: TotemSessionDto = {
         id: res.data.sessionToken,
         sessionToken: res.data.sessionToken,
         fulfillmentChoice: res.data.fulfillmentChoice,
         status: "Draft",
         itemsSubtotal: 0,
         lines: []
-      });
-    } else {
-      setErrorMsg(res.errorMessage || "Não foi possível iniciar sessão no totem.");
+      };
+      setTotemSession(created);
+      return created;
     }
+    setErrorMsg(res.errorMessage || "Não foi possível iniciar atendimento no totem.");
+    return null;
   }
 
   async function handleAddProduct(payload: {
@@ -133,9 +133,12 @@ export default function SelfServiceTotemPage() {
     quantity: number;
     notes?: string;
   }) {
-    if (!totemSession) return;
+    setErrorMsg(null);
     setIdleSeconds(120);
-    const res = await apiFetch<TotemSessionDto>(`/api/v1/public/totem/${slug}/sessions/${totemSession.sessionToken}/items`, {
+    const activeSess = await ensureSession();
+    if (!activeSess) throw new Error("Sessão do totem indisponível.");
+
+    const res = await apiFetch<TotemSessionDto>(`/api/v1/public/totem/${slug}/sessions/${activeSess.sessionToken}/items`, {
       method: "POST",
       body: JSON.stringify({
         kind: "catalog",
@@ -193,7 +196,6 @@ export default function SelfServiceTotemPage() {
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800">{errorMsg}</div>
         )}
 
-        {/* TELA 3: Senha Emitida / Sucesso + PIX QR Code */}
         {receipt ? (
           <section className="mx-auto max-w-xl rounded-3xl border border-emerald-200 bg-white p-8 text-center shadow-lg">
             <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-600" />
@@ -228,141 +230,150 @@ export default function SelfServiceTotemPage() {
               <RefreshCw className="h-5 w-5" /> Iniciar Novo Atendimento
             </button>
           </section>
-        ) : !totemSession ? (
-          /* TELA 1: Boas-vindas Comer Aqui ou Levar */
-          <section className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-lg">
-            <h1 className="text-3xl font-extrabold text-slate-900">Toque para iniciar seu pedido</h1>
-            <p className="mt-2 text-sm text-slate-600">Escolha como prefere retirar, personalize seus ingredientes e receba sua senha na hora.</p>
-
-            <input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Seu primeiro nome (opcional)"
-              className="mx-auto mt-6 block w-full max-w-sm rounded-2xl border border-slate-300 px-4 py-3 text-center text-base"
-            />
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => startKioskSession(1)}
-                style={{ backgroundColor: "var(--store-primary)" }}
-                className="rounded-2xl py-7 text-xl font-extrabold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
-              >
-                Comer Aqui
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => startKioskSession(2)}
-                style={{ backgroundColor: "var(--store-accent)" }}
-                className="rounded-2xl py-7 text-xl font-extrabold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
-              >
-                Levar / Retirada
-              </button>
-            </div>
-          </section>
         ) : (
-          /* TELA 2: Catálogo Touch + Sacola do Totem */
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="space-y-4 lg:col-span-2">
-              <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="space-y-5">
+            {/* Barra superior Comer Aqui / Levar + Nome do Cliente */}
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setActiveCatId("all")}
-                  style={activeCatId === "all" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-                  className="shrink-0 rounded-full border bg-white px-4 py-2 text-xs font-bold"
+                  onClick={() => {
+                    setFulfillmentChoice(1);
+                    void ensureSession(1);
+                  }}
+                  style={fulfillmentChoice === 1 ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                  className={`rounded-xl border px-5 py-2.5 text-sm font-extrabold transition ${fulfillmentChoice === 1 ? "border-transparent shadow" : "border-slate-300 text-slate-700"}`}
                 >
-                  Tudo
+                  🍽️ Comer Aqui
                 </button>
-                {(menu?.categories ?? []).map((c) => (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFulfillmentChoice(2);
+                    void ensureSession(2);
+                  }}
+                  style={fulfillmentChoice === 2 ? { backgroundColor: "var(--store-accent)", color: "#fff" } : undefined}
+                  className={`rounded-xl border px-5 py-2.5 text-sm font-extrabold transition ${fulfillmentChoice === 2 ? "border-transparent shadow" : "border-slate-300 text-slate-700"}`}
+                >
+                  🛍️ Levar / Retirada
+                </button>
+              </div>
+              <input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Seu primeiro nome (opcional)"
+                className="w-full max-w-xs rounded-xl border border-slate-300 px-3.5 py-2 text-sm"
+              />
+            </section>
+
+            {/* Catálogo Direto + Sacola do Totem */}
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="space-y-4 lg:col-span-2">
+                <div className="flex gap-2 overflow-x-auto pb-1">
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => setActiveCatId(c.id)}
-                    style={activeCatId === c.id ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                    onClick={() => setActiveCatId("all")}
+                    style={activeCatId === "all" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
                     className="shrink-0 rounded-full border bg-white px-4 py-2 text-xs font-bold"
                   >
-                    {c.name}
+                    Tudo ({menu?.products.length ?? 0})
                   </button>
-                ))}
-              </div>
+                  {(menu?.categories ?? []).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setActiveCatId(c.id)}
+                      style={activeCatId === c.id ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                      className="shrink-0 rounded-full border bg-white px-4 py-2 text-xs font-bold"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
 
-              <div className="grid gap-3.5 sm:grid-cols-2">
-                {visibleProducts.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setModalProduct(p)}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-base font-extrabold text-slate-900">{p.name}</h3>
-                      {p.description && <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{p.description}</p>}
-                      <p className="mt-2 font-mono text-sm font-extrabold text-slate-900">{formatBrl(p.effectivePrice)}</p>
-                    </div>
-                    <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-20 w-20 shrink-0 rounded-xl" iconSize={24} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <aside className="flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div>
-                <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
-                  <ShoppingBag className="h-5 w-5" /> Seu Pedido ({totemSession.lines.length})
-                </h2>
-                <div className="mt-3 space-y-2.5 text-xs">
-                  {totemSession.lines.map((l) => (
-                    <div key={l.id} className="flex items-start justify-between gap-2 rounded-xl bg-slate-50 p-3">
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  {visibleProducts.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setModalProduct(p)}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                    >
                       <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-900">{l.quantity}x {l.itemTitle}</p>
-                        {l.customizationSummary && <p className="text-slate-500">{l.customizationSummary}</p>}
-                        <p className="mt-1 font-mono font-bold text-slate-900">{formatBrl(l.lineSubtotal)}</p>
+                        <h3 className="text-base font-extrabold text-slate-900">{p.name}</h3>
+                        {p.description && <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{p.description}</p>}
+                        <p className="mt-2 font-mono text-sm font-extrabold text-emerald-700">{formatBrl(p.effectivePrice)}</p>
+                        <span className="mt-1 inline-block text-[11px] font-bold text-slate-600">+ Toque para montar</span>
                       </div>
-                      <button type="button" onClick={() => handleRemoveLine(l.id)} className="text-rose-600"><Trash2 className="h-4 w-4" /></button>
-                    </div>
+                      <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-20 w-20 shrink-0 rounded-xl" iconSize={24} />
+                    </button>
                   ))}
                 </div>
               </div>
 
-              <div className="mt-6 space-y-4 border-t pt-4">
-                <div className="flex justify-between text-lg font-extrabold text-slate-900">
-                  <span>Total</span>
-                  <span className="font-mono">{formatBrl(totemSession.itemsSubtotal)}</span>
-                </div>
-
+              <aside className="flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div>
-                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-slate-700"><CreditCard className="h-3.5 w-3.5" /> Forma de Pagamento</p>
-                  <div className="grid grid-cols-3 gap-1.5 text-[11px] font-bold">
-                    {[
-                      { code: 2 as const, label: "PIX na Tela" },
-                      { code: 1 as const, label: "Cartão Totem" },
-                      { code: 3 as const, label: "Pagar Caixa" }
-                    ].map((opt) => (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        onClick={() => setPaymentChoice(opt.code)}
-                        className={`rounded-xl border py-2 ${paymentChoice === opt.code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200"}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                  <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                    <ShoppingBag className="h-5 w-5" /> Seu Pedido ({totemSession?.lines.length ?? 0})
+                  </h2>
+                  {(totemSession?.lines ?? []).length === 0 ? (
+                    <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-500">
+                      Toque em qualquer item ao lado para montar seu pedido e pagar no PIX ou Cartão!
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-2.5 text-xs">
+                      {totemSession!.lines.map((l) => (
+                        <div key={l.id} className="flex items-start justify-between gap-2 rounded-xl bg-slate-50 p-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-900">{l.quantity}x {l.itemTitle}</p>
+                            {l.customizationSummary && <p className="text-slate-500">{l.customizationSummary}</p>}
+                            <p className="mt-1 font-mono font-bold text-slate-900">{formatBrl(l.lineSubtotal)}</p>
+                          </div>
+                          <button type="button" onClick={() => handleRemoveLine(l.id)} className="text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <button
-                  type="button"
-                  disabled={busy || totemSession.lines.length === 0}
-                  onClick={handleConfirmOrder}
-                  style={{ backgroundColor: "var(--store-primary)" }}
-                  className="w-full rounded-2xl py-4 text-base font-extrabold text-white shadow disabled:opacity-40"
-                >
-                  {busy ? "Emitindo Senha..." : "Finalizar & Emitir Senha"}
-                </button>
-              </div>
-            </aside>
+                <div className="mt-6 space-y-4 border-t pt-4">
+                  <div className="flex justify-between text-lg font-extrabold text-slate-900">
+                    <span>Total</span>
+                    <span className="font-mono">{formatBrl(totemSession?.itemsSubtotal ?? 0)}</span>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-slate-700"><CreditCard className="h-3.5 w-3.5" /> Forma de Pagamento</p>
+                    <div className="grid grid-cols-3 gap-1.5 text-[11px] font-bold">
+                      {[
+                        { code: 2 as const, label: "PIX na Tela" },
+                        { code: 1 as const, label: "Cartão Totem" },
+                        { code: 3 as const, label: "Pagar Caixa" }
+                      ].map((opt) => (
+                        <button
+                          key={opt.code}
+                          type="button"
+                          onClick={() => setPaymentChoice(opt.code)}
+                          className={`rounded-xl border py-2 ${paymentChoice === opt.code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200"}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={busy || !totemSession || totemSession.lines.length === 0}
+                    onClick={handleConfirmOrder}
+                    style={{ backgroundColor: "var(--store-primary)" }}
+                    className="w-full rounded-2xl py-4 text-base font-extrabold text-white shadow disabled:opacity-40"
+                  >
+                    {busy ? "Emitindo Senha..." : "Finalizar & Pagar / Senha"}
+                  </button>
+                </div>
+              </aside>
+            </div>
           </div>
         )}
       </div>

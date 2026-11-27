@@ -30,9 +30,13 @@ export function CustomerChatDrawer({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const savedName = window.localStorage.getItem(`pitako_chat_name_${slug}`) || "";
-    const savedPhone = window.localStorage.getItem(`pitako_chat_phone_${slug}`) || "";
+    let savedPhone = window.localStorage.getItem(`pitako_chat_phone_${slug}`) || "";
+    if (!savedPhone) {
+      savedPhone = `169${String(Math.floor(10000000 + Math.random() * 89999999))}`;
+      window.localStorage.setItem(`pitako_chat_phone_${slug}`, savedPhone);
+    }
     if (savedName) setCustomerName(savedName);
-    if (savedPhone) setCustomerPhone(savedPhone);
+    setCustomerPhone(savedPhone);
   }, [slug]);
 
   const loadMessages = useCallback(async () => {
