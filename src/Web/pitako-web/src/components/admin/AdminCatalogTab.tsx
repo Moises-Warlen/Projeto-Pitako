@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowDown, ArrowUp, Edit3, FileSpreadsheet, FileText, Flame, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Sparkles, Star, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Edit3, FileText, Flame, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Star, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 import { ProductMediaFrame } from "../storefront/ProductMediaFrame";
@@ -74,19 +74,6 @@ export interface AdminModifierGroupSummary {
   freeAllowance: number;
 }
 
-const SEGMENT_TEMPLATES = [
-  { code: "acaiteria", label: "Açaíteria (300/500/700ml/1L)" },
-  { code: "pizzaria", label: "Pizzaria (Tamanhos, Sabores e Bordas)" },
-  { code: "hamburgueria", label: "Hamburgueria (Pão, Carnes, Ponto)" },
-  { code: "pastelaria", label: "Pastelaria (Recheios e Extras)" },
-  { code: "sorveteria", label: "Sorveteria (Bolas e Coberturas)" },
-  { code: "restaurante", label: "Restaurante / Lanchonete" },
-  { code: "adega", label: "Adega & Tabacaria" },
-  { code: "padaria", label: "Padaria & Confeitaria" },
-  { code: "doceria", label: "Doceria & Bolos" },
-  { code: "outros", label: "Modelo Universal Outros" }
-];
-
 export function AdminCatalogTab({
   token,
   slug = "acai-demo",
@@ -120,8 +107,6 @@ export function AdminCatalogTab({
   onNotify: (msg: string) => void;
   onReload: () => Promise<void>;
 }) {
-  const [tplLoading, setTplLoading] = useState(false);
-  const [kitSegmentCode, setKitSegmentCode] = useState(segmentCode || "pizzaria");
   const [viewMode, setViewMode] = useState<"table" | "cards">("cards");
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [modalCategory, setModalCategory] = useState<AdminCategoryDto | null>(null);
@@ -167,22 +152,6 @@ export function AdminCatalogTab({
   const [ruleMax, setRuleMax] = useState("5");
   const [ruleFree, setRuleFree] = useState("3");
   const [ruleRequired, setRuleRequired] = useState(false);
-
-  async function importSpreadsheetKit(code: string) {
-    setTplLoading(true);
-    const res = await apiFetch<{ segmentCode: string; categoriesCreated: number; suppliesCreated: number; productsCreated: number; sheetsCreated: number; combosCreated: number }>(
-      "/api/v1/catalog/import-spreadsheet-kit",
-      { method: "POST", body: JSON.stringify({ segmentCode: code }) },
-      token
-    );
-    setTplLoading(false);
-    if (res.ok && res.data) {
-      onNotify(
-        `Kit Ficha Técnica "${res.data.segmentCode}" importado: ${res.data.suppliesCreated} insumos, ${res.data.productsCreated} produtos, ${res.data.sheetsCreated} receitas CMV e ${res.data.combosCreated} combo(s)!`
-      );
-      await onReload();
-    } else onNotify(res.errorMessage || "Erro ao importar kit de planilha.");
-  }
 
   async function handleSidebarPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -235,22 +204,6 @@ export function AdminCatalogTab({
       onNotify(nextFeatured ? `"${p.name}" destacado em Mais Vendidos!` : `"${p.name}" removido de Mais Vendidos.`);
       await onReload();
     }
-  }
-
-  async function applySegmentTemplate(code: string) {
-    setTplLoading(true);
-    const res = await apiFetch<{ categoriesCreated: number; productsCreated: number; modifierGroupsCreated: number }>(
-      "/api/v1/catalog/apply-segment-template",
-      { method: "POST", body: JSON.stringify({ segmentCode: code }) },
-      token
-    );
-    setTplLoading(false);
-    if (res.ok && res.data) {
-      onNotify(
-        `Modelo "${code}" aplicado: ${res.data.categoriesCreated} categorias, ${res.data.productsCreated} produtos e ${res.data.modifierGroupsCreated} grupos de personalização criados.`
-      );
-      await onReload();
-    } else onNotify(res.errorMessage || "Erro ao aplicar modelo do segmento.");
   }
 
   async function saveCategory(e: React.FormEvent) {
@@ -447,55 +400,6 @@ export function AdminCatalogTab({
 
   return (
     <div className="space-y-6">
-      {/* Modelos + Kit Planilhas 9 Segmentos */}
-      <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-900 to-slate-800 p-5 text-white shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-400">
-              <Sparkles className="h-3.5 w-3.5" /> Modelos Inteligentes & Kit Planilhas Ficha Técnica (9 Segmentos)
-            </p>
-            <h2 className="mt-1 text-base font-extrabold">Popule insumos, produtos, receitas CMV e combos prontos em 1 clique</h2>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white/10 p-2">
-            <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
-            <select
-              value={kitSegmentCode}
-              onChange={(e) => setKitSegmentCode(e.target.value)}
-              className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-bold text-white"
-            >
-              {SEGMENT_TEMPLATES.map((t) => (
-                <option key={t.code} value={t.code}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={tplLoading}
-              onClick={() => void importSpreadsheetKit(kitSegmentCode)}
-              className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-400 disabled:opacity-40"
-            >
-              Importar Kit Planilha (CMV + Estoque)
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {SEGMENT_TEMPLATES.slice(0, 6).map((t) => (
-            <button
-              key={t.code}
-              type="button"
-              disabled={tplLoading}
-              onClick={() => applySegmentTemplate(t.code)}
-              className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 disabled:opacity-40"
-            >
-              + Motor {t.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* Gestor Visual de Mais Vendidos (Imagem 4 & 10) */}
       <section className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

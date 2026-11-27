@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { StoreBrandShell, StoreBrandTheme } from "@/components/StoreBrandShell";
 import { AdminAcaiConfigDto, AdminAcaiTab, AdminTeamTab } from "@/components/admin/AdminAcaiAndTeamTabs";
 import { AdminCategoryDto, AdminCatalogTab, AdminProductDto } from "@/components/admin/AdminCatalogTab";
-import { AdminBrandingAndStoreTab, AdminComboDto, AdminCommercialTab, AdminCouponDto, AdminDeliveryPolicyDto, AdminMarginDto } from "@/components/admin/AdminCommercialAndStoreTab";
-import { AdminInventoryTab, AdminSupplyDto, AdminTechnicalSheetDto } from "@/components/admin/AdminInventoryTab";
+import { AdminBrandingAndStoreTab, AdminCouponDto } from "@/components/admin/AdminCommercialAndStoreTab";
+import { AdminSupplyDto } from "@/components/admin/AdminInventoryTab";
 import { AdminModifierGroupDto, AdminModifiersTab } from "@/components/admin/AdminModifiersTab";
 import { AdminCustomerChatPanel, AdminWhatsAppBotPanel } from "@/components/admin/AdminChatAndBotPanel";
 import {
@@ -38,10 +38,8 @@ type AdminTabKey =
   | "reports"
   | "modifiers"
   | "acai"
-  | "inventory"
   | "coupons"
   | "printers"
-  | "commercial"
   | "settings"
   | "branding"
   | "security"
@@ -72,14 +70,10 @@ export default function AdminStorePage() {
   const [modifierGroups, setModifierGroups] = useState<AdminModifierGroupDto[]>([]);
   const [acai, setAcai] = useState<AdminAcaiConfigDto>({ cupSizes: [], baseFlavors: [], freeToppings: [], paidAddons: [] });
   const [supplies, setSupplies] = useState<AdminSupplyDto[]>([]);
-  const [sheets, setSheets] = useState<AdminTechnicalSheetDto[]>([]);
   const [techSheetSummaries, setTechSheetSummaries] = useState<TechnicalSheetSummaryItem[]>([]);
   const [pdfSheetModal, setPdfSheetModal] = useState<TechnicalSheetSummaryItem | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | null>(null);
-  const [margins, setMargins] = useState<AdminMarginDto[]>([]);
-  const [combos, setCombos] = useState<AdminComboDto[]>([]);
   const [coupons, setCoupons] = useState<AdminCouponDto[]>([]);
-  const [deliveryPolicy, setDeliveryPolicy] = useState<AdminDeliveryPolicyDto | null>(null);
   const [team, setTeam] = useState<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>([]);
 
   const [storeProfile, setStoreProfile] = useState({
@@ -109,7 +103,7 @@ export default function AdminStorePage() {
     setToken(session.accessToken);
     if (session.storeSlug) setSlug(session.storeSlug);
 
-    const [brandRes, catRes, acaiRes, supRes, sheetRes, sheetSummaryRes, marginRes, comboRes, couponRes, delivRes, userRes] = await Promise.all([
+    const [brandRes, catRes, acaiRes, supRes, sheetSummaryRes, couponRes, userRes] = await Promise.all([
       apiFetch<{
         legalName?: string;
         tradeName?: string;
@@ -140,12 +134,8 @@ export default function AdminStorePage() {
       ),
       apiFetch<AdminAcaiConfigDto>("/api/v1/acai/config", {}, session.accessToken),
       apiFetch<AdminSupplyDto[]>("/api/v1/inventory/supplies", {}, session.accessToken),
-      apiFetch<AdminTechnicalSheetDto[]>("/api/v1/inventory/technical-sheets", {}, session.accessToken),
       apiFetch<TechnicalSheetSummaryItem[]>("/api/v1/inventory/technical-sheets/summary", {}, session.accessToken),
-      apiFetch<AdminMarginDto[]>("/api/v1/catalog/analytics/margins", {}, session.accessToken),
-      apiFetch<AdminComboDto[]>("/api/v1/catalog/combos", {}, session.accessToken),
       apiFetch<AdminCouponDto[]>("/api/v1/coupons", {}, session.accessToken),
-      apiFetch<AdminDeliveryPolicyDto | null>("/api/v1/delivery/policy", {}, session.accessToken),
       apiFetch<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>("/api/v1/store/users", {}, session.accessToken)
     ]);
 
@@ -201,12 +191,8 @@ export default function AdminStorePage() {
     }
     if (acaiRes.ok && acaiRes.data) setAcai(acaiRes.data);
     if (supRes.ok && supRes.data) setSupplies(supRes.data);
-    if (sheetRes.ok && sheetRes.data) setSheets(sheetRes.data);
     if (sheetSummaryRes.ok && sheetSummaryRes.data) setTechSheetSummaries(sheetSummaryRes.data);
-    if (marginRes.ok && marginRes.data) setMargins(marginRes.data);
-    if (comboRes.ok && comboRes.data) setCombos(comboRes.data);
     if (couponRes.ok && couponRes.data) setCoupons(couponRes.data);
-    if (delivRes.ok) setDeliveryPolicy(delivRes.data ?? null);
     if (userRes.ok && userRes.data) setTeam(userRes.data);
   }, []);
 
@@ -293,16 +279,14 @@ export default function AdminStorePage() {
       <div className="mb-6 flex flex-wrap gap-2 print:hidden">
         {(
           [
-            { key: "catalog", label: "Cardápio & Kit Planilha" },
+            { key: "catalog", label: "Cardápio" },
             { key: "chat", label: "Chat de Clientes" },
             { key: "whatsapp", label: "Bot WhatsApp & IA" },
             { key: "reports", label: "Relatórios & Motoboys" },
             { key: "modifiers", label: "Grupos & Adicionais" },
             { key: "acai", label: "Montador Açaí" },
-            { key: "inventory", label: "Estoque & Ficha Técnica" },
             { key: "coupons", label: "Cupons" },
             { key: "printers", label: "Impressoras" },
-            { key: "commercial", label: "Combos & Margem" },
             { key: "settings", label: "Configurações & PIX" },
             { key: "branding", label: "Visual & Vitrine" },
             { key: "security", label: "Segurança / Firewall" },
@@ -393,30 +377,6 @@ export default function AdminStorePage() {
 
       {tab === "acai" && (
         <AdminAcaiTab token={token} acai={acai} onNotify={setMsg} onReload={refreshStoreData} />
-      )}
-
-      {tab === "inventory" && (
-        <AdminInventoryTab
-          token={token}
-          supplies={supplies}
-          sheets={sheets}
-          products={products.map((p) => ({ id: p.id, name: p.name }))}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
-        />
-      )}
-
-      {tab === "commercial" && (
-        <AdminCommercialTab
-          token={token}
-          products={products.map((p) => ({ id: p.id, name: p.name }))}
-          margins={margins}
-          combos={combos}
-          coupons={coupons}
-          deliveryPolicy={deliveryPolicy}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
-        />
       )}
 
       {tab === "branding" && (

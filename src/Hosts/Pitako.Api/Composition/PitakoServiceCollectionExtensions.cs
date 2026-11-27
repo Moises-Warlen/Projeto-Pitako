@@ -291,8 +291,15 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IProductionOrderRepository, EfProductionOrderRepository>();
         services.AddScoped<SuppliesAndTechnicalSheetService>();
         services.AddScoped<InventoryStockAndProductionService>();
-        services.AddScoped<IInventoryOrderDeductionService>(
-            sp => sp.GetRequiredService<InventoryStockAndProductionService>());
+        if (configuration.GetValue<bool>("Inventory:EnableOrderStockDeduction"))
+        {
+            services.AddScoped<IInventoryOrderDeductionService>(
+                sp => sp.GetRequiredService<InventoryStockAndProductionService>());
+        }
+        else
+        {
+            services.AddScoped<IInventoryOrderDeductionService, DisabledInventoryOrderDeductionAdapter>();
+        }
 
         services.AddScoped<IScaleDeviceRepository, EfScaleDeviceRepository>();
         services.AddScoped<ITarePresetRepository, EfTarePresetRepository>();

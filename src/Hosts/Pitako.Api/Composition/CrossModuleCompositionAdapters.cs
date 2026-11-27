@@ -17,6 +17,7 @@ using Pitako.Modules.Printing.Application.Abstractions;
 using Pitako.Modules.Printing.Domain;
 using Pitako.Modules.Reports.Application.Abstractions;
 using Pitako.Modules.Reports.Domain;
+using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Abstractions;
 using Pitako.Modules.WhatsAppSupport.Application.Abstractions;
 using Pitako.Modules.WhatsAppSupport.Domain;
@@ -514,4 +515,25 @@ public sealed class OfflineOperationServerApplierAdapter(
             operation.Id,
             forceOnConflict ? "Aplicado com resolução auditada." : "Sincronizado no servidor.");
     }
+}
+
+/// <summary>
+/// Adaptador temporário no host que desativa a baixa automática de estoque na criação e cancelamento de pedidos.
+/// </summary>
+public sealed class DisabledInventoryOrderDeductionAdapter : IInventoryOrderDeductionService
+{
+    public Task<Result<StockOrderDeductionSummary>> DeductForOrderSaleAsync(
+        User actor,
+        Guid orderId,
+        string orderReferenceLabel,
+        IEnumerable<OrderStockLineInput> orderLines,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(Result<StockOrderDeductionSummary>.Success(new StockOrderDeductionSummary(0, 0)));
+
+    public Task<Result<int>> ReverseOrderDeductionAsync(
+        User actor,
+        Guid orderId,
+        string reason,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(Result<int>.Success(0));
 }

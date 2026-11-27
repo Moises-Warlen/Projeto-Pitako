@@ -21,7 +21,7 @@ public sealed class UniversalMenuEndToEndIntegrationTests : IAsyncLifetime
     {
         await _connection.OpenAsync();
         _app = PitakoApiHostBuilder.BuildWebApplication(
-            ["--environment", "Development"],
+            ["--environment", "Development", "--Inventory:EnableOrderStockDeduction=true"],
             sharedSqliteConnection: _connection,
             listenUrl: "http://127.0.0.1:0");
 
