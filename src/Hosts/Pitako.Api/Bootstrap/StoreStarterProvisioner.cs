@@ -207,7 +207,9 @@ public sealed class StoreStarterProvisioner(
 
         var kit = ResolveKit(segmentCode);
 
-        var existingSupplies = (await supplyRepo.ListAllAsync(ct)).ToDictionary(s => s.Name, s => s, StringComparer.OrdinalIgnoreCase);
+        var existingSupplies = (await supplyRepo.ListAllAsync(ct))
+            .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var supplyMap = new Dictionary<string, SupplyItem>(StringComparer.OrdinalIgnoreCase);
         int suppliesCreated = 0;
 
@@ -227,8 +229,12 @@ public sealed class StoreStarterProvisioner(
             }
         }
 
-        var existingCategories = (await categoryRepo.ListOrderedAsync(ct)).ToDictionary(c => c.Name, c => c, StringComparer.OrdinalIgnoreCase);
-        var existingProducts = (await productRepo.ListAllOrderedAsync(ct)).ToDictionary(p => p.Name, p => p, StringComparer.OrdinalIgnoreCase);
+        var existingCategories = (await categoryRepo.ListOrderedAsync(ct))
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var existingProducts = (await productRepo.ListAllOrderedAsync(ct))
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var existingSheets = (await sheetRepo.ListAllAsync(ct)).Where(s => s.ProductId.HasValue).Select(s => s.ProductId!.Value).ToHashSet();
 
         int productsCreated = 0;
@@ -307,7 +313,9 @@ public sealed class StoreStarterProvisioner(
         }
         await categoryRepo.SaveChangesAsync(ct);
 
-        var existingCombos = (await comboRepo.ListAllOrderedAsync(ct)).ToDictionary(c => c.Name, c => c, StringComparer.OrdinalIgnoreCase);
+        var existingCombos = (await comboRepo.ListAllOrderedAsync(ct))
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         int combosCreated = 0;
         foreach (var cDef in kit.Combos)
         {
@@ -526,19 +534,28 @@ public sealed class StoreStarterProvisioner(
 
     private static SegmentWorkbookKit AcaiteriaKit() => new(
         "#4C1D95", "#FAF5FF", "#F59E0B",
-        "Açaí puro batido na hora com cremes e frutas frescas.",
+        "Mais que açaí, é puro sabor! Monte do seu jeito e receba super gelado.",
         [
-            new("acai", "Polpa de Açaí Premium (10kg)", 180m, 10000m, "g", "Bases"),
-            new("ninho", "Leite em Pó Ninho (1kg)", 38m, 1000m, "g", "Acompanhamentos"),
-            new("granola", "Granola Crocante (2kg)", 28m, 2000m, "g", "Acompanhamentos"),
-            new("nutella", "Creme de Avelã Nutella (3kg)", 129m, 3000m, "g", "Cremes"),
-            new("morango", "Morango Fresco (1,2kg)", 28m, 1200m, "g", "Frutas"),
+            new("acai", "Polpa de Açaí Premium (10kg)", 150m, 9000m, "g", "Bases"),
+            new("ninho", "Leite em Pó Ninho (400g)", 16m, 400m, "g", "Acompanhamentos"),
+            new("granola", "Granola Crocante (250g)", 17m, 250m, "g", "Acompanhamentos"),
+            new("nutella", "Creme de Avelã Nutella (650g)", 60m, 650m, "g", "Cremes"),
+            new("pistache", "Creme Gourmet de Pistache (400g)", 30m, 400m, "g", "Cremes"),
+            new("morango", "Morango Fresco (1,32kg)", 40m, 1320m, "g", "Frutas"),
+            new("leitecond", "Leite Condensado Integral (2,5kg)", 29m, 2500m, "g", "Cremes"),
         ],
         [
-            new("Mais Vendidos", "Açaí Clássico 500ml", "500 ml", "Açaí cremoso batido na hora com leite em pó e granola.", 21.90m, 1.20m, "acai,mais-vendidos", true, [new("acai", 320, "g"), new("ninho", 30, "g"), new("granola", 30, "g")]),
-            new("Mais Vendidos", "Pistache / Nutella Supremo 300ml", "300 ml", "Copo especial com creme de Nutella e morango fresco.", 24.90m, 1.10m, "acai,especial", true, [new("acai", 200, "g"), new("nutella", 35, "g"), new("morango", 40, "g")]),
+            new("Explosão Clássica", "Clássico", "500 ml", "Açaí cremoso, morangos frescos fatiados, chantilly e leite condensado.", 26.90m, 2.37m, "acai,mais-vendidos", true, [new("acai", 315, "g"), new("morango", 70, "g"), new("leitecond", 40, "g")]),
+            new("Explosão Clássica", "Ninho com Morango", "500 ml", "Camadas generosas de açaí com creme de Ninho, morangos frescos e leite em pó.", 25.90m, 2.37m, "acai,mais-vendidos", true, [new("acai", 315, "g"), new("ninho", 40, "g"), new("morango", 70, "g")]),
+            new("Explosão Premium", "Pistache", "500 ml", "Açaí cremoso com creme gourmet de pistache, morangos frescos e amendoim.", 30.90m, 2.37m, "acai,especial", true, [new("acai", 315, "g"), new("pistache", 35, "g"), new("morango", 55, "g")]),
+            new("Explosão Premium", "Nutella", "500 ml", "Açaí cremoso com Nutella original na borda e topo, morangos e Bis.", 30.90m, 2.37m, "acai,especial", true, [new("acai", 315, "g"), new("nutella", 45, "g"), new("morango", 65, "g")]),
         ],
-        [new("Combo Duplo Açaí 500ml", "2 Açaís Clássicos 500ml.", 0.10m, ["Açaí Clássico 500ml", "Açaí Clássico 500ml"])]);
+        [
+            new("Combo Casal Clássico + Mousse", "2 Clássicos (500 ml) + 1 Mousse de Maracujá (110 ml).", 0.12m, ["Clássico", "Clássico", "Mousse de Maracujá"]),
+            new("Combo Explosão Premium (Oreo + Pistache)", "1 Oreo Supreme + 1 Pistache + 1 Mousse Ninho Trufado.", 0.10m, ["Oreo Supreme", "Pistache", "Mousse Ninho Trufado"]),
+            new("Combo Garrafa + Mousse", "1 Açaí na Garrafa – Morango (300 ml) + 1 Mousse de Paçoca (110 ml).", 0.10m, ["Açaí na Garrafa – Morango", "Mousse de Paçoca"]),
+            new("Combo Família 1 Litro + 2 Mousses", "1 Açaí Puro 1 Litro + 1 Mousse Ninho Trufado + 1 Mousse de Morango.", 0.12m, ["Açaí Puro com Açúcar (1 Litro)", "Mousse Ninho Trufado", "Mousse de Morango"]),
+        ]);
 
     private static SegmentWorkbookKit UniversalKit() => new(
         "#1E293B", "#F8FAFC", "#0F766E",

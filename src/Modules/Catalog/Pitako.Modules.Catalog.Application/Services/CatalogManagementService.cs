@@ -1341,9 +1341,19 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             basePrice = chosenVariation.Price;
             variationName = chosenVariation.Name;
         }
-        else if (product.Variations.Any(v => v.IsActive))
+        else
         {
-            return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.VariationRequired", $"Selecione o tamanho/variação de '{product.Name}'."));
+            var activeVariations = product.Variations.Where(v => v.IsActive).OrderBy(v => v.DisplayOrder).ToList();
+            if (activeVariations.Count == 1)
+            {
+                chosenVariation = activeVariations[0];
+                basePrice = chosenVariation.Price;
+                variationName = chosenVariation.Name;
+            }
+            else if (activeVariations.Count > 1)
+            {
+                return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.VariationRequired", $"Selecione o tamanho/variação de '{product.Name}'."));
+            }
         }
 
         var selectionList = (modifiers ?? [])

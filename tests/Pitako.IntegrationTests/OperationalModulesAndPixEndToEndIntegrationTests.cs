@@ -65,7 +65,11 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         var publicMenuRes = await client.GetAsync("/api/v1/public/store/acai-demo/menu");
         Assert.Equal(HttpStatusCode.OK, publicMenuRes.StatusCode);
         var publicMenuJson = await publicMenuRes.Content.ReadFromJsonAsync<JsonElement>();
-        var firstProductId = publicMenuJson.GetProperty("products")[0].GetProperty("id").GetGuid();
+        var firstProduct = publicMenuJson.GetProperty("products")[0];
+        var firstProductId = firstProduct.GetProperty("id").GetGuid();
+        Guid? firstVariationId = firstProduct.TryGetProperty("variations", out var varsProp) && varsProp.GetArrayLength() > 0
+            ? varsProp[0].GetProperty("id").GetGuid()
+            : null;
 
         var startTotem = await client.PostAsJsonAsync("/api/v1/public/totem/acai-demo/start", new
         {
@@ -83,6 +87,7 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
             {
                 kind = "catalog",
                 productId = firstProductId,
+                variationId = firstVariationId,
                 quantity = 2,
                 notes = "Sem granola"
             });
@@ -137,6 +142,7 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         {
             kind = "catalog",
             productId = firstProductId,
+            variationId = firstVariationId,
             quantity = 1,
             notes = "QR Test"
         });
@@ -628,6 +634,7 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         {
             kind = "catalog",
             productId = firstProductId,
+            variationId = firstVariationId,
             quantity = 1
         });
         Assert.Equal(HttpStatusCode.OK, cartOkFirst.StatusCode);
@@ -655,6 +662,7 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         {
             kind = "catalog",
             productId = firstProductId,
+            variationId = firstVariationId,
             quantity = 1
         });
         Assert.Equal(HttpStatusCode.OK, cart2.StatusCode);

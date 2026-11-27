@@ -1,3 +1,4 @@
+using Pitako.Modules.AcaiBuilder.Application.Abstractions;
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Abstractions;
@@ -20,6 +21,7 @@ using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Abstractions;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
+using Pitako.Modules.Tenants.Application.Abstractions;
 using Pitako.Modules.Tenants.Application.Services;
 using Pitako.Modules.Tenants.Domain;
 using Pitako.MultiTenancy;
@@ -90,7 +92,10 @@ public static class PitakoDevDemoSeeder
 
         var existingMaster = await userRepo.FindByEmailAsync(UserScope.Saas, null, "MASTER@PITAKO.COM.BR", ct);
         if (existingMaster is not null)
+        {
+            await UpgradeLegacyAcaiDemoIfNeededAsync(sp, ct);
             return;
+        }
 
         // 1. Admin Master SaaS
         var masterRes = await userAuth.CreateSaasUserAsync(
@@ -211,55 +216,57 @@ public static class PitakoDevDemoSeeder
             ct);
 
         // Identidade visual independente da loja (roxo açaí + creme + âmbar, sem vermelho PITAKO)
+        var defaultHours = System.Text.Json.JsonSerializer.Serialize(
+            Enumerable.Range(0, 7).Select(d => new StoreOperatingHoursEntry(d, true, "08:00", "23:00")));
+
         await brandingService.UpdateDraftAsync(
             storeAdmin,
             tenant.Id,
             new UpdateStoreBrandingDraftCommand(
                 "/store-assets/tropical-logo.svg",
                 "/store-assets/tropical-cover.svg",
-                "Açaí artesanal batido na hora com frutas frescas",
+                "Mais que açaí, é puro sabor! Monte do seu jeito e receba super gelado.",
                 "#4C1D95",
                 "#FAF5FF",
                 "#F59E0B",
-                "grid"),
+                "showcase",
+                [
+                    new StoreBannerSnapshot("Linha Explosão Premium", "/store-assets/acai/pistache.jpg", "#explosao-premium", 1),
+                    new StoreBannerSnapshot("Monte do Seu Jeito 300ml a 1L", "/store-assets/acai/monte-seu-jeito.jpg", "#monte-seu-acai", 2),
+                    new StoreBannerSnapshot("Açaí na Garrafa 300ml", "/store-assets/acai/garrafa-morango.jpg", "#acai-na-garrafa", 3)
+                ],
+                defaultHours,
+                "Açaí cremoso, frutas frescas selecionadas e entrega rápida!",
+                "16991098863",
+                "@acaitropicalexpress"),
             ct);
         await brandingService.PublishBrandingAsync(storeAdmin, tenant.Id, ct);
 
         // 4. Catálogo & Montador de Açaí
-        var catAcai = (await catalogService.CreateCategoryAsync(storeAdmin, "Tigelas & Copos", "Monte do seu jeito", null, 1, ct)).Value;
-        var catBebidas = (await catalogService.CreateCategoryAsync(storeAdmin, "Sucos & Vitaminas", "Bebidas naturais", null, 2, ct)).Value;
-
-        var p1 = (await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Tradicional 500ml Pronto", 22.90m, "Batido puro com banana", "ACAI-500", ProductSaleMode.Unit, true, 1, ct)).Value;
-        await catalogService.AddProductImageAsync(storeAdmin, p1.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p1.Name), 0, true, ct);
-        var p2 = (await catalogService.CreateProductAsync(storeAdmin, catAcai.Id, "Açaí Self-Service por Quilo", 64.90m, "Pesagem na balança do balcão", "ACAI-KG", ProductSaleMode.Weight, false, 2, ct)).Value;
-        await catalogService.AddProductImageAsync(storeAdmin, p2.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p2.Name), 0, true, ct);
-        var p3 = (await catalogService.CreateProductAsync(storeAdmin, catBebidas.Id, "Vitamina de Açaí c/ Guaraná 400ml", 16.50m, "Refrescante", "VIT-400", ProductSaleMode.Unit, false, 1, ct)).Value;
-        await catalogService.AddProductImageAsync(storeAdmin, p3.Id, StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", p3.Name), 0, true, ct);
         await sp.GetRequiredService<SegmentCatalogTemplateService>().ApplyTemplateAsync(storeAdmin, "acaiteria", ct);
         var starterProv = sp.GetRequiredService<StoreStarterProvisioner>();
         await starterProv.ImportSpreadsheetKitAsync(storeAdmin, "acaiteria", ct);
-        var demoProdRepo = sp.GetRequiredService<IProductRepository>();
-        var allDemoProds = await demoProdRepo.ListAllOrderedAsync(ct);
-        var imgsAdded = false;
-        foreach (var dp in allDemoProds)
-        {
-            if (dp.Images.Count == 0)
-            {
-                dp.AddImage(StoreStarterProvisioner.BuildSegmentProductArtPath("acaiteria", dp.Name), 0, true);
-                imgsAdded = true;
-            }
-        }
-        if (imgsAdded) await demoProdRepo.SaveChangesAsync(ct);
 
-        await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 300ml", 300, 15.90m, 3, 0, AcaiFreeCountingMode.ByPortion, 5, null, "CUP-300", 1, ct);
-        await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 500ml", 500, 21.90m, 4, 0, AcaiFreeCountingMode.ByPortion, 6, null, "CUP-500", 2, ct);
-        await acaiService.CreateBaseFlavorAsync(storeAdmin, "Açaí Puro Tradicional", 0m, 1, ct);
-        await acaiService.CreateBaseFlavorAsync(storeAdmin, "Creme de Cupuaçu", 2.00m, 2, ct);
-        await acaiService.CreateFreeToppingAsync(storeAdmin, "Granola Crocante", 2, 1, cancellationToken: ct);
-        await acaiService.CreateFreeToppingAsync(storeAdmin, "Leite em Pó", 2, 2, cancellationToken: ct);
-        await acaiService.CreateFreeToppingAsync(storeAdmin, "Banana Fatiada", 2, 3, cancellationToken: ct);
-        await acaiService.CreatePaidAddonAsync(storeAdmin, "Creme de Avelã (Nutella)", 5.50m, 2, 1, cancellationToken: ct);
-        await acaiService.CreatePaidAddonAsync(storeAdmin, "Morango Fresco", 4.00m, 2, 2, cancellationToken: ct);
+        var demoCatRepo = sp.GetRequiredService<ICategoryRepository>();
+        var catFamilia = (await demoCatRepo.ListOrderedAsync(ct))
+            .FirstOrDefault(c => c.Name.Equals("Explosão Família (Potes)", StringComparison.OrdinalIgnoreCase));
+        if (catFamilia is not null)
+        {
+            var pKg = (await catalogService.CreateProductAsync(storeAdmin, catFamilia.Id, "Açaí Self-Service por Quilo", 64.90m, "Pesagem na balança do balcão (preço por kg).", "ACAI-KG", ProductSaleMode.Weight, false, 99, ct)).Value;
+            await catalogService.AddProductImageAsync(storeAdmin, pKg.Id, "/store-assets/acai/puro-100.jpg", 0, true, ct);
+        }
+
+        var seededProds = await sp.GetRequiredService<IProductRepository>().ListAllOrderedAsync(ct);
+        var promoTargets = seededProds
+            .Where(p => p.Name.Equals("Clássico", StringComparison.OrdinalIgnoreCase) || p.Name.Equals("Mousse de Morango", StringComparison.OrdinalIgnoreCase))
+            .Select(p => (PromotionTargetType.Product, p.Id))
+            .ToList();
+        if (promoTargets.Count > 0)
+        {
+            await catalogService.CreatePromotionAsync(storeAdmin, "Ofertas Especiais Açaí", PromotionDiscountType.FixedAmount, 2.00m, clock.UtcNow.AddDays(-1), clock.UtcNow.AddYears(2), promoTargets, true, ct);
+        }
+
+        await SeedAcaiBuilderDefaultsAsync(acaiService, storeAdmin, ct);
 
         // 5. Salão & Mesas
         var sector = (await diningService.CreateSectorAsync(storeAdmin, "Salão Principal", null, 1, ct)).Value;
@@ -298,5 +305,180 @@ public static class PitakoDevDemoSeeder
         await printingService.RegisterPrinterAsync(storeAdmin, "CAIXA-01", "Impressora Caixa / Balcão & Entrega (2ª Via)", PrinterConnectionKind.UsbSpooler, "USB001", PaperWidthMm.Mm80, null, true, null, ct);
         await couponsService.CreateCouponAsync(storeAdmin, "PRIMEIRACOMPRA", Pitako.Modules.Coupons.Domain.CouponDiscountType.FixedAmount, 5.00m, clock.UtcNow.AddDays(-1), clock.UtcNow.AddYears(2), 25.00m, null, 200, null, cancellationToken: ct);
         await waService.ConfigureChannelAsync(storeAdmin, tenantRes.Value.Tenant.TradeName, "5516991098863", "wa-acai-demo", "waba-acai-demo", "wa-cloud-demo", "wa-secret-demo", "verify-acai-demo", WhatsAppAutoReplyMode.HybridBotThenAi, "/loja/acai-demo", null, ct);
+    }
+
+    private static async Task SeedAcaiBuilderDefaultsAsync(
+        AcaiBuilderManagementService acaiService,
+        User storeAdmin,
+        CancellationToken ct)
+    {
+        await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 300 ml", 300, 15.90m, 3, 0, AcaiFreeCountingMode.ByPortion, 6, null, "CUP-300", 1, ct, "200g de açaí • até 3 acompanhamentos grátis", 6.80m, true, true);
+        await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 500 ml", 500, 19.90m, 4, 0, AcaiFreeCountingMode.ByPortion, 8, null, "CUP-500", 2, ct, "330g de açaí • até 4 acompanhamentos grátis", 9.40m, true, true);
+        await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 700 ml", 700, 26.90m, 5, 0, AcaiFreeCountingMode.ByPortion, 10, null, "CUP-700", 3, ct, "460g de açaí • até 5 acompanhamentos grátis", 12.50m, true, true);
+
+        await acaiService.CreateBaseFlavorAsync(storeAdmin, "Açaí Tradicional Cremoso", 0m, 1, ct);
+        await acaiService.CreateBaseFlavorAsync(storeAdmin, "Açaí Zero Açúcar", 3.00m, 2, ct);
+
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Leite Ninho em pó", 2, 1, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 0.80m, categoryName: "Acompanhamentos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Leite condensado", 2, 2, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 0.70m, categoryName: "Acompanhamentos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Granola tradicional", 2, 3, cancellationToken: ct, description: "Porção 30g", costPriceAmount: 1.10m, categoryName: "Acompanhamentos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Paçoca", 2, 4, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 0.68m, categoryName: "Acompanhamentos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Amendoim triturado", 2, 5, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 1.00m, categoryName: "Acompanhamentos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Chocobol", 2, 6, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 1.05m, categoryName: "Confeitos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Confete", 2, 7, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 1.10m, categoryName: "Confeitos");
+        await acaiService.CreateFreeToppingAsync(storeAdmin, "Ovomaltine", 2, 8, cancellationToken: ct, description: "Porção 25g", costPriceAmount: 1.33m, categoryName: "Complementos");
+
+        await acaiService.CreatePaidAddonAsync(storeAdmin, "Morango Fresco", 4.50m, 2, 1, cancellationToken: ct, description: "Porção 45g", costPriceAmount: 1.36m, categoryName: "Frutas");
+        await acaiService.CreatePaidAddonAsync(storeAdmin, "Banana Fatiada", 3.90m, 2, 2, cancellationToken: ct, description: "Porção 40g", costPriceAmount: 0.32m, categoryName: "Frutas");
+        await acaiService.CreatePaidAddonAsync(storeAdmin, "Kiwi Fatiado", 4.00m, 2, 3, cancellationToken: ct, description: "Porção 40g", costPriceAmount: 1.40m, categoryName: "Frutas");
+        await acaiService.CreatePaidAddonAsync(storeAdmin, "Nutella Original", 6.50m, 2, 4, cancellationToken: ct, description: "Porção 30g", costPriceAmount: 2.77m, categoryName: "Adicionais");
+        await acaiService.CreatePaidAddonAsync(storeAdmin, "Creme Gourmet de Pistache", 6.00m, 2, 5, cancellationToken: ct, description: "Porção 30g", costPriceAmount: 2.25m, categoryName: "Adicionais");
+    }
+
+    private static async Task UpgradeLegacyAcaiDemoIfNeededAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var tenantRepo = sp.GetRequiredService<ITenantRepository>();
+        var tenant = await tenantRepo.FindBySlugAsync("acai-demo", ct);
+        if (tenant is null) return;
+
+        var setter = sp.GetRequiredService<ITenantContextSetter>();
+        setter.SetTenant(tenant.Id, TenantResolutionSource.BackgroundJob);
+
+        var catRepo = sp.GetRequiredService<ICategoryRepository>();
+        var existingCats = await catRepo.ListOrderedAsync(ct);
+        var userRepo = sp.GetRequiredService<IUserRepository>();
+        var storeAdmin = await userRepo.FindByEmailAsync(UserScope.Establishment, tenant.Id, "ADMIN@TROPICALEXPRESS.COM.BR", ct);
+        if (storeAdmin is null) return;
+
+        var catalogService = sp.GetRequiredService<CatalogManagementService>();
+        var prodRepo = sp.GetRequiredService<IProductRepository>();
+        var modRepo = sp.GetRequiredService<IModifierGroupRepository>();
+
+        var hasNewCatalog = existingCats.Any(c => c.Name.Equals("Explosão Clássica", StringComparison.OrdinalIgnoreCase));
+        if (!hasNewCatalog)
+        {
+            var legacyStubNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Açaí Tradicional 500ml Pronto",
+                "Explosão Ninho com Morango",
+                "Açaí Clássico 500ml",
+                "Pistache / Nutella Supremo 300ml",
+                "Vitamina de Açaí c/ Guaraná 400ml",
+                "Monte do Seu Jeito"
+            };
+
+            foreach (var p in await prodRepo.ListAllOrderedAsync(ct))
+            {
+                if (legacyStubNames.Contains(p.Name))
+                {
+                    await catalogService.DeleteOrArchiveProductAsync(storeAdmin, p.Id, ct);
+                }
+            }
+
+            foreach (var g in await modRepo.ListAllAsync(ct))
+            {
+                await catalogService.DeleteModifierGroupAsync(storeAdmin, g.Id, ct);
+            }
+
+            await sp.GetRequiredService<SegmentCatalogTemplateService>().ApplyTemplateAsync(storeAdmin, "acaiteria", ct);
+        }
+
+        // Move "Açaí Self-Service por Quilo" (se legado) para "Explosão Família (Potes)" com foto real e limpa categorias vazias legadas/duplicadas
+        var currentCats = await catRepo.ListOrderedAsync(ct);
+        var catFamilia = currentCats.FirstOrDefault(c => c.Name.Equals("Explosão Família (Potes)", StringComparison.OrdinalIgnoreCase));
+        var currentProds = await prodRepo.ListAllOrderedAsync(ct);
+        var selfServiceProd = currentProds.FirstOrDefault(p => p.Name.Equals("Açaí Self-Service por Quilo", StringComparison.OrdinalIgnoreCase));
+        if (selfServiceProd is not null && catFamilia is not null)
+        {
+            if (selfServiceProd.CategoryId != catFamilia.Id)
+            {
+                await catalogService.MoveProductToCategoryAsync(storeAdmin, selfServiceProd.Id, catFamilia.Id, 99, ct);
+            }
+            var refreshedKg = await prodRepo.FindByIdAsync(selfServiceProd.Id, ct);
+            if (refreshedKg is not null && refreshedKg.Images.All(i => i.ImageUrl.Contains("/segment-art/", StringComparison.OrdinalIgnoreCase)))
+            {
+                foreach (var oldImg in refreshedKg.Images.ToList())
+                {
+                    await catalogService.RemoveProductImageAsync(storeAdmin, refreshedKg.Id, oldImg.Id, ct);
+                }
+                await catalogService.AddProductImageAsync(storeAdmin, refreshedKg.Id, "/store-assets/acai/puro-100.jpg", 0, true, ct);
+            }
+        }
+
+        var legacyCatNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Tigelas & Copos",
+            "Açaís Prontos da Casa",
+            "Sucos & Vitaminas",
+            "Mais Vendidos"
+        };
+        var refreshedProds = await prodRepo.ListAllOrderedAsync(ct);
+        var refreshedCats = await catRepo.ListOrderedAsync(ct);
+        foreach (var oldCat in refreshedCats.Where(c => legacyCatNames.Contains(c.Name)))
+        {
+            await catalogService.DeleteCategoryAsync(storeAdmin, oldCat.Id, ct, null);
+        }
+        // Remove categorias duplicadas vazias (ex: "Monte seu Açaí" extra sem produtos)
+        foreach (var dupGroup in refreshedCats.GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
+        {
+            foreach (var extraCat in dupGroup)
+            {
+                if (!refreshedProds.Any(p => p.CategoryId == extraCat.Id && p.Status != CatalogItemStatus.Archived))
+                {
+                    await catalogService.DeleteCategoryAsync(storeAdmin, extraCat.Id, ct, null);
+                }
+            }
+        }
+
+        await sp.GetRequiredService<StoreStarterProvisioner>().ImportSpreadsheetKitAsync(storeAdmin, "acaiteria", ct);
+
+        var brandingService = sp.GetRequiredService<StoreBrandingService>();
+        var hours = System.Text.Json.JsonSerializer.Serialize(
+            Enumerable.Range(0, 7).Select(d => new StoreOperatingHoursEntry(d, true, "08:00", "23:00")));
+        await brandingService.UpdateDraftAsync(
+            storeAdmin,
+            tenant.Id,
+            new UpdateStoreBrandingDraftCommand(
+                "/store-assets/tropical-logo.svg",
+                "/store-assets/tropical-cover.svg",
+                "Mais que açaí, é puro sabor! Monte do seu jeito e receba super gelado.",
+                "#4C1D95",
+                "#FAF5FF",
+                "#F59E0B",
+                "showcase",
+                [
+                    new StoreBannerSnapshot("Linha Explosão Premium", "/store-assets/acai/pistache.jpg", "#explosao-premium", 1),
+                    new StoreBannerSnapshot("Monte do Seu Jeito 300ml a 1L", "/store-assets/acai/monte-seu-jeito.jpg", "#monte-seu-acai", 2),
+                    new StoreBannerSnapshot("Açaí na Garrafa 300ml", "/store-assets/acai/garrafa-morango.jpg", "#acai-na-garrafa", 3)
+                ],
+                hours,
+                "Açaí cremoso, frutas frescas selecionadas e entrega rápida!",
+                "16991098863",
+                "@acaitropicalexpress"),
+            ct);
+        await brandingService.PublishBrandingAsync(storeAdmin, tenant.Id, ct);
+
+        var promoRepo = sp.GetRequiredService<IPromotionRepository>();
+        if ((await promoRepo.ListActiveCandidatesAsync(ct)).Count == 0)
+        {
+            var upgradedProds = await prodRepo.ListAllOrderedAsync(ct);
+            var promoTargets = upgradedProds
+                .Where(p => p.Name.Equals("Clássico", StringComparison.OrdinalIgnoreCase) || p.Name.Equals("Mousse de Morango", StringComparison.OrdinalIgnoreCase))
+                .Select(p => (PromotionTargetType.Product, p.Id))
+                .ToList();
+            if (promoTargets.Count > 0)
+            {
+                var utcNow = sp.GetRequiredService<IClock>().UtcNow;
+                await catalogService.CreatePromotionAsync(storeAdmin, "Ofertas Especiais Açaí", PromotionDiscountType.FixedAmount, 2.00m, utcNow.AddDays(-1), utcNow.AddYears(2), promoTargets, true, ct);
+            }
+        }
+
+        var cupRepo = sp.GetRequiredService<IAcaiCupSizeRepository>();
+        var cups = await cupRepo.ListAsync(true, ct);
+        if (cups.All(c => c.VolumeMl != 700))
+        {
+            var acaiService = sp.GetRequiredService<AcaiBuilderManagementService>();
+            await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 700 ml", 700, 26.90m, 5, 0, AcaiFreeCountingMode.ByPortion, 10, null, "CUP-700", 3, ct, "460g de açaí • até 5 acompanhamentos grátis", 12.50m, true, true);
+        }
     }
 }

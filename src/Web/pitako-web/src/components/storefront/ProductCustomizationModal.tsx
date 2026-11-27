@@ -72,11 +72,18 @@ export function ProductCustomizationModal({
       setCounts(restored);
     } else {
       setVariationId(product.variations[0]?.id || "");
-      setCounts({});
+      const initialDefaults: Record<string, number> = {};
+      for (const g of attachedGroups) {
+        if ((g.isRequired || g.minSelections > 0) && g.maxSelections === 1 && g.categoryTag === "cremes") {
+          const freeDef = g.options.find((o) => o.isAvailable && o.additionalPrice === 0);
+          if (freeDef) initialDefaults[`${g.id}:${freeDef.id}`] = 1;
+        }
+      }
+      setCounts(initialDefaults);
       setNotes("");
       setQuantity(1);
     }
-  }, [product, editingItem]);
+  }, [product, editingItem, attachedGroups]);
 
   const activeVariation = useMemo(
     () => product?.variations.find((v) => v.id === variationId) ?? product?.variations[0] ?? null,
@@ -326,6 +333,14 @@ export function ProductCustomizationModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Voltar para o cardápio"
+            className="absolute right-14 top-4 hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 sm:inline-flex"
+          >
+            Voltar para o cardápio
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
             aria-label="Fechar janela"
             className="absolute right-4 top-4 rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
           >
@@ -339,12 +354,13 @@ export function ProductCustomizationModal({
           {product.variations.length > 0 && (
             <section>
               <div className="mb-2.5 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900">Escolha o Tamanho / Variação</h3>
+                <h3 className="text-sm font-bold text-slate-900">1. Escolha o Tamanho</h3>
                 <span className="rounded-full bg-slate-900 px-2.5 py-0.5 text-[11px] font-semibold text-white">Obrigatório</span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className={product.variations.every((v) => v.variationName.length <= 16) ? "flex flex-wrap gap-2.5" : "grid gap-2 sm:grid-cols-2"}>
                 {product.variations.map((v) => {
                   const selected = v.id === activeVariation?.id;
+                  const compact = product.variations.every((x) => x.variationName.length <= 16);
                   return (
                     <button
                       key={v.id}
@@ -353,16 +369,41 @@ export function ProductCustomizationModal({
                         setVariationId(v.id);
                         setErrorMsg(null);
                       }}
-                      style={selected ? { borderColor: "var(--store-primary)", backgroundColor: "color-mix(in srgb, var(--store-primary) 7%, white)" } : undefined}
-                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition ${
-                        selected ? "ring-1 ring-[var(--store-primary)]" : "border-slate-200 hover:border-slate-300"
-                      }`}
+                      style={
+                        selected
+                          ? compact
+                            ? { borderColor: "var(--store-primary)", backgroundColor: "var(--store-primary)", color: "#ffffff" }
+                            : { borderColor: "var(--store-primary)", backgroundColor: "color-mix(in srgb, var(--store-primary) 7%, white)" }
+                          : undefined
+                      }
+                      className={
+                        compact
+                          ? `rounded-2xl border px-4 py-2.5 text-left transition ${
+                              selected ? "shadow-sm" : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                            }`
+                          : `flex items-center justify-between rounded-xl border p-3 text-left transition ${
+                              selected ? "ring-1 ring-[var(--store-primary)]" : "border-slate-200 hover:border-slate-300"
+                            }`
+                      }
                     >
-                      <div className="min-w-0 pr-2">
-                        <p className="text-sm font-bold text-slate-900">{v.variationName}</p>
-                        {v.description && <p className="text-xs text-slate-500">{v.description}</p>}
-                      </div>
-                      <span className="shrink-0 font-mono text-sm font-extrabold text-slate-900">{formatBrl(v.price)}</span>
+                      {compact ? (
+                        <>
+                          <span className="text-sm font-extrabold">
+                            {v.variationName} · {formatBrl(v.price)}
+                          </span>
+                          {v.description && (
+                            <span className={`block text-[11px] ${selected ? "text-white/85" : "text-slate-500"}`}>{v.description}</span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="min-w-0 pr-2">
+                            <p className="text-sm font-bold text-slate-900">{v.variationName}</p>
+                            {v.description && <p className="text-xs text-slate-500">{v.description}</p>}
+                          </div>
+                          <span className="shrink-0 font-mono text-sm font-extrabold text-slate-900">{formatBrl(v.price)}</span>
+                        </>
+                      )}
                     </button>
                   );
                 })}
@@ -381,6 +422,254 @@ export function ProductCustomizationModal({
             const isSatisfied =
               (!rule.isRequired && rule.minSelections === 0) ||
               usedCount >= Math.max(rule.minSelections, rule.isRequired ? 1 : 0);
+            const isFreeChipsLayout = group.selectionKind === 2 || hasFreePool;
+            const isFruitsSelectLayout = (group.categoryTag || "").toLowerCase() === "frutas";
+            const isPaidChipsGridLayout = group.selectionKind === 3 && !isFruitsSelectLayout && !isFreeChipsLayout;
+
+            if (isFreeChipsLayout) {
+              return (
+                <section key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900">
+                        {group.name}: {m.selectedTotal} de {rule.freeAllowance > 0 ? rule.freeAllowance : rule.maxSelections}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        {rule.freeAllowance > 0
+                          ? `Selecione até ${rule.freeAllowance} opções sem custo adicional.`
+                          : rule.maxSelections > 0
+                            ? `Máximo ${rule.maxSelections} opções`
+                            : "Opcional"}
+                      </p>
+                    </div>
+                    {hasFreePool && (
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                          freeRemaining > 0 ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {freeRemaining > 0 ? `Escolha mais ${freeRemaining}` : "Limite completo ✓"}
+                      </span>
+                    )}
+                  </div>
+
+                  {hasFreePool && (
+                    <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        style={{
+                          width: `${Math.min(100, (m.selectedTotal / Math.max(1, rule.freeAllowance)) * 100)}%`,
+                          backgroundColor: freeRemaining === 0 ? "#059669" : "var(--store-accent)"
+                        }}
+                        className="h-full rounded-full transition-all duration-200"
+                      />
+                    </div>
+                  )}
+
+                  <div className="mt-3.5 flex flex-wrap gap-2">
+                    {group.options.map((opt) => {
+                      const qty = counts[`${group.id}:${opt.id}`] ?? 0;
+                      const unavailable = !opt.isAvailable;
+                      const limitReached = rule.maxSelections > 0 && usedCount >= rule.maxSelections && qty === 0;
+
+                      return (
+                        <div key={opt.id} className="inline-flex items-center">
+                          <button
+                            type="button"
+                            disabled={unavailable}
+                            onClick={() => {
+                              if (limitReached) {
+                                setErrorMsg(`Limite de ${rule.maxSelections} acompanhamentos para este tamanho. Escolha um tamanho maior para mais acompanhamentos grátis.`);
+                                return;
+                              }
+                              updateOptionCount(group, opt, qty > 0 ? -qty : 1);
+                            }}
+                            style={
+                              qty > 0
+                                ? {
+                                    borderColor: "var(--store-primary)",
+                                    backgroundColor: "var(--store-primary)",
+                                    color: "#ffffff"
+                                  }
+                                : undefined
+                            }
+                            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                              unavailable
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-60"
+                                : qty > 0
+                                  ? "shadow-sm"
+                                  : limitReached
+                                    ? "border-slate-200 bg-white/70 text-slate-400 hover:border-slate-300"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                            }`}
+                          >
+                            {qty > 0 && <Check className="h-3.5 w-3.5" />}
+                            <span>{opt.name}</span>
+                            {opt.additionalPrice > 0 && (
+                              <span className={qty > 0 ? "text-white/85" : "text-slate-500"}>+{formatBrl(opt.additionalPrice)}</span>
+                            )}
+                            {qty > 1 && <span className="rounded-full bg-white/25 px-1.5 text-[10px]">×{qty}</span>}
+                          </button>
+                          {qty > 0 && opt.maxQuantity > 1 && qty < opt.maxQuantity && (!rule.maxSelections || usedCount < rule.maxSelections) && (
+                            <button
+                              type="button"
+                              onClick={() => updateOptionCount(group, opt, 1)}
+                              title={`Adicionar +1 porção de ${opt.name}`}
+                              className="ml-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-[10px] font-extrabold text-slate-700 hover:bg-slate-100"
+                            >
+                              +1
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            }
+
+            if (isFruitsSelectLayout) {
+              const selectedFruits = group.options.filter((opt) => (counts[`${group.id}:${opt.id}`] ?? 0) > 0);
+              return (
+                <section key={group.id} className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4">
+                  <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900">{group.name} (opcional)</h3>
+                      <p className="text-xs text-slate-500">Frutas frescas selecionadas fatiadas na hora</p>
+                    </div>
+                  </div>
+
+                  <select
+                    value=""
+                    aria-label={group.name}
+                    onChange={(e) => {
+                      const opt = group.options.find((o) => o.id === e.target.value);
+                      if (opt) updateOptionCount(group, opt, 1);
+                    }}
+                    className="w-full rounded-xl border border-emerald-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-800 shadow-xs focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="">+ Selecionar fruta para o copo...</option>
+                    {group.options.map((opt) => (
+                      <option key={opt.id} value={opt.id} disabled={!opt.isAvailable}>
+                        {opt.name} — + {formatBrl(opt.additionalPrice)} {!opt.isAvailable ? "(Indisponível)" : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedFruits.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Adicione frutas frescas fatiadas ao seu copo selecionando no menu acima.
+                    </p>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedFruits.map((opt) => {
+                        const qty = counts[`${group.id}:${opt.id}`] ?? 0;
+                        return (
+                          <div
+                            key={opt.id}
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-xs"
+                          >
+                            <span>
+                              {opt.name} (+{formatBrl(opt.additionalPrice * qty)})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateOptionCount(group, opt, -1)}
+                              className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700 hover:bg-slate-200"
+                            >
+                              −
+                            </button>
+                            <span>{qty}</span>
+                            <button
+                              type="button"
+                              disabled={qty >= opt.maxQuantity}
+                              onClick={() => updateOptionCount(group, opt, 1)}
+                              className="rounded bg-emerald-600 px-1.5 py-0.5 text-white disabled:opacity-40"
+                            >
+                              +
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            }
+
+            if (isPaidChipsGridLayout) {
+              return (
+                <section key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900">{group.name} (opcional)</h3>
+                      <p className="text-xs text-slate-500">
+                        {rule.maxSelections > 0 ? `Selecione até ${rule.maxSelections} extras` : "Toque para adicionar ao seu copo"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {group.options.map((opt) => {
+                      const qty = counts[`${group.id}:${opt.id}`] ?? 0;
+                      const unavailable = !opt.isAvailable;
+                      return (
+                        <div
+                          key={opt.id}
+                          style={
+                            qty > 0
+                              ? { borderColor: "var(--store-primary)", backgroundColor: "color-mix(in srgb, var(--store-primary) 7%, white)" }
+                              : undefined
+                          }
+                          className={`flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2.5 transition ${
+                            unavailable ? "opacity-50" : qty > 0 ? "shadow-sm" : "border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            disabled={unavailable}
+                            onClick={() => updateOptionCount(group, opt, qty === 0 ? 1 : -1)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <p className="truncate text-xs font-bold text-slate-900">{opt.name}</p>
+                            <p className="text-xs font-extrabold text-amber-700">+ {formatBrl(opt.additionalPrice)}</p>
+                          </button>
+
+                          {qty > 0 ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => updateOptionCount(group, opt, -1)}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-xs font-bold"
+                              >
+                                −
+                              </button>
+                              <span className="w-5 text-center text-xs font-extrabold text-slate-900">{qty}</span>
+                              <button
+                                type="button"
+                                disabled={qty >= opt.maxQuantity}
+                                onClick={() => updateOptionCount(group, opt, 1)}
+                                style={{ backgroundColor: "var(--store-primary)" }}
+                                className="flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold text-white disabled:opacity-40"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={unavailable}
+                              onClick={() => updateOptionCount(group, opt, 1)}
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                            >
+                              +
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            }
 
             return (
               <section key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -394,17 +683,6 @@ export function ProductCustomizationModal({
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {hasFreePool && (
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                          freeRemaining > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
-                        }`}
-                      >
-                        {freeRemaining > 0
-                          ? `Grátis restantes: ${freeRemaining}/${rule.freeAllowance}`
-                          : `Limite grátis atingido (${rule.freeAllowance}/${rule.freeAllowance})`}
-                      </span>
-                    )}
                     {(rule.isRequired || rule.minSelections > 0) && (
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
@@ -564,12 +842,20 @@ export function ProductCustomizationModal({
               disabled={submitting}
               onClick={handleConfirm}
               style={{ backgroundColor: "var(--store-primary)" }}
-              className="flex flex-1 items-center justify-between rounded-xl px-5 py-3 text-sm font-bold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-extrabold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
             >
-              <span>{editingItem ? "Salvar Alterações" : "Adicionar à Sacola"}</span>
+              <span>{editingItem ? "Salvar Alterações" : "Adicionar"}</span>
+              <span>·</span>
               <span className="font-mono">{formatBrl(estimatedUnitPrice * quantity)}</span>
             </button>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-2.5 w-full rounded-xl py-1.5 text-center text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 sm:hidden"
+          >
+            Voltar para o cardápio
+          </button>
         </div>
       </div>
     </div>

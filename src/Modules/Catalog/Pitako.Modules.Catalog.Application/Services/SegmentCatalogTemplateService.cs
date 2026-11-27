@@ -71,110 +71,557 @@ public sealed class SegmentCatalogTemplateService
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyAcaiteriaAsync(Guid tenantId, CancellationToken ct)
     {
-        var catMonte = Category.Create(tenantId, "Monte seu Açaí", "Escolha o tamanho do copo e monte com seus ingredientes favoritos", null, 1, "acaiteria", "Limites dinâmicos por tamanho configuráveis").Value;
-        var catProntos = Category.Create(tenantId, "Açaís Prontos da Casa", "Combinações exclusivas prontas com receita padrão", null, 2, "acaiteria").Value;
-        await _categoryRepo.AddAsync(catMonte, ct);
-        await _categoryRepo.AddAsync(catProntos, ct);
+        var catMonte = Category.Create(tenantId, "Monte seu Açaí", "Use sua criatividade e monte do seu jeito!", null, 1, "acaiteria", "Tamanhos com acompanhamentos grátis configuráveis").Value;
+        var catClassica = Category.Create(tenantId, "Explosão Clássica", "Clássicos que nunca saem de moda, cremosos e equilibrados.", null, 2, "acaiteria").Value;
+        var catPremium = Category.Create(tenantId, "Explosão Premium", "Combinações irresistíveis com chocolates nobres, cremes especiais e frutas frescas.", null, 3, "acaiteria").Value;
+        var catKids = Category.Create(tenantId, "Explosão Kids", "Diversão e sabor em cada colherada! Feitas para a alegria da criançada.", null, 4, "acaiteria").Value;
+        var catFitness = Category.Create(tenantId, "Linha Leve & Fitness", "Zero açúcar, Whey Protein e ingredientes funcionais para sua rotina.", null, 5, "acaiteria").Value;
+        var catNatural = Category.Create(tenantId, "Explosão Natural", "Açaí pura polpa ou com mix completo de frutas frescas fatiadas.", null, 6, "acaiteria").Value;
+        var catGarrafa = Category.Create(tenantId, "Açaí na Garrafa", "Pronto para levar! Garrafas de 300 ml super cremosas para qualquer hora do dia.", null, 7, "acaiteria").Value;
+        var catFamilia = Category.Create(tenantId, "Explosão Família (Potes)", "Potes econômicos de 1 Litro e 2 Litros para compartilhar em casa.", null, 8, "acaiteria").Value;
+        var catMousses = Category.Create(tenantId, "Mousses & Sobremesas", "Mousses cremosos em potes individuais de 110 ml.", null, 9, "acaiteria").Value;
 
-        var grpBase = CreateGroup(tenantId, "Base e Creme Principal", ModifierGroupType.Complement, 1, 2, true, 1, ModifierGroupKind.RequiredChoice, 2, OptionCountingMode.ByDistinctOption, "cremes", [
-            ("Açaí Tradicional Cremoso", 0m, 1, "Padrão artesanal"),
-            ("Açaí Zero Açúcar", 2.00m, 1, "Batido sem xarope"),
-            ("Creme de Cupuaçu", 0m, 1, "Base de fruta amazônica"),
-            ("Creme de Ninho", 2.50m, 1, "Creme lácteo batido")
+        foreach (var c in new[] { catMonte, catClassica, catPremium, catKids, catFitness, catNatural, catGarrafa, catFamilia, catMousses })
+        {
+            await _categoryRepo.AddAsync(c, ct);
+        }
+
+        var grpBase = CreateGroupWithCost(tenantId, "Base do Açaí", ModifierGroupType.Complement, 1, 1, true, 1, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "cremes", [
+            ("Açaí Tradicional Cremoso", 0m, 0m, 1, "Batido artesanal puro"),
+            ("Açaí Zero Açúcar", 3.00m, 1.50m, 1, "Versão leve sem xarope")
         ]);
 
-        var grpGratis = CreateGroup(tenantId, "Acompanhamentos Inclusos", ModifierGroupType.Complement, 0, 7, false, 2, ModifierGroupKind.FreeIncluded, 3, OptionCountingMode.ByTotalQuantity, "complementos", [
-            ("Leite em Pó Ninho", 0m, 2, "Porção de 30g"),
-            ("Granola Crocante", 0m, 2, "Porção de 20g"),
-            ("Paçoca Triturada", 0m, 2, "Porção de 20g"),
-            ("Leite Condensado", 0m, 2, "Porção de 25ml"),
-            ("Calda de Chocolate", 0m, 2, "Porção de 25ml"),
-            ("Calda de Morango", 0m, 2, "Porção de 25ml"),
-            ("Ovomaltine Flocos", 0m, 2, "Porção de 20g"),
-            ("Amendoim Granulado", 0m, 2, "Porção de 20g"),
-            ("Confete Colorido", 0m, 2, "Porção de 20g")
+        var grpGratis = CreateGroupWithCost(tenantId, "Acompanhamentos Inclusos", ModifierGroupType.Complement, 0, 7, false, 2, ModifierGroupKind.FreeIncluded, 3, OptionCountingMode.ByTotalQuantity, "acompanhamentos", [
+            ("Leite Ninho em pó", 0m, 0.80m, 2, "Porção 25g"),
+            ("Leite condensado", 0m, 0.70m, 2, "Porção 25g"),
+            ("Granola tradicional", 0m, 1.10m, 2, "Porção 30g"),
+            ("Paçoca", 0m, 0.68m, 2, "Porção 25g"),
+            ("Amendoim triturado", 0m, 1.00m, 2, "Porção 25g"),
+            ("Chocobol", 0m, 1.05m, 2, "Porção 25g"),
+            ("Chocolate granulado", 0m, 1.20m, 2, "Porção 25g"),
+            ("Confete", 0m, 1.10m, 2, "Porção 25g"),
+            ("Sucrilhos", 0m, 0.63m, 2, "Porção 25g"),
+            ("Ovomaltine", 0m, 1.33m, 2, "Porção 25g"),
+            ("Mel puro", 0m, 2.00m, 2, "Porção 20ml"),
+            ("Bis picado", 0m, 1.00m, 2, "Porção 2 un"),
+            ("Mini Fini", 0m, 0.90m, 2, "Porção 20g")
         ]);
 
-        var grpFrutas = CreateGroup(tenantId, "Frutas Frescas e Cremes Especiais", ModifierGroupType.Addon, 0, 8, false, 3, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "frutas", [
-            ("Morango Fresco Fatiado", 4.50m, 2, "Porção de 40g"),
-            ("Banana Prata", 3.00m, 2, "Porção de 40g"),
-            ("Kiwi Selecionado", 5.00m, 2, "Porção de 35g"),
-            ("Creme de Nutella Original", 7.00m, 2, "Porção de 35g"),
-            ("Creme de Pistache", 8.50m, 2, "Porção de 30g"),
-            ("Gotas de Chocolate Meio Amargo", 4.00m, 2, "Porção de 25g")
+        var grpFrutas = CreateGroupWithCost(tenantId, "Frutas Frescas", ModifierGroupType.Addon, 0, 8, false, 3, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "frutas", [
+            ("Morango", 4.50m, 1.36m, 3, "Porção 45g fresca fatiada"),
+            ("Banana", 3.90m, 0.32m, 3, "Porção 40g em rodelas"),
+            ("Kiwi", 4.00m, 1.40m, 3, "Porção 40g fatiado"),
+            ("Manga", 3.90m, 0.28m, 3, "Porção 40g em cubos"),
+            ("Uva sem caroço", 3.50m, 0.88m, 3, "Porção 40g selecionada"),
+            ("Maracujá", 3.00m, 0.34m, 3, "Polpa natural 40g")
         ]);
 
-        var grpRemocao = CreateGroup(tenantId, "Preferências / Remover Ingredientes", ModifierGroupType.Complement, 0, 3, false, 4, ModifierGroupKind.IngredientRemoval, 3, OptionCountingMode.ByDistinctOption, "remocoes", [
-            ("Sem Granola", 0m, 1, null),
-            ("Sem Leite Condensado", 0m, 1, null),
-            ("Sem Colher Descartável", 0m, 1, null)
+        var grpExtras = CreateGroupWithCost(tenantId, "Adicionais Extras", ModifierGroupType.Addon, 0, 12, false, 4, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "adicionais", [
+            ("Nutella original", 6.50m, 2.77m, 3, "Porção 30g"),
+            ("Creme gourmet de pistache", 6.00m, 2.25m, 3, "Porção 30g"),
+            ("Leite Ninho em pó", 3.50m, 1.00m, 3, "Porção 25g"),
+            ("Chocolate com avelã", 4.00m, 1.34m, 3, "Porção 30g"),
+            ("Brigadeiro cremoso", 4.00m, 1.25m, 3, "Porção 30g"),
+            ("Leite condensado cremoso", 2.50m, 0.70m, 3, "Porção 30ml"),
+            ("Chantilly aerado", 3.00m, 0.58m, 3, "Porção 25ml"),
+            ("Granola tradicional", 4.00m, 2.04m, 3, "Porção 30g"),
+            ("Paçoca rolha esfarelada", 3.00m, 0.68m, 3, "Porção 25g"),
+            ("Amendoim triturado", 3.00m, 1.00m, 3, "Porção 25g"),
+            ("Sucrilhos crocante", 3.00m, 0.63m, 3, "Porção 25g"),
+            ("Ovomaltine crocante", 4.00m, 1.33m, 3, "Porção 25g"),
+            ("Bolacha Oreo triturada", 3.50m, 1.10m, 3, "Porção 18g"),
+            ("Bis crocante (2 un)", 3.00m, 1.00m, 3, "2 unidades"),
+            ("Kit Kat (1 un)", 6.50m, 3.80m, 3, "40g unidade"),
+            ("Sonho de Valsa (1 un)", 4.00m, 2.00m, 3, "Bombom picado"),
+            ("Gotas de chocolate branco", 3.50m, 0.98m, 3, "Porção 25g"),
+            ("Chocobol crocante", 3.50m, 1.05m, 3, "Porção 25g"),
+            ("Chocolate granulado", 3.50m, 1.20m, 3, "Porção 25g"),
+            ("Confetes coloridos", 3.50m, 1.10m, 3, "Porção 25g"),
+            ("Mini Fini confeitos", 3.50m, 0.90m, 3, "Porção 20g"),
+            ("Cobertura Fini", 2.50m, 0.38m, 3, "Porção 25ml"),
+            ("Mel puro de abelha", 4.00m, 2.00m, 3, "Porção 20ml")
         ]);
 
-        await _modifierRepo.AddAsync(grpBase, ct);
-        await _modifierRepo.AddAsync(grpGratis, ct);
-        await _modifierRepo.AddAsync(grpFrutas, ct);
-        await _modifierRepo.AddAsync(grpRemocao, ct);
+        var grpRemocao = CreateGroupWithCost(tenantId, "Preferências / Observações Rápidas", ModifierGroupType.Complement, 0, 3, false, 5, ModifierGroupKind.IngredientRemoval, 3, OptionCountingMode.ByDistinctOption, "remocoes", [
+            ("Sem colher descartável", 0m, 0m, 1, null),
+            ("Caprichar no leite condensado", 0m, 0m, 1, null),
+            ("Enviar separadamente quando possível", 0m, 0m, 1, null)
+        ]);
 
-        var prodMonte = Product.Create(
-            tenantId,
-            catMonte.Id,
-            "Monte do Seu Jeito",
-            Money.Create(16.90m).Value,
-            "Monte seu copo ou tigela com açaí puro, acompanhamentos inclusos conforme o tamanho e extras.",
-            "ACAI-MONTE",
-            ProductSaleMode.Unit,
-            isFeatured: true,
-            displayOrder: 1,
-            isNew: false,
-            isRecommended: true,
-            pricingStrategy: ProductPricingStrategy.FixedPlusAddons,
-            tagsCsv: "acaiteria,monte,personalizavel",
-            preparationMinutes: 8,
-            customTemplateKey: "acaiteria-monte").Value;
+        foreach (var g in new[] { grpBase, grpGratis, grpFrutas, grpExtras, grpRemocao })
+        {
+            await _modifierRepo.AddAsync(g, ct);
+        }
 
-        var v300 = prodMonte.AddVariation("Copo 300 ml", Money.Create(16.90m).Value, "ACAI-300", 1, "260g de açaí + até 3 grátis", 300m, "ml", 1).Value;
-        var v500 = prodMonte.AddVariation("Copo 500 ml", Money.Create(22.90m).Value, "ACAI-500", 2, "420g de açaí + até 5 grátis", 500m, "ml", 1).Value;
-        var v700 = prodMonte.AddVariation("Copo 700 ml", Money.Create(29.90m).Value, "ACAI-700", 3, "600g de açaí + até 7 grátis", 700m, "ml", 1).Value;
-        var v1000 = prodMonte.AddVariation("Tigela 1 Litro", Money.Create(42.90m).Value, "ACAI-1L", 4, "900g de açaí + até 10 grátis", 1000m, "ml", 1).Value;
+        var prodCount = 0;
 
-        prodMonte.AttachModifierGroup(grpBase.Id, 1);
-        prodMonte.AttachModifierGroup(grpGratis.Id, 2);
-        prodMonte.AttachModifierGroup(grpFrutas.Id, 3);
-        prodMonte.AttachModifierGroup(grpRemocao.Id, 4);
+        Product CreateAcaiItem(
+            Guid catId,
+            string name,
+            decimal price,
+            string desc,
+            string sku,
+            string imagePath,
+            bool isFeatured,
+            bool isNew,
+            decimal discountAmount,
+            (string Name, decimal Price, decimal Cost, decimal? Ml, int FreeCount, string Desc)[] sizes,
+            bool attachFreeToppings = true,
+            bool attachBase = false,
+            string? customKey = null)
+        {
+            var prod = Product.Create(
+                tenantId,
+                catId,
+                name,
+                Money.Create(price).Value,
+                desc,
+                sku,
+                ProductSaleMode.Unit,
+                isFeatured: isFeatured,
+                displayOrder: ++prodCount,
+                isNew: isNew,
+                isRecommended: isFeatured,
+                pricingStrategy: ProductPricingStrategy.FixedPlusAddons,
+                tagsCsv: "acaiteria" + (isFeatured ? ",mais-vendidos" : "") + (isNew ? ",novidade" : "") + (discountAmount > 0m ? ",promocao" : ""),
+                preparationMinutes: 7,
+                customTemplateKey: customKey ?? "acaiteria-copo").Value;
 
-        prodMonte.SetVariationRule(v300.Id, grpGratis.Id, 0, 3, 3, false);
-        prodMonte.SetVariationRule(v500.Id, grpGratis.Id, 0, 5, 5, false);
-        prodMonte.SetVariationRule(v700.Id, grpGratis.Id, 0, 7, 7, false);
-        prodMonte.SetVariationRule(v1000.Id, grpGratis.Id, 0, 10, 10, false);
+            prod.AddImage(imagePath, 0, true);
 
-        prodMonte.SetVariationRule(v300.Id, grpFrutas.Id, 0, 4, 0, false);
-        prodMonte.SetVariationRule(v500.Id, grpFrutas.Id, 0, 6, 0, false);
-        prodMonte.SetVariationRule(v700.Id, grpFrutas.Id, 0, 8, 0, false);
+            var vOrder = 1;
+            var addedVariations = new List<(ProductVariation Variation, int FreeCount)>();
+            foreach (var s in sizes)
+            {
+                var v = prod.AddVariation(
+                    s.Name,
+                    Money.Create(s.Price).Value,
+                    $"{sku}-{vOrder}",
+                    vOrder++,
+                    s.Desc,
+                    s.Ml,
+                    "ml",
+                    1,
+                    Money.Create(s.Cost).Value).Value;
+                addedVariations.Add((v, s.FreeCount));
+            }
 
-        var prodPronto = Product.Create(
-            tenantId,
-            catProntos.Id,
-            "Explosão Ninho com Morango",
-            Money.Create(25.90m).Value,
-            "Receita pronta da casa com açaí cremoso, morango fresco, leite em pó e creme de ninho.",
-            "ACAI-NINHO-MOR",
-            ProductSaleMode.Unit,
-            isFeatured: true,
-            displayOrder: 2,
-            isNew: true,
-            isRecommended: true,
-            pricingStrategy: ProductPricingStrategy.FixedPlusAddons,
-            tagsCsv: "acaiteria,pronto,novidade",
-            preparationMinutes: 7).Value;
-        prodPronto.AddVariation("Copo 500 ml", Money.Create(25.90m).Value, "PRONTO-500", 1, "Receita pronta 500ml", 500m, "ml");
-        prodPronto.AttachModifierGroup(grpFrutas.Id, 1);
-        prodPronto.AttachModifierGroup(grpRemocao.Id, 2);
+            var grpOrder = 1;
+            if (attachBase) prod.AttachModifierGroup(grpBase.Id, grpOrder++);
+            if (attachFreeToppings) prod.AttachModifierGroup(grpGratis.Id, grpOrder++);
+            prod.AttachModifierGroup(grpFrutas.Id, grpOrder++);
+            prod.AttachModifierGroup(grpExtras.Id, grpOrder++);
+            prod.AttachModifierGroup(grpRemocao.Id, grpOrder);
 
-        await _productRepo.AddAsync(prodMonte, ct);
-        await _productRepo.AddAsync(prodPronto, ct);
+            if (attachFreeToppings)
+            {
+                foreach (var (v, freeCount) in addedVariations)
+                {
+                    prod.SetVariationRule(v.Id, grpGratis.Id, 0, freeCount, freeCount, false);
+                    prod.SetVariationRule(v.Id, grpFrutas.Id, 0, 6, 0, false);
+                    prod.SetVariationRule(v.Id, grpExtras.Id, 0, 10, 0, false);
+                }
+            }
+
+            return prod;
+        }
+
+        // 1. Clássico primeiro na ordem global de produto para quick-add sem obrigatórios; categorias continuam ordenadas por cat.DisplayOrder
+        var products = new List<Product>
+        {
+            // Explosão Clássica
+            CreateAcaiItem(
+                catClassica.Id,
+                "Clássico",
+                19.90m,
+                "Açaí cremoso, morangos frescos fatiados, chantilly aerado, leite condensado e Nutella na decoração.",
+                "ACAI-CLASSICO",
+                "/store-assets/acai/classico.jpg",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 2.00m,
+                [
+                    ("300 ml", 19.90m, 8.20m, 300m, 3, "2 camadas cremosas"),
+                    ("500 ml", 26.90m, 11.40m, 500m, 4, "3 camadas cremosas"),
+                    ("700 ml", 33.90m, 14.90m, 700m, 5, "3 camadas generosas")
+                ]),
+
+            // Monte seu Açaí
+            CreateAcaiItem(
+                catMonte.Id,
+                "Monte do Seu Jeito",
+                15.90m,
+                "Use sua criatividade e monte do seu jeito! Escolha o tamanho do copo e personalize os acompanhamentos inclusos, frutas e adicionais.",
+                "ACAI-MONTE",
+                "/store-assets/acai/monte-seu-jeito.jpg",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 15.90m, 6.80m, 300m, 3, "Até 3 acompanhamentos inclusos"),
+                    ("500 ml", 19.90m, 9.40m, 500m, 4, "Até 4 acompanhamentos inclusos"),
+                    ("700 ml", 26.90m, 12.50m, 700m, 5, "Até 5 acompanhamentos inclusos"),
+                    ("1 Litro", 36.90m, 18.00m, 1000m, 7, "Até 7 acompanhamentos inclusos")
+                ],
+                attachFreeToppings: true,
+                attachBase: true,
+                customKey: "acaiteria-monte"),
+
+            CreateAcaiItem(
+                catClassica.Id,
+                "Ninho com Morango",
+                19.90m,
+                "Camadas generosas de açaí com creme de Ninho cremoso, morangos frescos e leite em pó.",
+                "ACAI-NINHO-MOR",
+                "/store-assets/acai/ninho-morango.jpg",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 19.90m, 8.10m, 300m, 3, "2 camadas cremosas"),
+                    ("500 ml", 25.90m, 11.20m, 500m, 4, "3 camadas cremosas"),
+                    ("700 ml", 32.90m, 14.60m, 700m, 5, "3 camadas generosas")
+                ]),
+
+            CreateAcaiItem(
+                catClassica.Id,
+                "Granola",
+                19.90m,
+                "Açaí tradicional acompanhado de banana em rodelas, morangos frescos, granola crocante e mel puro.",
+                "ACAI-GRANOLA",
+                "/store-assets/acai/granola.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 19.90m, 8.30m, 300m, 3, "2 camadas cremosas"),
+                    ("500 ml", 26.90m, 11.50m, 500m, 4, "3 camadas cremosas"),
+                    ("700 ml", 33.90m, 14.90m, 700m, 5, "3 camadas generosas")
+                ]),
+
+            // 3. Explosão Premium
+            CreateAcaiItem(
+                catPremium.Id,
+                "Pistache",
+                23.90m,
+                "Açaí cremoso com creme gourmet de pistache nas bordas e topo, morangos frescos e amendoim triturado crocante.",
+                "ACAI-PISTACHE",
+                "/store-assets/acai/pistache.jpg",
+                isFeatured: true,
+                isNew: true,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 23.90m, 9.80m, 300m, 3, "2 camadas gourmet"),
+                    ("500 ml", 30.90m, 13.20m, 500m, 4, "3 camadas gourmet"),
+                    ("700 ml", 36.90m, 16.15m, 700m, 5, "3 camadas super")
+                ]),
+
+            CreateAcaiItem(
+                catPremium.Id,
+                "Nutella",
+                23.90m,
+                "Açaí cremoso com Nutella original na borda e topo, morangos frescos, pedaços de Bis e leite em pó.",
+                "ACAI-NUTELLA",
+                "/store-assets/acai/nutella.jpg",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 23.90m, 10.10m, 300m, 3, "2 camadas gourmet"),
+                    ("500 ml", 30.90m, 13.70m, 500m, 4, "3 camadas gourmet"),
+                    ("700 ml", 38.90m, 17.50m, 700m, 5, "3 camadas super")
+                ]),
+
+            CreateAcaiItem(
+                catPremium.Id,
+                "Oreo Supreme",
+                22.90m,
+                "Açaí cremoso intercalado com creme especial de Oreo, bolacha Oreo triturada, leite em pó e brigadeiro.",
+                "ACAI-OREO",
+                "/store-assets/acai/oreo-supreme.jpg",
+                isFeatured: false,
+                isNew: true,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 22.90m, 9.20m, 300m, 3, "2 camadas"),
+                    ("500 ml", 28.90m, 12.60m, 500m, 4, "3 camadas"),
+                    ("700 ml", 35.90m, 15.90m, 700m, 5, "3 camadas")
+                ]),
+
+            CreateAcaiItem(
+                catPremium.Id,
+                "Par Perfeito",
+                24.90m,
+                "Açaí com morangos frescos, Bis branco e preto, creme de Ninho, creme de avelã, leite em pó e 2 corações de chocolate.",
+                "ACAI-PAR-PERF",
+                "/store-assets/acai/par-perfeito.jpg",
+                isFeatured: false,
+                isNew: true,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 24.90m, 10.80m, 300m, 3, "Edição especial"),
+                    ("500 ml", 31.90m, 14.30m, 500m, 4, "Edição especial"),
+                    ("700 ml", 38.90m, 17.80m, 700m, 5, "Edição especial")
+                ]),
+
+            CreateAcaiItem(
+                catPremium.Id,
+                "Doce Tentação",
+                22.90m,
+                "Açaí cremoso com creme de avelã, bombom Sonho de Valsa picado, morangos frescos e Leite Ninho em pó.",
+                "ACAI-DOCE-TENT",
+                "/store-assets/acai/doce-tentacao.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 2.00m,
+                [
+                    ("300 ml", 22.90m, 9.60m, 300m, 3, "2 camadas"),
+                    ("500 ml", 29.90m, 13.10m, 500m, 4, "3 camadas"),
+                    ("700 ml", 37.90m, 16.90m, 700m, 5, "3 camadas")
+                ]),
+
+            // 4. Explosão Kids
+            CreateAcaiItem(
+                catKids.Id,
+                "Kids Fini",
+                15.90m,
+                "Açaí tradicional cremoso intercalado com chocobol crocante, mix Fini picado e cobertura sabor Fini.",
+                "ACAI-KIDS-FINI",
+                "/store-assets/acai/kids-fini.jpg",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 0m,
+                [("250 ml", 15.90m, 7.10m, 250m, 3, "Copo Kids 250 ml")]),
+
+            CreateAcaiItem(
+                catKids.Id,
+                "Kids Moranguinho",
+                15.90m,
+                "Açaí tradicional cremoso em camadas com creme de Ninho, morangos frescos fatiados e confetes coloridos.",
+                "ACAI-KIDS-MOR",
+                "/store-assets/acai/kids-moranguinho.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("250 ml", 15.90m, 7.59m, 250m, 3, "Copo Kids 250 ml")]),
+
+            CreateAcaiItem(
+                catKids.Id,
+                "Kids Choco",
+                15.90m,
+                "Açaí tradicional cremoso com brigadeiro, chocolate granulado e Bis picadinho.",
+                "ACAI-KIDS-CHOCO",
+                "/store-assets/acai/kids-choco.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("250 ml", 15.90m, 7.35m, 250m, 3, "Copo Kids 250 ml")]),
+
+            // 5. Linha Leve & Fitness
+            CreateAcaiItem(
+                catFitness.Id,
+                "Açaí Fitness Tropical",
+                22.90m,
+                "Açaí zero açúcar leve com banana fatiada, morangos frescos, sementes de chia e mel para decoração.",
+                "ACAI-FIT-TROP",
+                "/store-assets/acai/fitness-tropical.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 22.90m, 10.90m, 300m, 3, "Zero açúcar"),
+                    ("500 ml", 30.90m, 15.40m, 500m, 4, "Zero açúcar")
+                ]),
+
+            CreateAcaiItem(
+                catFitness.Id,
+                "Açaí Fitness Power",
+                26.90m,
+                "Açaí zero açúcar, dose de Whey Protein, rodelas de banana, morangos frescos, sementes de chia e pasta de amendoim sem açúcar.",
+                "ACAI-FIT-PWR",
+                "/store-assets/acai/fitness-power.jpg",
+                isFeatured: false,
+                isNew: true,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 26.90m, 14.20m, 300m, 3, "Com Whey Protein"),
+                    ("500 ml", 35.90m, 19.80m, 500m, 4, "Dose reforçada de Whey")
+                ]),
+
+            // 6. Explosão Natural
+            CreateAcaiItem(
+                catNatural.Id,
+                "100% Açaí",
+                16.90m,
+                "Açaí pura polpa, cremoso e encorpado, sem acompanhamentos. Ideal para quem aprecia o sabor original.",
+                "ACAI-100",
+                "/store-assets/acai/puro-100.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 16.90m, 6.20m, 300m, 2, "Pura polpa"),
+                    ("500 ml", 22.90m, 9.10m, 500m, 3, "Pura polpa"),
+                    ("700 ml", 28.90m, 12.30m, 700m, 4, "Pura polpa")
+                ]),
+
+            CreateAcaiItem(
+                catNatural.Id,
+                "Açaí Mix-Fruta",
+                20.90m,
+                "Mix completo de frutas frescas no açaí: manga, morango, banana, uva sem caroço, kiwi e leite condensado.",
+                "ACAI-MIX-FRUTA",
+                "/store-assets/acai/mix-fruta.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [
+                    ("300 ml", 20.90m, 8.90m, 300m, 3, "Mix de frutas frescas"),
+                    ("500 ml", 26.90m, 12.10m, 500m, 4, "Mix de frutas frescas"),
+                    ("700 ml", 33.90m, 15.80m, 700m, 5, "Mix de frutas frescas")
+                ]),
+
+            // 7. Açaí na Garrafa (300 ml)
+            CreateAcaiItem(
+                catGarrafa.Id,
+                "Açaí Tradicional na Garrafa",
+                16.90m,
+                "Açaí tradicional cremoso batido com leite condensado, pronto para abrir e aproveitar a qualquer hora.",
+                "GAR-TRAD-300",
+                "/store-assets/acai/garrafa-tradicional.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("300 ml", 16.90m, 6.10m, 300m, 0, "Garrafa 300 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catGarrafa.Id,
+                "Açaí na Garrafa – Morango",
+                18.90m,
+                "Açaí cremoso batido com creme de morango natural e polpa da fruta na garrafa de 300 ml.",
+                "GAR-MOR-300",
+                "/store-assets/acai/garrafa-morango.jpg",
+                isFeatured: true,
+                isNew: true,
+                discountAmount: 0m,
+                [("300 ml", 18.90m, 7.20m, 300m, 0, "Garrafa 300 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catGarrafa.Id,
+                "Açaí na Garrafa – Maracujá",
+                17.90m,
+                "Açaí cremoso batido com mousse de maracujá natural e polpa da fruta na garrafa de 300 ml.",
+                "GAR-MAR-300",
+                "/store-assets/acai/garrafa-maracuja.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("300 ml", 17.90m, 6.80m, 300m, 0, "Garrafa 300 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catGarrafa.Id,
+                "Açaí na Garrafa – Paçoca",
+                17.90m,
+                "Açaí cremoso com creme de amendoim e paçoca na garrafa de 300 ml.",
+                "GAR-PAC-300",
+                "/store-assets/acai/garrafa-pacoca.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("300 ml", 17.90m, 6.70m, 300m, 0, "Garrafa 300 ml")],
+                attachFreeToppings: false),
+
+            // 8. Explosão Família (Potes)
+            CreateAcaiItem(
+                catFamilia.Id,
+                "Açaí Puro com Açúcar (1 Litro)",
+                36.90m,
+                "Pote família de 1 litro (900 g) de açaí tradicional puro com açúcar, cremoso e pronto para servir em casa.",
+                "POTE-1L",
+                "/store-assets/acai/puro-100.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("1 Litro", 36.90m, 16.50m, 1000m, 0, "Pote 1 Litro (900g)")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catFamilia.Id,
+                "Açaí Puro com Açúcar (2 Litros)",
+                64.90m,
+                "Pote econômico família de 2 litros (1.800 g) de açaí tradicional puro com açúcar, ideal para compartilhar.",
+                "POTE-2L",
+                "/store-assets/acai/puro-100.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 5.00m,
+                [("2 Litros", 64.90m, 32.00m, 2000m, 0, "Pote 2 Litros (1,8kg)")],
+                attachFreeToppings: false),
+
+            // 9. Mousses & Sobremesas (110 ml)
+            CreateAcaiItem(
+                catMousses.Id,
+                "Mousse Ninho Trufado",
+                9.90m,
+                "Mousse cremoso de Leite Ninho finalizado com camada generosa de Ninho em pó no pote de 110 ml.",
+                "MOUSSE-NINHO",
+                "/store-assets/acai/mousse-tradicional.png",
+                isFeatured: true,
+                isNew: false,
+                discountAmount: 0m,
+                [("110 ml", 9.90m, 4.90m, 110m, 0, "Pote individual 110 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catMousses.Id,
+                "Mousse de Morango",
+                8.90m,
+                "Mousse cremoso de morango servido no pote individual de 110 ml. Ótimo como sobremesa ou acompanhamento.",
+                "MOUSSE-MOR",
+                "/store-assets/acai/mousse-morango.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 1.00m,
+                [("110 ml", 8.90m, 5.10m, 110m, 0, "Pote individual 110 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catMousses.Id,
+                "Mousse de Maracujá",
+                7.90m,
+                "Mousse cremoso de maracujá servido no pote individual de 110 ml.",
+                "MOUSSE-MAR",
+                "/store-assets/acai/mousse-maracuja.jpg",
+                isFeatured: false,
+                isNew: true,
+                discountAmount: 0m,
+                [("110 ml", 7.90m, 4.50m, 110m, 0, "Pote individual 110 ml")],
+                attachFreeToppings: false),
+
+            CreateAcaiItem(
+                catMousses.Id,
+                "Mousse de Paçoca",
+                7.90m,
+                "Mousse cremoso de paçoca servido no pote individual de 110 ml.",
+                "MOUSSE-PAC",
+                "/store-assets/acai/mousse-pacoca.jpg",
+                isFeatured: false,
+                isNew: false,
+                discountAmount: 0m,
+                [("110 ml", 7.90m, 4.10m, 110m, 0, "Pote individual 110 ml")],
+                attachFreeToppings: false)
+        };
+
+        foreach (var p in products)
+        {
+            await _productRepo.AddAsync(p, ct);
+        }
         await _categoryRepo.SaveChangesAsync(ct);
 
-        return Result.Success(new AppliedSegmentTemplateSummary("acaiteria", 2, 2, 4));
+        return Result.Success(new AppliedSegmentTemplateSummary("acaiteria", 9, products.Count, 5));
     }
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyPizzariaAsync(Guid tenantId, CancellationToken ct)
@@ -540,6 +987,29 @@ public sealed class SegmentCatalogTemplateService
         CreateGroupWithReplaces(
             tenantId, name, type, minSelections, maxSelections, isRequired, displayOrder, kind, freeAllowance, countingMode, categoryTag,
             options.Select(o => (o.Name, o.Price, o.MaxQty, o.Desc, (string?)null)).ToArray());
+
+    private static ModifierGroup CreateGroupWithCost(
+        Guid tenantId,
+        string name,
+        ModifierGroupType type,
+        int minSelections,
+        int maxSelections,
+        bool isRequired,
+        int displayOrder,
+        ModifierGroupKind kind,
+        int freeAllowance,
+        OptionCountingMode countingMode,
+        string categoryTag,
+        (string Name, decimal Price, decimal CostPrice, int MaxQty, string? Desc)[] options)
+    {
+        var grp = ModifierGroup.Create(tenantId, name, type, minSelections, maxSelections, isRequired, displayOrder, kind, freeAllowance, countingMode, categoryTag).Value;
+        var order = 0;
+        foreach (var opt in options)
+        {
+            grp.AddOption(opt.Name, Money.Create(opt.Price).Value, opt.MaxQty, order++, opt.Desc, null, 0m, null, 0m, null, null, Money.Create(opt.CostPrice).Value);
+        }
+        return grp;
+    }
 
     private static ModifierGroup CreateGroupWithReplaces(
         Guid tenantId,
