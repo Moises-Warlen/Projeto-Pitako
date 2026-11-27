@@ -2,8 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PitakoBrandShell } from "@/components/PitakoBrandShell";
 import { apiFetch, loadSession } from "@/lib/api";
+
+const MASTER_TOAST_KEY = "pitako_master_toast";
+const MASTER_TAB_KEY = "pitako_master_active_tab";
+const TOAST_DURATION_MS = 3000;
+
+interface FloatingToast {
+  id: number;
+  message: string;
+  kind: "success" | "error";
+  durationMs: number;
+}
 
 interface PlanItem {
   id: string;
@@ -88,6 +100,7 @@ const ALL_MODULES = [
 ];
 
 export default function MasterPanelPage() {
+  const router = useRouter();
   const [plans, setPlans] = useState<PlanItem[]>([]);
   const [overview, setOverview] = useState<MasterOverviewResponse>({
     customers: [],
@@ -97,7 +110,7 @@ export default function MasterPanelPage() {
   const [indicators, setIndicators] = useState<MasterIndicatorsDto | null>(null);
   const [sweepingBilling, setSweepingBilling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [quickModal, setQuickModal] = useState<string | null>(null);
+  const [quickToast, setQuickToast] = useState<FloatingToast | null>(null);
   const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"stores" | "segments" | "customers" | "plans" | "emails">("stores");
 
@@ -112,17 +125,73 @@ export default function MasterPanelPage() {
   const [smtpWebBase, setSmtpWebBase] = useState("http://localhost:3000");
   const [emailOutbox, setEmailOutbox] = useState<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>([]);
 
-  useEffect(() => {
-    if (!feedback) return;
-    const t = setTimeout(() => setFeedback(null), 2000);
-    return () => clearTimeout(t);
-  }, [feedback]);
+  function notifyAction(message: string, kind: "success" | "error" = "success") {
+    setFeedback(message);
+    setQuickToast({ id: Date.now(), message, kind, durationMs: TOAST_DURATION_MS });
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(
+          MASTER_TOAST_KEY,
+          JSON.stringify({ message, kind, expiresAt: Date.now() + TOAST_DURATION_MS })
+        );
+      } catch {
+        // Ignora falha de storage
+      }
+    }
+  }
+
+  function changeActiveTab(next: "stores" | "segments" | "customers" | "plans" | "emails") {
+    setActiveTab(next);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(MASTER_TAB_KEY, next);
+      } catch {
+        // Ignora falha de storage
+      }
+    }
+  }
 
   useEffect(() => {
-    if (!quickModal) return;
-    const t = setTimeout(() => setQuickModal(null), 2000);
+    if (typeof window === "undefined") return;
+    try {
+      const savedTab = window.sessionStorage.getItem(MASTER_TAB_KEY);
+      if (savedTab === "stores" || savedTab === "segments" || savedTab === "customers" || savedTab === "plans" || savedTab === "emails") {
+        setActiveTab(savedTab);
+      }
+      const rawToast = window.sessionStorage.getItem(MASTER_TOAST_KEY);
+      if (rawToast) {
+        const parsed = JSON.parse(rawToast) as { message?: string; kind?: "success" | "error"; expiresAt?: number };
+        const remaining = (parsed.expiresAt ?? 0) - Date.now();
+        if (parsed.message && remaining > 50) {
+          const kind = parsed.kind === "error" ? "error" : "success";
+          setFeedback(parsed.message);
+          setQuickToast({ id: Date.now(), message: parsed.message, kind, durationMs: Math.min(TOAST_DURATION_MS, remaining) });
+        } else {
+          window.sessionStorage.removeItem(MASTER_TOAST_KEY);
+        }
+      }
+    } catch {
+      // Ignora JSON inválido
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!quickToast) return;
+    const t = setTimeout(() => {
+      setQuickToast(null);
+      setFeedback(null);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(MASTER_TOAST_KEY);
+      }
+    }, quickToast.durationMs);
     return () => clearTimeout(t);
-  }, [quickModal]);
+  }, [quickToast]);
+
+  useEffect(() => {
+    if (!feedback || quickToast) return;
+    const t = setTimeout(() => setFeedback(null), TOAST_DURATION_MS);
+    return () => clearTimeout(t);
+  }, [feedback, quickToast]);
 
   function copyPortalLink(slug: string) {
     const url = typeof window !== "undefined" ? `${window.location.origin}/portal/${slug}` : `/portal/${slug}`;
@@ -253,7 +322,7 @@ export default function MasterPanelPage() {
     setStoreCnpj(est.cnpjDigits);
     setStoreSegment(est.segmentCode);
     setStoreStatus(est.status === "Trial" ? "1" : est.status === "Suspended" ? "3" : "2");
-    setActiveTab("stores");
+    changeActiveTab("stores");
   }
 
   function resetStoreForm() {
@@ -291,7 +360,7 @@ export default function MasterPanelPage() {
         session.accessToken
       );
       if (!res.ok) {
-        setFeedback(res.errorMessage || "Erro ao atualizar loja.");
+        notifyAction(res.errorMessage || "Erro ao atualizar loja.", "error");
         return;
       }
 
@@ -310,20 +379,25 @@ export default function MasterPanelPage() {
           session.accessToken
         );
         if (!adminRes.ok) {
-          setFeedback(`Loja '${storeTradeName}' atualizada, mas erro ao criar usuário: ${adminRes.errorMessage}`);
-          refreshAll();
+          await refreshAll();
+          router.refresh();
+          notifyAction(`Loja '${storeTradeName}' atualizada, mas erro ao criar usuário: ${adminRes.errorMessage}`, "error");
           return;
         }
         setPortalCreatedSlug(cleanSlug);
-        setFeedback(`Loja '${storeTradeName}' atualizada e usuário '${storeAdminEmail}' criado! Portal: /portal/${cleanSlug}`);
+        resetStoreForm();
+        await refreshAll();
+        router.refresh();
+        notifyAction(`Loja '${storeTradeName}' atualizada e usuário '${storeAdminEmail}' criado! Portal: /portal/${cleanSlug}`);
+        return;
       } else {
         setPortalCreatedSlug(cleanSlug);
-        setFeedback(`Loja '${storeTradeName}' atualizada! Portal: /portal/${cleanSlug}`);
+        resetStoreForm();
+        await refreshAll();
+        router.refresh();
+        notifyAction(`Loja '${storeTradeName}' atualizada! Portal: /portal/${cleanSlug}`);
+        return;
       }
-
-      resetStoreForm();
-      refreshAll();
-      return;
     }
 
     const effectiveCustomerId = overview.customers.some((c) => c.id === storeCustomerId)
@@ -334,7 +408,7 @@ export default function MasterPanelPage() {
       : (overview.segments[0]?.code ?? "acaiteria");
 
     if (!effectiveCustomerId) {
-      setFeedback("Cadastre um Cliente/Dono primeiro na aba 3. Clientes / Donos.");
+      notifyAction("Cadastre um Cliente/Dono primeiro na aba 3. Clientes / Donos.", "error");
       return;
     }
 
@@ -355,7 +429,7 @@ export default function MasterPanelPage() {
     );
 
     if (!estRes.ok || !estRes.data) {
-      setFeedback(estRes.errorMessage || "Erro ao criar loja.");
+      notifyAction(estRes.errorMessage || "Erro ao criar loja.", "error");
       return;
     }
 
@@ -375,19 +449,22 @@ export default function MasterPanelPage() {
       );
       if (!adminRes.ok) {
         setPortalCreatedSlug(cleanSlug);
-        setFeedback(
-          `Loja '${cleanSlug}' criada, mas o login '${storeAdminEmail}' falhou: ${adminRes.errorMessage}. Clique em Editar na loja para criar o usuário.`
-        );
         resetStoreForm();
-        refreshAll();
+        await refreshAll();
+        router.refresh();
+        notifyAction(
+          `Loja '${cleanSlug}' criada, mas o login '${storeAdminEmail}' falhou: ${adminRes.errorMessage}. Clique em Editar na loja para criar o usuário.`,
+          "error"
+        );
         return;
       }
     }
 
     setPortalCreatedSlug(cleanSlug);
-    setFeedback(`Loja '${cleanSlug}' e login '${storeAdminEmail}' criados! Link do Portal do Cliente: /portal/${cleanSlug}`);
     resetStoreForm();
-    refreshAll();
+    await refreshAll();
+    router.refresh();
+    notifyAction(`Loja '${cleanSlug}' e login '${storeAdminEmail}' criados! Link do Portal do Cliente: /portal/${cleanSlug}`);
   }
 
   async function handleDeleteStore(est: EstablishmentRow) {
@@ -396,11 +473,12 @@ export default function MasterPanelPage() {
     if (!session) return;
     const res = await apiFetch(`/api/v1/master/establishments/${est.id}`, { method: "DELETE" }, session.accessToken);
     if (res.ok) {
-      setFeedback(`Loja '${est.tradeName}' excluída.`);
       if (editingStoreId === est.id) resetStoreForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(`Loja '${est.tradeName}' excluída com sucesso!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao excluir loja.");
+      notifyAction(res.errorMessage || "Erro ao excluir loja.", "error");
     }
   }
 
@@ -413,7 +491,7 @@ export default function MasterPanelPage() {
     setSegWeight(seg.supportsWeightScale);
     setSegTables(seg.supportsTableService);
     setSegFractional(seg.supportsFractionalItems);
-    setActiveTab("segments");
+    changeActiveTab("segments");
   }
 
   function resetSegmentForm() {
@@ -452,11 +530,14 @@ export default function MasterPanelPage() {
     );
 
     if (res.ok) {
-      setFeedback(`Modalidade '${segName}' salva!`);
+      const savedName = segName;
+      const wasEdit = Boolean(editingSegCode);
       resetSegmentForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(wasEdit ? `Modalidade '${savedName}' atualizada!` : `Modalidade '${savedName}' criada!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao salvar modalidade.");
+      notifyAction(res.errorMessage || "Erro ao salvar modalidade.", "error");
     }
   }
 
@@ -466,11 +547,12 @@ export default function MasterPanelPage() {
     if (!session) return;
     const res = await apiFetch(`/api/v1/master/segments/${encodeURIComponent(seg.code)}`, { method: "DELETE" }, session.accessToken);
     if (res.ok) {
-      setFeedback(`Modalidade '${seg.displayName}' removida.`);
       if (editingSegCode === seg.code) resetSegmentForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(`Modalidade '${seg.displayName}' removida!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao excluir modalidade.");
+      notifyAction(res.errorMessage || "Erro ao excluir modalidade.", "error");
     }
   }
 
@@ -483,7 +565,7 @@ export default function MasterPanelPage() {
     setCustomerPhone(c.phone || "");
     if (c.planId) setCustomerPlanId(c.planId);
     setCustomerStatus(c.status === "Suspended" ? "2" : c.status === "Cancelled" ? "3" : "1");
-    setActiveTab("customers");
+    changeActiveTab("customers");
   }
 
   function resetCustomerForm() {
@@ -521,17 +603,19 @@ export default function MasterPanelPage() {
         session.accessToken
       );
       if (res.ok) {
-        setFeedback(`Cliente '${customerName}' atualizado!`);
+        const savedName = customerName;
         resetCustomerForm();
-        refreshAll();
+        await refreshAll();
+        router.refresh();
+        notifyAction(`Cliente / Dono '${savedName}' atualizado!`);
       } else {
-        setFeedback(res.errorMessage || "Erro ao editar cliente.");
+        notifyAction(res.errorMessage || "Erro ao editar cliente.", "error");
       }
       return;
     }
 
     if (!effectivePlanId) {
-      setFeedback("Crie um plano ativo na aba 4. Planos & Módulos antes de cadastrar o cliente.");
+      notifyAction("Crie um plano ativo na aba 4. Planos & Módulos antes de cadastrar o cliente.", "error");
       return;
     }
 
@@ -552,13 +636,14 @@ export default function MasterPanelPage() {
     );
 
     if (res.ok && res.data) {
+      const savedName = customerName;
       setStoreCustomerId(res.data.customerId);
-      setFeedback("Cliente cadastrado com sucesso!");
-      setQuickModal("Cliente cadastrado com sucesso! E-mail de boas-vindas enviado.");
       resetCustomerForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(`Cliente / Dono '${savedName}' cadastrado! E-mail de boas-vindas enviado.`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao cadastrar cliente.");
+      notifyAction(res.errorMessage || "Erro ao cadastrar cliente.", "error");
     }
   }
 
@@ -568,11 +653,12 @@ export default function MasterPanelPage() {
     if (!session) return;
     const res = await apiFetch(`/api/v1/master/customers/${c.id}`, { method: "DELETE" }, session.accessToken);
     if (res.ok) {
-      setFeedback(`Cliente '${c.customerName}' excluído.`);
       if (editingCustomerId === c.id) resetCustomerForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(`Cliente / Dono '${c.customerName}' excluído!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao excluir cliente.");
+      notifyAction(res.errorMessage || "Erro ao excluir cliente.", "error");
     }
   }
 
@@ -586,7 +672,7 @@ export default function MasterPanelPage() {
     setIsUnlimited(p.unlimitedEstablishments);
     setMaxStores(String(p.maxEstablishments ?? 1));
     setSelectedModules(p.modules);
-    setActiveTab("plans");
+    changeActiveTab("plans");
   }
 
   function resetPlanForm() {
@@ -622,11 +708,14 @@ export default function MasterPanelPage() {
     );
 
     if (res.ok) {
-      setFeedback(editingPlanId ? `Plano '${planName}' atualizado!` : `Plano '${planName}' criado!`);
+      const savedName = planName;
+      const wasEdit = Boolean(editingPlanId);
       resetPlanForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(wasEdit ? `Plano '${savedName}' atualizado!` : `Plano '${savedName}' criado!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao salvar plano.");
+      notifyAction(res.errorMessage || "Erro ao salvar plano.", "error");
     }
   }
 
@@ -636,11 +725,12 @@ export default function MasterPanelPage() {
     if (!session) return;
     const res = await apiFetch(`/api/v1/master/plans/${p.id}`, { method: "DELETE" }, session.accessToken);
     if (res.ok) {
-      setFeedback(`Plano '${p.name}' excluído.`);
       if (editingPlanId === p.id) resetPlanForm();
-      refreshAll();
+      await refreshAll();
+      router.refresh();
+      notifyAction(`Plano '${p.name}' excluído!`);
     } else {
-      setFeedback(res.errorMessage || "Erro ao excluir plano.");
+      notifyAction(res.errorMessage || "Erro ao excluir plano.", "error");
     }
   }
 
@@ -655,12 +745,13 @@ export default function MasterPanelPage() {
     );
     setSweepingBilling(false);
     if (res.ok && res.data) {
-      setFeedback(
+      await refreshAll();
+      router.refresh();
+      notifyAction(
         `Varredura concluída: ${res.data.newlyOverdueInvoices} fatura(s) vencida(s), ${res.data.suspendedSubscriptions} assinatura(s) e ${res.data.suspendedStores} loja(s) bloqueada(s).`
       );
-      await refreshAll();
     } else {
-      setFeedback(res.errorMessage || "Erro ao verificar inadimplência.");
+      notifyAction(res.errorMessage || "Erro ao verificar inadimplência.", "error");
     }
   }
 
@@ -741,7 +832,7 @@ export default function MasterPanelPage() {
           <button
             key={t.key}
             type="button"
-            onClick={() => setActiveTab(t.key as typeof activeTab)}
+            onClick={() => changeActiveTab(t.key as typeof activeTab)}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ${
               activeTab === t.key ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
             }`}
@@ -1099,11 +1190,11 @@ export default function MasterPanelPage() {
                   session.accessToken
                 );
                 if (res.ok) {
-                  setFeedback("Configuração SMTP salva!");
-                  setQuickModal("Configuração SMTP salva!");
-                  refreshAll();
+                  await refreshAll();
+                  router.refresh();
+                  notifyAction("Configuração SMTP salva e atualizada!");
                 } else {
-                  setFeedback(res.errorMessage || "Erro ao salvar SMTP.");
+                  notifyAction(res.errorMessage || "Erro ao salvar SMTP.", "error");
                 }
               }}
               className="space-y-3 text-xs"
@@ -1126,9 +1217,28 @@ export default function MasterPanelPage() {
         </div>
       )}
 
-      {quickModal && (
-        <div role="status" className="fixed bottom-5 right-5 z-50 rounded-2xl border border-emerald-500/60 bg-emerald-950/95 px-5 py-3.5 text-sm font-bold text-emerald-100 shadow-2xl">
-          {quickModal}
+      {quickToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-5 right-5 z-50 flex max-w-md items-center gap-3 rounded-2xl border px-5 py-3.5 text-sm font-bold shadow-2xl transition-all ${
+            quickToast.kind === "error"
+              ? "border-rose-500/70 bg-rose-950/95 text-rose-100"
+              : "border-emerald-500/70 bg-emerald-950/95 text-emerald-100"
+          }`}
+        >
+          <span>{quickToast.message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setQuickToast(null);
+              if (typeof window !== "undefined") window.sessionStorage.removeItem(MASTER_TOAST_KEY);
+            }}
+            className="rounded px-1.5 py-0.5 text-xs opacity-75 hover:opacity-100"
+            aria-label="Fechar notificação"
+          >
+            ✕
+          </button>
         </div>
       )}
     </PitakoBrandShell>

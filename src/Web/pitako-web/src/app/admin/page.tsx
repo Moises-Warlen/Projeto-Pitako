@@ -2,6 +2,7 @@
 
 import { ExternalLink, Pause, Play } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { StoreBrandShell, StoreBrandTheme } from "@/components/StoreBrandShell";
 import { AdminAcaiConfigDto, AdminAcaiTab, AdminTeamTab } from "@/components/admin/AdminAcaiAndTeamTabs";
@@ -45,7 +46,12 @@ type AdminTabKey =
   | "security"
   | "team";
 
+const ADMIN_TOAST_KEY = "pitako_admin_toast";
+const ADMIN_TAB_KEY = "pitako_admin_active_tab";
+const ADMIN_TOAST_DURATION_MS = 3000;
+
 export default function AdminStorePage() {
+  const router = useRouter();
   const [token, setToken] = useState("");
   const [slug, setSlug] = useState("acai-demo");
   const [segmentCode, setSegmentCode] = useState("acaiteria");
@@ -57,13 +63,67 @@ export default function AdminStorePage() {
   });
   const [tab, setTab] = useState<AdminTabKey>("catalog");
   const [msg, setMsg] = useState<string | null>(null);
+  const [toastNonce, setToastNonce] = useState(0);
+  const [toastDurationMs, setToastDurationMs] = useState(ADMIN_TOAST_DURATION_MS);
   const [isPaused, setIsPaused] = useState(false);
+
+  const notifyAdmin = useCallback((nextMessage: string) => {
+    setMsg(nextMessage);
+    setToastDurationMs(ADMIN_TOAST_DURATION_MS);
+    setToastNonce((prev) => prev + 1);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(
+          ADMIN_TOAST_KEY,
+          JSON.stringify({ message: nextMessage, expiresAt: Date.now() + ADMIN_TOAST_DURATION_MS })
+        );
+      } catch {
+        // Ignora falha de storage
+      }
+    }
+  }, []);
+
+  function changeTab(next: AdminTabKey) {
+    setTab(next);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(ADMIN_TAB_KEY, next);
+      } catch {
+        // Ignora falha de storage
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedTab = window.sessionStorage.getItem(ADMIN_TAB_KEY) as AdminTabKey | null;
+      if (savedTab) setTab(savedTab);
+      const rawToast = window.sessionStorage.getItem(ADMIN_TOAST_KEY);
+      if (rawToast) {
+        const parsed = JSON.parse(rawToast) as { message?: string; expiresAt?: number };
+        const remaining = (parsed.expiresAt ?? 0) - Date.now();
+        if (parsed.message && remaining > 50) {
+          setMsg(parsed.message);
+          setToastDurationMs(Math.min(ADMIN_TOAST_DURATION_MS, remaining));
+          setToastNonce((prev) => prev + 1);
+        } else {
+          window.sessionStorage.removeItem(ADMIN_TOAST_KEY);
+        }
+      }
+    } catch {
+      // Ignora JSON inválido
+    }
+  }, []);
 
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 2500);
+    const t = setTimeout(() => {
+      setMsg(null);
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(ADMIN_TOAST_KEY);
+    }, toastDurationMs);
     return () => clearTimeout(t);
-  }, [msg]);
+  }, [msg, toastNonce, toastDurationMs]);
 
   const [categories, setCategories] = useState<AdminCategoryDto[]>([]);
   const [products, setProducts] = useState<AdminProductDto[]>([]);
@@ -200,6 +260,11 @@ export default function AdminStorePage() {
     void refreshStoreData();
   }, [refreshStoreData]);
 
+  const handleReloadStoreData = useCallback(async () => {
+    await refreshStoreData();
+    router.refresh();
+  }, [refreshStoreData, router]);
+
   async function toggleStoreOpenPause() {
     if (!token) return;
     const nextPaused = !isPaused;
@@ -210,8 +275,8 @@ export default function AdminStorePage() {
     );
     if (res.ok) {
       setIsPaused(nextPaused);
-      setMsg(nextPaused ? "Loja pausada no cardápio digital." : "Loja reaberta para receber pedidos!");
-      await refreshStoreData();
+      notifyAdmin(nextPaused ? "Loja pausada no cardápio digital." : "Loja reaberta para receber pedidos!");
+      await handleReloadStoreData();
     }
   }
 
@@ -296,7 +361,7 @@ export default function AdminStorePage() {
           <button
             key={t.key}
             type="button"
-            onClick={() => setTab(t.key)}
+            onClick={() => changeTab(t.key)}
             style={tab === t.key ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
             className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition ${
               tab === t.key ? "border-transparent shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -322,8 +387,8 @@ export default function AdminStorePage() {
           modifierGroups={modifierGroups}
           techSheetSummaries={techSheetSummaries}
           onOpenTechSheetPdf={(s) => setPdfSheetModal(s)}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
         />
       )}
 
@@ -332,12 +397,12 @@ export default function AdminStorePage() {
           token={token}
           storeTradeName={theme.tradeName}
           prefillMessage={chatPrefill}
-          onNotify={setMsg}
+          onNotify={notifyAdmin}
         />
       )}
 
       {tab === "whatsapp" && (
-        <AdminWhatsAppBotPanel token={token} storeTradeName={theme.tradeName} onNotify={setMsg} />
+        <AdminWhatsAppBotPanel token={token} storeTradeName={theme.tradeName} onNotify={notifyAdmin} />
       )}
 
       {tab === "reports" && (
@@ -350,17 +415,17 @@ export default function AdminStorePage() {
           coupons={coupons}
           onSendInChat={(txt) => {
             setChatPrefill(txt);
-            setTab("chat");
+            changeTab("chat");
           }}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
         />
       )}
 
-      {tab === "printers" && <AdminPrintersPanel token={token} onNotify={setMsg} />}
+      {tab === "printers" && <AdminPrintersPanel token={token} onNotify={notifyAdmin} />}
 
       {tab === "settings" && (
-        <AdminOperationalSettingsPanel token={token} onNotify={setMsg} onReload={refreshStoreData} />
+        <AdminOperationalSettingsPanel token={token} onNotify={notifyAdmin} onReload={handleReloadStoreData} />
       )}
 
       {tab === "security" && <AdminSecurityFirewallPanel token={token} />}
@@ -370,13 +435,13 @@ export default function AdminStorePage() {
           token={token}
           groups={modifierGroups}
           supplies={supplies.map((s) => ({ id: s.id, name: s.name, contentUnitCode: s.contentUnitCode }))}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
         />
       )}
 
       {tab === "acai" && (
-        <AdminAcaiTab token={token} acai={acai} onNotify={setMsg} onReload={refreshStoreData} />
+        <AdminAcaiTab token={token} acai={acai} onNotify={notifyAdmin} onReload={handleReloadStoreData} />
       )}
 
       {tab === "branding" && (
@@ -385,13 +450,13 @@ export default function AdminStorePage() {
           slug={slug}
           initialProfile={storeProfile}
           initialBranding={brandingData}
-          onNotify={setMsg}
-          onReload={refreshStoreData}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
         />
       )}
 
       {tab === "team" && (
-        <AdminTeamTab token={token} team={team} onNotify={setMsg} onReload={refreshStoreData} />
+        <AdminTeamTab token={token} team={team} onNotify={notifyAdmin} onReload={handleReloadStoreData} />
       )}
 
       <AdminTechSheetPdfModal
@@ -404,10 +469,35 @@ export default function AdminStorePage() {
           costPerContentUnit: s.costPerContentUnit
         }))}
         storeTradeName={theme.tradeName}
-        onSaved={refreshStoreData}
-        onNotify={setMsg}
+        onSaved={handleReloadStoreData}
+        onNotify={notifyAdmin}
         onClose={() => setPdfSheetModal(null)}
       />
+
+      {msg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-5 right-5 z-50 flex max-w-md items-center gap-3 rounded-2xl border px-5 py-3.5 text-xs font-extrabold shadow-2xl print:hidden ${
+            /erro|falh|inválid/i.test(msg)
+              ? "border-rose-300 bg-rose-900 text-rose-50"
+              : "border-emerald-300 bg-emerald-900 text-emerald-50"
+          }`}
+        >
+          <span>{msg}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setMsg(null);
+              if (typeof window !== "undefined") window.sessionStorage.removeItem(ADMIN_TOAST_KEY);
+            }}
+            className="rounded px-1.5 py-0.5 text-xs opacity-75 hover:opacity-100"
+            aria-label="Fechar notificação"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </StoreBrandShell>
   );
 }
