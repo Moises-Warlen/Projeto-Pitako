@@ -1,10 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Check, MessageCircle, Power, Store, UtensilsCrossed, Volume2 } from "lucide-react";
+import { Bell, Check, MessageCircle, Power, Radio, Store, UtensilsCrossed, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, loadSession, resolveMediaUrl } from "@/lib/api";
-import { playNewMessageSound, playNewOrderSound, playWaiterCallSound, primeAlertAudio } from "@/lib/soundAlerts";
+import {
+  getOrderAlarmMuted,
+  playContinuousOrderRingPulse,
+  playNewMessageSound,
+  playNewOrderSound,
+  playWaiterCallSound,
+  primeAlertAudio,
+  setOrderAlarmMuted,
+  subscribeOrderAlarmMute
+} from "@/lib/soundAlerts";
+import { usePitakoRealtime } from "@/lib/usePitakoRealtime";
 
 export interface StoreBrandTheme {
   tradeName: string;
@@ -45,6 +55,9 @@ export function StoreBrandShell({
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [statusKnown, setStatusKnown] = useState<boolean>(false);
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
+  const [receivedOrdersCount, setReceivedOrdersCount] = useState<number>(0);
+  const [alarmMuted, setAlarmMuted] = useState<boolean>(false);
+  const [opsToken, setOpsToken] = useState<string>("");
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [pendingWaiterCalls, setPendingWaiterCalls] = useState<
     Array<{ id: string; tableCode: string; callType: string; customerNotes?: string | null; requestedAtUtc: string }>
@@ -59,7 +72,16 @@ export function StoreBrandShell({
   const lastWaiterIdsRef = useRef<string>("");
 
   useEffect(() => {
-    if (!hideOpsNav) primeAlertAudio();
+    if (hideOpsNav) return;
+    primeAlertAudio();
+    setAlarmMuted(getOrderAlarmMuted());
+    return subscribeOrderAlarmMute(setAlarmMuted);
+  }, [hideOpsNav]);
+
+  useEffect(() => {
+    if (hideOpsNav) return;
+    const s = loadSession();
+    if (s && s.scope === "Establishment") setOpsToken(s.accessToken);
   }, [hideOpsNav]);
 
   useEffect(() => {
@@ -75,6 +97,7 @@ export function StoreBrandShell({
 
     const res = await apiFetch<{
       pendingOrdersCount: number;
+      receivedOrdersCount?: number;
       totalOrdersCount: number;
       latestOrderId?: string | null;
       latestOrderNumber?: string | null;
@@ -96,6 +119,7 @@ export function StoreBrandShell({
     if (!res.ok || !res.data) return;
     const d = res.data;
     setPendingOrdersCount(d.pendingOrdersCount);
+    setReceivedOrdersCount(d.receivedOrdersCount ?? 0);
     setUnreadChatCount(d.unreadChatCount);
     setPendingWaiterCalls(d.pendingWaiterCalls || []);
 
@@ -199,9 +223,10 @@ export function StoreBrandShell({
 
     if (ordersRes.ok && Array.isArray(ordersRes.data)) {
       const pending = ordersRes.data.filter(
-        (o) => o.status === "PendingConfirmation" || o.status === "Confirmed" || o.status === "Preparing"
+        (o) => o.status === "Received" || o.status === "Accepted" || o.status === "InPreparation"
       ).length;
       setPendingOrdersCount(pending);
+      setReceivedOrdersCount(ordersRes.data.filter((o) => o.status === "Received").length);
     }
   }, [hideOpsNav, theme]);
 
@@ -209,12 +234,33 @@ export function StoreBrandShell({
     void loadHeaderStatus();
   }, [loadHeaderStatus]);
 
+  const realtimeState = usePitakoRealtime(!hideOpsNav ? opsToken : null, {
+    onOrderUpdated: () => {
+      void pollLiveAlerts();
+    },
+    onWaiterCallUpdated: () => {
+      void pollLiveAlerts();
+    },
+    onWhatsappInboxUpdated: () => {
+      void pollLiveAlerts();
+    }
+  });
+
   useEffect(() => {
     if (hideOpsNav) return;
     void pollLiveAlerts();
-    const id = setInterval(() => void pollLiveAlerts(), 3000);
+    const id = setInterval(() => void pollLiveAlerts(), 4000);
     return () => clearInterval(id);
   }, [hideOpsNav, pollLiveAlerts]);
+
+  useEffect(() => {
+    if (hideOpsNav || receivedOrdersCount <= 0 || alarmMuted) return;
+    playContinuousOrderRingPulse();
+    const ringId = setInterval(() => {
+      playContinuousOrderRingPulse();
+    }, 3600);
+    return () => clearInterval(ringId);
+  }, [hideOpsNav, receivedOrdersCount, alarmMuted]);
 
   async function toggleStoreOpenFromHeader() {
     const session = loadSession();
@@ -306,7 +352,9 @@ export function StoreBrandShell({
               <Link
                 href="/pedidos"
                 title="Pedidos pendentes no Kanban"
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-white transition hover:bg-white/25"
+                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-white transition ${
+                  receivedOrdersCount > 0 ? "animate-pulse bg-amber-500 text-slate-950" : "bg-white/15 hover:bg-white/25"
+                }`}
               >
                 <Bell className="h-4 w-4" />
                 {pendingOrdersCount > 0 && (
@@ -315,6 +363,29 @@ export function StoreBrandShell({
                   </span>
                 )}
               </Link>
+
+              {receivedOrdersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOrderAlarmMuted(!alarmMuted)}
+                  title={alarmMuted ? "Reativar alarme sonoro de novos pedidos" : "Silenciar campainha de novos pedidos"}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold transition ${
+                    alarmMuted ? "bg-slate-800 text-slate-300" : "bg-rose-600 text-white"
+                  }`}
+                >
+                  {alarmMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                  {receivedOrdersCount} {receivedOrdersCount === 1 ? "Novo" : "Novos"}
+                </button>
+              )}
+
+              {realtimeState === "connected" && (
+                <span
+                  title="Conectado em tempo real via SignalR"
+                  className="hidden items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-100 sm:inline-flex"
+                >
+                  <Radio className="h-3 w-3" /> Ao Vivo
+                </span>
+              )}
 
               <Link
                 href="/admin"

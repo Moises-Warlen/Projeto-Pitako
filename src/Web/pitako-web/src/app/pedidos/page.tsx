@@ -1,5 +1,6 @@
 "use client";
 
+import { BellRing, Printer, Radio, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StoreBrandShell } from "@/components/StoreBrandShell";
@@ -8,7 +9,15 @@ import {
   DeliveryRoutesModal,
   PedidoOrderItem,
 } from "@/components/pedidos/DeliveryRoutesModal";
+import { ThermalComandaModal } from "@/components/pedidos/ThermalComandaModal";
 import { apiFetch, loadSession } from "@/lib/api";
+import {
+  getOrderAlarmMuted,
+  playContinuousOrderRingPulse,
+  setOrderAlarmMuted,
+  subscribeOrderAlarmMute
+} from "@/lib/soundAlerts";
+import { usePitakoRealtime } from "@/lib/usePitakoRealtime";
 
 interface FullOrderDto extends PedidoOrderItem {
   customerOrderCount?: number;
@@ -74,6 +83,8 @@ export default function OrdersKanbanPage() {
   >("ALL");
 
   const [routesOpen, setRoutesOpen] = useState(false);
+  const [printState, setPrintState] = useState<{ orderId: string; width: 58 | 80 } | null>(null);
+  const [alarmMuted, setAlarmMuted] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -123,11 +134,23 @@ export default function OrdersKanbanPage() {
     setLoading(false);
   }, []);
 
+  const realtimeState = usePitakoRealtime(token || null, {
+    onOrderUpdated: () => {
+      void loadBoardData();
+    }
+  });
+
+  useEffect(() => {
+    setAlarmMuted(getOrderAlarmMuted());
+    return subscribeOrderAlarmMute(setAlarmMuted);
+  }, []);
+
   useEffect(() => {
     void loadBoardData();
-    const id = setInterval(() => void loadBoardData(), 5000);
+    const pollMs = realtimeState === "connected" ? 15000 : 4000;
+    const id = setInterval(() => void loadBoardData(), pollMs);
     return () => clearInterval(id);
-  }, [loadBoardData]);
+  }, [loadBoardData, realtimeState]);
 
   useEffect(() => {
     if (!msg || !token) return;
@@ -216,7 +239,7 @@ export default function OrdersKanbanPage() {
     }
   }
 
-  function nextStepFor(statusCode: number): { next: number; label: string } | null {
+  function nextStepFor(statusCode: number, fulfillmentMode: string): { next: number; label: string } | null {
     switch (statusCode) {
       case 1:
         return { next: 2, label: "Aceitar Pedido" };
@@ -225,7 +248,9 @@ export default function OrdersKanbanPage() {
       case 3:
         return { next: 4, label: "Marcar Pronto" };
       case 4:
-        return { next: 5, label: "Despachar Entrega" };
+        return fulfillmentMode === "Delivery"
+          ? { next: 5, label: "Despachar Entrega" }
+          : { next: 6, label: "Entregar / Concluir" };
       case 5:
         return { next: 6, label: "Concluir" };
       default:
@@ -233,18 +258,95 @@ export default function OrdersKanbanPage() {
     }
   }
 
+  const pendingAcceptanceOrders = useMemo(
+    () => orders.filter((o) => o.statusCode === 1),
+    [orders]
+  );
+
+  async function acceptAllPendingOrders() {
+    if (!token || pendingAcceptanceOrders.length === 0) return;
+    await Promise.all(
+      pendingAcceptanceOrders.map((o) =>
+        apiFetch(`/api/v1/orders/${o.id}/status`, { method: "POST", body: JSON.stringify({ nextStatus: 2, reason: "Aceite em lote no Gestor de Pedidos" }) }, token)
+      )
+    );
+    setMsg({ type: "ok", text: `${pendingAcceptanceOrders.length} pedido(s) aceito(s)!` });
+    await loadBoardData();
+  }
+
   return (
     <StoreBrandShell activeSection="/pedidos">
+      {/* Banner Urgente de Campainha Contínua iFood para Novos Pedidos */}
+      {token && pendingAcceptanceOrders.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-xs text-amber-950 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-white">
+              <BellRing className="h-4 w-4 animate-bounce" />
+            </span>
+            <div>
+              <p className="text-sm font-extrabold">
+                {pendingAcceptanceOrders.length} pedido(s) novo(s) aguardando aceite!
+              </p>
+              <p className="text-[11px] text-amber-900">
+                {alarmMuted
+                  ? "Alarme sonoro silenciado manualmente neste terminal."
+                  : "Alerta sonoro contínuo ativo até você aceitar ou cancelar os novos pedidos."}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void acceptAllPendingOrders()}
+              className="rounded-xl bg-emerald-600 px-3.5 py-2 font-extrabold text-white shadow-sm hover:bg-emerald-700"
+            >
+              Aceitar Todos Agora ({pendingAcceptanceOrders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderAlarmMuted(!alarmMuted)}
+              className={`inline-flex items-center gap-1 rounded-xl border px-3 py-2 font-bold ${
+                alarmMuted ? "border-emerald-300 bg-white text-emerald-800" : "border-rose-300 bg-rose-100 text-rose-900"
+              }`}
+            >
+              {alarmMuted ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+              {alarmMuted ? "Reativar Som" : "Silenciar Alarme"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header & Top Action Filters */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Painel de Pedidos (Kanban KDS & Despacho)</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900">Gestor de Pedidos (Tempo Real SignalR & KDS)</h1>
+            {token && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold ${
+                  realtimeState === "connected"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                <Radio className="h-3 w-3" />
+                {realtimeState === "connected" ? "SignalR Ao Vivo" : "Sincronizando..."}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
-            Operação ao vivo, visão completa em 7 colunas, confirmação de pagamento PIX/Cartão/Dinheiro e otimização de rotas GPS.
+            Recebimento em tempo real, campainha contínua até o aceite, comandas 58mm/80mm e rotas GPS.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => playContinuousOrderRingPulse()}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          >
+            <Volume2 className="h-3.5 w-3.5" /> Testar Campainha
+          </button>
           <select
             aria-label="Status Pedidos"
             value={statusFilter}
@@ -379,7 +481,7 @@ export default function OrdersKanbanPage() {
               ) : (
                 <div className="space-y-2.5">
                   {cards.map((o) => {
-                    const action = nextStepFor(o.statusCode);
+                    const action = nextStepFor(o.statusCode, o.fulfillmentMode);
                     return (
                       <article
                         key={o.id}
@@ -455,7 +557,7 @@ export default function OrdersKanbanPage() {
                           )}
                         </div>
 
-                        <div className="mt-2.5 flex items-center gap-1.5">
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                           {action && (
                             <button
                               onClick={() => void handleTransitionStatus(o.id, action.next)}
@@ -464,6 +566,22 @@ export default function OrdersKanbanPage() {
                               {action.label}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            title="Imprimir comanda térmica 80mm"
+                            onClick={() => setPrintState({ orderId: o.id, width: 80 })}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100"
+                          >
+                            <Printer className="h-3 w-3" /> 80mm
+                          </button>
+                          <button
+                            type="button"
+                            title="Imprimir comanda térmica 58mm"
+                            onClick={() => setPrintState({ orderId: o.id, width: 58 })}
+                            className="rounded-lg border border-slate-300 bg-white px-1.5 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100"
+                          >
+                            58mm
+                          </button>
                           {o.statusCode < 6 && (
                             <button
                               onClick={() =>
@@ -496,6 +614,14 @@ export default function OrdersKanbanPage() {
         originLng={originCoords.originLongitude}
         token={token}
         onRoutesGenerated={loadBoardData}
+      />
+
+      <ThermalComandaModal
+        open={Boolean(printState)}
+        orderId={printState?.orderId ?? null}
+        initialWidthMm={printState?.width ?? 80}
+        token={token}
+        onClose={() => setPrintState(null)}
       />
     </StoreBrandShell>
   );

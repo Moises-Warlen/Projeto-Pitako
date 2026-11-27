@@ -798,6 +798,120 @@ public static partial class PitakoStoreSuiteEndpoints
                 previewTicketText = text
             });
         });
+
+        v1.MapPost("/orders/{id:guid}/print-ticket", async (
+            Guid id,
+            int? paperWidthMm,
+            string? sector,
+            ApiSecurityGuard guard,
+            IOrderRepository orderRepo,
+            IPrinterProfileRepository printerRepo,
+            IStorePrintIdentityProvider identityProvider,
+            IThermalPrinterTransport transport,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Orders, ct);
+            if (err is not null) return err;
+
+            var order = await orderRepo.FindByIdAsync(id, ct);
+            if (order is null || order.TenantId != user!.TenantId)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Order.NotFound", "Pedido não encontrado."));
+
+            var idRes = await identityProvider.GetStorePrintIdentityAsync(user.TenantId!.Value, ct);
+            if (idRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(idRes.Error);
+
+            var widthMm = paperWidthMm == 58 ? 58 : 80;
+            var cols = widthMm == 58 ? 32 : 48;
+            var sec = Enum.TryParse<ProductionSectorType>(sector, true, out var parsedSec)
+                ? parsedSec
+                : ProductionSectorType.Kitchen;
+            var docKind = sec == ProductionSectorType.Cashier
+                ? PrintDocumentKind.OrderReceiptNonFiscal
+                : order.FulfillmentMode == FulfillmentMode.Delivery
+                    ? PrintDocumentKind.ProductionKitchenTicket
+                    : PrintDocumentKind.CounterPickupConference;
+
+            var fulfillmentLabel = order.FulfillmentMode switch
+            {
+                FulfillmentMode.Delivery => "Delivery",
+                FulfillmentMode.CounterPickup => "Retirada Balcão",
+                _ => "Mesa / Salão"
+            };
+
+            var ticketLines = order.Items.Select(i => new TicketLineInput(
+                i.ItemTitle,
+                i.Quantity,
+                string.IsNullOrWhiteSpace(i.CustomizationSummaryText) ? "Padrão" : i.CustomizationSummaryText,
+                i.CustomerNotes,
+                i.LineSubtotal.Amount)).ToList();
+
+            var payload = new ThermalTicketPayloadInput(
+                sec,
+                docKind,
+                order.OrderNumber,
+                $"{order.Channel} ({fulfillmentLabel})",
+                string.IsNullOrWhiteSpace(order.CustomerName) ? "Consumidor" : order.CustomerName,
+                order.FulfillmentMode == FulfillmentMode.DineIn ? "Mesa / Salão" : null,
+                user.FullName,
+                order.PlacedAtUtc,
+                ticketLines,
+                order.TotalAmount.Amount,
+                1);
+
+            var (renderedText, escPosBase64) = ThermalTicketRenderer.Render(idRes.Value, payload, cols);
+            var divider = new string('-', cols);
+            var extraBlock = new StringBuilder(renderedText);
+            extraBlock.AppendLine($"Pagamento: {order.PaymentMethod} ({(order.IsPaymentConfirmed ? "CONFIRMADO" : "COBRAR")})");
+            if (!string.IsNullOrWhiteSpace(order.CustomerPhone))
+                extraBlock.AppendLine($"Fone: {order.CustomerPhone}");
+            if (!string.IsNullOrWhiteSpace(order.DeliveryAddressSummary))
+                extraBlock.AppendLine($"Entrega: {order.DeliveryAddressSummary}");
+            if (order.NetDeliveryFee.Amount > 0m)
+                extraBlock.AppendLine($"Frete: R$ {order.NetDeliveryFee.Amount:N2}");
+            if (order.ItemsDiscount.Amount > 0m)
+                extraBlock.AppendLine($"Desconto: -R$ {order.ItemsDiscount.Amount:N2}");
+            extraBlock.AppendLine(divider);
+            extraBlock.AppendLine($"Impresso em: {clock.UtcNow.ToOffset(TimeSpan.FromHours(-3)):dd/MM/yyyy HH:mm:ss}");
+
+            var finalTicketText = extraBlock.ToString();
+            var finalEscPos = Convert.ToBase64String(Encoding.UTF8.GetBytes(finalTicketText));
+
+            var printers = await printerRepo.ListAllAsync(ct);
+            var targetPrinter = printers
+                .Where(p => p.Status == PrinterStatus.Online)
+                .OrderByDescending(p => (int)p.PaperWidthMm == widthMm)
+                .FirstOrDefault();
+
+            var hardwareDispatched = false;
+            if (targetPrinter is not null)
+            {
+                var sendRes = await transport.SendEscPosAsync(targetPrinter, Encoding.UTF8.GetBytes(finalTicketText), 1, ct);
+                hardwareDispatched = sendRes.IsSuccess;
+            }
+
+            return Results.Ok(new
+            {
+                orderId = order.Id,
+                orderNumber = order.OrderNumber,
+                paperWidthMm = widthMm,
+                columnWidth = cols,
+                storeLogoUrl = idRes.Value.LogoReference,
+                storeTradeName = idRes.Value.TradeName,
+                storeCnpj = idRes.Value.Cnpj.Formatted,
+                storeAddress = idRes.Value.Address,
+                storePhone = idRes.Value.Phone,
+                hardwareDispatched,
+                printerName = targetPrinter?.DisplayName,
+                statusMessage = hardwareDispatched
+                    ? $"Comanda {widthMm}mm enviada para {targetPrinter!.DisplayName}."
+                    : $"Comanda {widthMm}mm pronta para impressão no navegador ou spooler ESC/POS.",
+                previewTicketText = finalTicketText,
+                escPosBase64 = finalEscPos
+            });
+        });
     }
 
     private static void MapReportsAndSettlementEndpoints(RouteGroupBuilder v1)

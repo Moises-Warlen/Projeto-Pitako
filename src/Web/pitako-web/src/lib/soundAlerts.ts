@@ -60,6 +60,19 @@ export function playNewOrderSound(): void {
   ]);
 }
 
+/**
+ * Campainha estilo Gestor iFood repetida até o pedido pendente ser aceito ou o operador silenciar.
+ */
+export function playContinuousOrderRingPulse(): void {
+  playToneSequence([
+    { freq: 880, delayMs: 0, durationMs: 130, type: "triangle", gain: 0.28 },
+    { freq: 1108.73, delayMs: 140, durationMs: 150, type: "triangle", gain: 0.28 },
+    { freq: 1318.51, delayMs: 310, durationMs: 220, type: "triangle", gain: 0.3 },
+    { freq: 880, delayMs: 580, durationMs: 130, type: "triangle", gain: 0.26 },
+    { freq: 1318.51, delayMs: 730, durationMs: 240, type: "triangle", gain: 0.28 }
+  ]);
+}
+
 export function playNewMessageSound(): void {
   playToneSequence([
     { freq: 587.33, delayMs: 0, durationMs: 140, type: "sine", gain: 0.2 },
@@ -81,4 +94,36 @@ export function playCustomerOrderUpdateSound(): void {
     { freq: 659.25, delayMs: 150, durationMs: 160, type: "sine", gain: 0.22 },
     { freq: 783.99, delayMs: 320, durationMs: 240, type: "sine", gain: 0.24 }
   ]);
+}
+
+let inMemoryAlarmMuted = false;
+
+export function getOrderAlarmMuted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem("pitako_order_alarm_muted") === "1" || inMemoryAlarmMuted;
+  } catch {
+    return inMemoryAlarmMuted;
+  }
+}
+
+export function setOrderAlarmMuted(muted: boolean): void {
+  inMemoryAlarmMuted = muted;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem("pitako_order_alarm_muted", muted ? "1" : "0");
+    window.dispatchEvent(new CustomEvent("pitako-alarm-mute-changed", { detail: muted }));
+  } catch {
+    // ignore storage restriction
+  }
+}
+
+export function subscribeOrderAlarmMute(cb: (muted: boolean) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = (e: Event) => {
+    const custom = e as CustomEvent<boolean>;
+    cb(Boolean(custom.detail));
+  };
+  window.addEventListener("pitako-alarm-mute-changed", handler);
+  return () => window.removeEventListener("pitako-alarm-mute-changed", handler);
 }
