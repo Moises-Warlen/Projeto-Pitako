@@ -475,6 +475,7 @@ export default function StoreMarketplacesPage() {
                   <input
                     required
                     type="password"
+                    autoComplete="off"
                     value={rawSecret}
                     onChange={(e) => setRawSecret(e.target.value)}
                     placeholder="Cifrado em AES-GCM no servidor"

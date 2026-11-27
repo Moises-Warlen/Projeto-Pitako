@@ -517,6 +517,7 @@ export function AdminWhatsAppBotPanel({
             <div className="mt-1 flex gap-2">
               <input
                 type="password"
+                autoComplete="off"
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
                 placeholder="Cole uma nova AIza... para atualizar"

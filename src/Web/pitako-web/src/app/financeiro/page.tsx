@@ -660,6 +660,7 @@ export default function FinancePage() {
               <input
                 required
                 type="password"
+                autoComplete="off"
                 value={gwSecret}
                 onChange={(e) => setGwSecret(e.target.value)}
                 placeholder="API Secret (cifrado no backend)"

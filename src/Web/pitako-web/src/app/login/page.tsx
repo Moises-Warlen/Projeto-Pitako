@@ -74,26 +74,29 @@ export default function LoginPage() {
     const endpoint = mode === "saas" ? "/api/v1/auth/login-saas" : "/api/v1/auth/login-store";
     const body = mode === "saas" ? { email, password } : { storeSlug, email, password };
 
-    const res = await apiFetch<LoginApiResponse>(endpoint, {
-      method: "POST",
-      body: JSON.stringify(body)
-    });
+    try {
+      const res = await apiFetch<LoginApiResponse>(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
 
-    setLoading(false);
-    if (!res.ok || !res.data) {
-      setStatusMsg(res.errorMessage || "Falha na autenticação.");
-      return;
+      if (!res.ok || !res.data) {
+        setStatusMsg(res.errorMessage || "Falha na autenticação.");
+        return;
+      }
+
+      saveSession({
+        accessToken: res.data.accessToken,
+        scope: mode === "saas" ? "Saas" : "Establishment",
+        tenantId: res.data.tenantId ?? undefined,
+        storeSlug: mode === "store" ? storeSlug : undefined,
+        email
+      });
+
+      router.push(mode === "saas" ? "/master" : "/admin");
+    } finally {
+      setLoading(false);
     }
-
-    saveSession({
-      accessToken: res.data.accessToken,
-      scope: mode === "saas" ? "Saas" : "Establishment",
-      tenantId: res.data.tenantId ?? undefined,
-      storeSlug: mode === "store" ? storeSlug : undefined,
-      email
-    });
-
-    router.push(mode === "saas" ? "/master" : "/admin");
   }
 
   return (
@@ -147,6 +150,7 @@ export default function LoginPage() {
             <label className="mb-1 block text-xs font-medium text-zinc-300">E-mail</label>
             <input
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -158,6 +162,7 @@ export default function LoginPage() {
             <label className="mb-1 block text-xs font-medium text-zinc-300">Senha</label>
             <input
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -202,6 +207,7 @@ export default function LoginPage() {
             </p>
             <input
               type="email"
+              autoComplete="email"
               required
               value={forgotEmail}
               onChange={(e) => setForgotEmail(e.target.value)}

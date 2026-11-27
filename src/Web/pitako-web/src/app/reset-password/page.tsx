@@ -69,6 +69,7 @@ function ResetPasswordInner() {
           <label className="mb-1 block text-xs font-medium text-zinc-300">Nova Senha (mín. 8 caracteres, maiúscula, número e símbolo)</label>
           <input
             type="password"
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -79,6 +80,7 @@ function ResetPasswordInner() {
           <label className="mb-1 block text-xs font-medium text-zinc-300">Confirmar Nova Senha</label>
           <input
             type="password"
+            autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required

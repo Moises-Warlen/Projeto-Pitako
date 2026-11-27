@@ -1205,7 +1205,7 @@ export default function MasterPanelPage() {
                 <label className="flex items-center gap-2 text-zinc-200"><input type="checkbox" checked={smtpSsl} onChange={(e) => setSmtpSsl(e.target.checked)} /> SSL/TLS</label>
               </div>
               <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="Usuário SMTP" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
-              <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="Senha / App Password (opcional manter)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input type="password" autoComplete="new-password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="Senha / App Password (opcional manter)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} placeholder="E-mail remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} placeholder="Nome remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={smtpWebBase} onChange={(e) => setSmtpWebBase(e.target.value)} placeholder="URL base do painel (ex: https://app.seudominio.com)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />

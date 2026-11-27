@@ -743,6 +743,7 @@ export function AdminOperationalSettingsPanel({
               </label>
               <input
                 type="password"
+                autoComplete="off"
                 value={mpToken}
                 onChange={(e) => setMpToken(e.target.value)}
                 placeholder="APP_USR-..."
@@ -768,6 +769,7 @@ export function AdminOperationalSettingsPanel({
               <label className="font-bold text-slate-700">Token / API Key</label>
               <input
                 type="password"
+                autoComplete="off"
                 value={waGatewayToken}
                 onChange={(e) => setWaGatewayToken(e.target.value)}
                 placeholder="Token ou Chave do Gateway"

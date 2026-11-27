@@ -49,7 +49,11 @@ export default function StorePortalLoginPage({ params }: { params: { slug: strin
         setStatusMsg(`Estabelecimento "${slug}" não foi encontrado.`);
         return;
       }
-      if (res.ok && res.data) {
+      if (!res.ok) {
+        setStatusMsg(res.errorMessage || "Não foi possível conectar ao servidor da loja.");
+        return;
+      }
+      if (res.data) {
         setStoreNotFound(false);
         setSlogan(res.data.branding?.slogan ?? null);
         setTheme({
@@ -69,30 +73,33 @@ export default function StorePortalLoginPage({ params }: { params: { slug: strin
     setLoading(true);
     setStatusMsg(null);
 
-    const res = await apiFetch<LoginApiResponse>("/api/v1/auth/login-store", {
-      method: "POST",
-      body: JSON.stringify({
+    try {
+      const res = await apiFetch<LoginApiResponse>("/api/v1/auth/login-store", {
+        method: "POST",
+        body: JSON.stringify({
+          storeSlug: slug,
+          email,
+          password
+        })
+      });
+
+      if (!res.ok || !res.data) {
+        setStatusMsg(res.errorMessage || "E-mail ou senha inválidos para esta loja.");
+        return;
+      }
+
+      saveSession({
+        accessToken: res.data.accessToken,
+        scope: "Establishment",
+        tenantId: res.data.tenantId ?? undefined,
         storeSlug: slug,
-        email,
-        password
-      })
-    });
+        email
+      });
 
-    setLoading(false);
-    if (!res.ok || !res.data) {
-      setStatusMsg(res.errorMessage || "E-mail ou senha inválidos para esta loja.");
-      return;
+      router.push("/admin");
+    } finally {
+      setLoading(false);
     }
-
-    saveSession({
-      accessToken: res.data.accessToken,
-      scope: "Establishment",
-      tenantId: res.data.tenantId ?? undefined,
-      storeSlug: slug,
-      email
-    });
-
-    router.push("/admin");
   }
 
   return (
@@ -135,6 +142,7 @@ export default function StorePortalLoginPage({ params }: { params: { slug: strin
               <label className="mb-1 block text-xs font-medium text-slate-700">E-mail do Usuário</label>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -147,6 +155,7 @@ export default function StorePortalLoginPage({ params }: { params: { slug: strin
               <label className="mb-1 block text-xs font-medium text-slate-700">Senha</label>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

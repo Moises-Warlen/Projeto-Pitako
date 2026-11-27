@@ -76,6 +76,9 @@ export async function apiFetch<T>(
   options: RequestInit = {},
   token?: string
 ): Promise<{ ok: boolean; status: number; data?: T; errorMessage?: string }> {
+  const controller = !options.signal ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+
   try {
     const headers = new Headers(options.headers || {});
     if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
@@ -88,7 +91,8 @@ export async function apiFetch<T>(
     const res = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
-      cache: "no-store"
+      cache: "no-store",
+      signal: options.signal ?? controller?.signal
     });
 
     if (!res.ok) {
@@ -108,11 +112,20 @@ export async function apiFetch<T>(
       return { ok: true, status: res.status, data };
     }
     return { ok: true, status: res.status };
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return {
+        ok: false,
+        status: 0,
+        errorMessage: `Tempo limite esgotado ao conectar em ${API_BASE_URL}. Verifique se Pitako.Api está em execução.`
+      };
+    }
     return {
       ok: false,
       status: 0,
       errorMessage: `Backend Pitako.Api inacessível em ${API_BASE_URL}. Inicie Pitako.Api para dados ao vivo.`
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
