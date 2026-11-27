@@ -76,6 +76,14 @@ public sealed class PlanEntitlementEnforcementService
             $"Limite do plano '{plan.Name}' atingido para {resourceKind}: máximo de {limit.MaxAllowed} (em uso: {currentUsage}).{upgradeHint}"));
     }
 
+    public async Task<Result> EnsureSubscriptionOperationalAsync(
+        Guid customerAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var contextResult = await ResolveOperationalPlanAsync(customerAccountId, cancellationToken);
+        return contextResult.IsFailure ? Result.Failure(contextResult.Error) : Result.Success();
+    }
+
     public async Task<Result> CheckModuleAccessAsync(
         Guid customerAccountId,
         string moduleCode,

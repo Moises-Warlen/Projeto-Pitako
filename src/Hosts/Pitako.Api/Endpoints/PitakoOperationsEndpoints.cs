@@ -648,6 +648,9 @@ public static class PitakoOperationsEndpoints
                     r.Id,
                     r.CourierId,
                     r.RunCode,
+                    status = r.Status.ToString(),
+                    startedAtUtc = r.DispatchedAtUtc,
+                    r.CompletedAtUtc,
                     totalEstimatedDistanceKm = r.TotalEstimatedDistanceKm,
                     courierCommissionAmount = r.TotalCommission.Amount,
                     r.AssignedAtUtc,
@@ -697,6 +700,7 @@ public static class PitakoOperationsEndpoints
                 r.Id,
                 r.CourierId,
                 r.RunCode,
+                status = r.Status.ToString(),
                 totalPlannedDistanceKm = r.TotalEstimatedDistanceKm,
                 courierCommissionAmount = r.TotalCommission.Amount,
                 r.AssignedAtUtc,
@@ -715,6 +719,136 @@ public static class PitakoOperationsEndpoints
                 })
             });
         });
+
+        delivery.MapPost("/dispatch-runs/{runId:guid}/start", async (
+            Guid runId,
+            ApiSecurityGuard guard,
+            CourierDispatchAndGpsService svc,
+            IDeliveryDispatchRunRepository runRepo,
+            IOrderRepository orderRepo,
+            OrderManagementService orderSvc,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var startRes = await svc.StartRunAsync(user!, runId, ct);
+            if (startRes.IsFailure) return ApiSecurityGuard.ProblemFromError(startRes.Error);
+
+            var run = await runRepo.FindByIdAsync(runId, ct);
+            if (run is not null)
+            {
+                foreach (var stop in run.Stops)
+                    await AdvanceOrderUpToAsync(orderSvc, orderRepo, user!, stop.OrderId, OrderStatus.Dispatched, false, ct);
+            }
+
+            return Results.Ok(new { started = true, runId });
+        });
+
+        delivery.MapPost("/dispatch-runs/{runId:guid}/stops/{stopId:guid}/resolve", async (
+            Guid runId,
+            Guid stopId,
+            ResolveDispatchStopReq? req,
+            ApiSecurityGuard guard,
+            CourierDispatchAndGpsService svc,
+            IOrderRepository orderRepo,
+            OrderManagementService orderSvc,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var delivered = req?.Delivered ?? true;
+            var res = await svc.ResolveStopAsync(user!, runId, stopId, delivered, req?.Notes, ct);
+            if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            var stop = res.Value.Stops.FirstOrDefault(s => s.Id == stopId);
+            if (delivered && stop is not null)
+                await AdvanceOrderUpToAsync(orderSvc, orderRepo, user!, stop.OrderId, OrderStatus.Completed, true, ct);
+
+            return Results.Ok(new
+            {
+                runId = res.Value.Id,
+                runStatus = res.Value.Status.ToString(),
+                completedAtUtc = res.Value.CompletedAtUtc
+            });
+        });
+
+        delivery.MapPost("/dispatch-runs/{runId:guid}/complete-all", async (
+            Guid runId,
+            ApiSecurityGuard guard,
+            CourierDispatchAndGpsService svc,
+            IDeliveryDispatchRunRepository runRepo,
+            IOrderRepository orderRepo,
+            OrderManagementService orderSvc,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var run = await runRepo.FindByIdAsync(runId, ct);
+            if (run is null) return ApiSecurityGuard.ProblemFromError(Error.NotFound("Dispatch.NotFound", "Rota não encontrada."));
+
+            if (run.Status == DispatchRunStatus.Assigned)
+                await svc.StartRunAsync(user!, runId, ct);
+
+            run = await runRepo.FindByIdAsync(runId, ct);
+            if (run is null) return ApiSecurityGuard.ProblemFromError(Error.NotFound("Dispatch.NotFound", "Rota não encontrada."));
+
+            var pendingStops = run.Stops.Where(s => s.Status == DeliveryStopStatus.Pending).OrderBy(s => s.StopSequence).ToList();
+            foreach (var stop in pendingStops)
+            {
+                var stopRes = await svc.ResolveStopAsync(user!, runId, stop.Id, true, "Entrega confirmada em baixa da rota", ct);
+                if (stopRes.IsSuccess)
+                    await AdvanceOrderUpToAsync(orderSvc, orderRepo, user!, stop.OrderId, OrderStatus.Completed, true, ct);
+            }
+
+            var updatedRun = await runRepo.FindByIdAsync(runId, ct);
+            return Results.Ok(new
+            {
+                runId,
+                runStatus = updatedRun?.Status.ToString() ?? "Completed",
+                settledStops = pendingStops.Count,
+                completedAtUtc = updatedRun?.CompletedAtUtc
+            });
+        });
+    }
+
+    private static async Task AdvanceOrderUpToAsync(
+        OrderManagementService orderSvc,
+        IOrderRepository orderRepo,
+        User actor,
+        Guid orderId,
+        OrderStatus targetStatus,
+        bool confirmPayment,
+        CancellationToken ct)
+    {
+        var ord = await orderRepo.FindByIdAsync(orderId, ct);
+        if (ord is null || ord.Status == OrderStatus.Cancelled) return;
+
+        if (confirmPayment && !ord.IsPaymentConfirmed)
+            await orderSvc.ConfirmPaymentAsync(actor, ord.Id, "Pagamento baixado pelo entregador", ct);
+
+        var chain = new[]
+        {
+            OrderStatus.Accepted,
+            OrderStatus.InPreparation,
+            OrderStatus.Ready,
+            OrderStatus.Dispatched,
+            OrderStatus.Completed
+        };
+
+        foreach (var step in chain)
+        {
+            if (step > targetStatus) break;
+            ord = await orderRepo.FindByIdAsync(orderId, ct);
+            if (ord is null || ord.Status >= step) continue;
+            if (step == OrderStatus.Dispatched && ord.FulfillmentMode != FulfillmentMode.Delivery) continue;
+            await orderSvc.TransitionKanbanStatusAsync(actor, ord.Id, step, "Atualizado via romaneio de entrega", ct);
+        }
     }
 
     private static void MapMarketplacesExtendedEndpoints(RouteGroupBuilder v1)
@@ -1347,6 +1481,7 @@ public sealed record ConfirmOrderPaymentReq(string? Notes = null);
 public sealed record RegisterCourierReq(string FullName, string Phone, CourierVehicleType VehicleType = CourierVehicleType.Motorcycle, CourierCommissionMode CommissionMode = CourierCommissionMode.FixedPerDelivery, decimal FixedCommissionAmount = 6m, decimal FreightCommissionPercentage = 0m, string? LicensePlate = null);
 public sealed record OptimizeStopDto(Guid? OrderId, string OrderNumber, string CustomerName, string DestinationAddress, double DestinationLatitude, double DestinationLongitude, decimal DeliveryFee);
 public sealed record OptimizeDispatchRunReq(Guid CourierId, double OriginLatitude, double OriginLongitude, IReadOnlyList<OptimizeStopDto> Stops, string? Notes = null);
+public sealed record ResolveDispatchStopReq(bool Delivered = true, string? Notes = null);
 public sealed record ConnectMarketplaceAccountReq(MarketplaceProvider Provider, string AccountLabel, string ClientOrMerchantIdentifier, string RawSecretPayload);
 public sealed record BindMarketplaceStoreReq(Guid PartnerAccountId, string ExternalMerchantId, string ExternalStoreName, bool AutoAcceptOrders = false);
 public sealed record MapMarketplaceCatalogReq(Guid StoreBindingId, Guid InternalProductId, string InternalItemTitle, string ExternalSkuCode, decimal CurrentPrice);

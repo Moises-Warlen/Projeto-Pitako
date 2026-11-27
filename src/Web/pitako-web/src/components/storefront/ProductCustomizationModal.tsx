@@ -2,6 +2,7 @@
 
 import { AlertCircle, Check, Clock, Flame, Minus, Plus, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { resolveMediaUrl } from "@/lib/api";
 import { MenuModifierGroup, MenuModifierOption, MenuProduct, SmartCartItem } from "@/types/menu";
 import { formatBrl, ProductMediaFrame } from "./ProductMediaFrame";
 
@@ -71,7 +72,8 @@ export function ProductCustomizationModal({
       }
       setCounts(restored);
     } else {
-      setVariationId(product.variations[0]?.id || "");
+      const defaultVar = product.variations.find((v) => v.isInStock !== false) ?? product.variations[0];
+      setVariationId(defaultVar?.id || "");
       const initialDefaults: Record<string, number> = {};
       for (const g of attachedGroups) {
         if ((g.isRequired || g.minSelections > 0) && g.maxSelections === 1 && g.categoryTag === "cremes") {
@@ -325,10 +327,30 @@ export function ProductCustomizationModal({
                   <Clock className="h-3 w-3" /> ~{product.preparationMinutes} min
                 </span>
               )}
+              {product.servesPeopleCount && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                  Serve {product.servesPeopleCount} {product.servesPeopleCount === 1 ? "pessoa" : "pessoas"}
+                </span>
+              )}
+              {(product.dietaryTags ?? []).map((dt) => (
+                <span key={dt} className="rounded-full bg-lime-100 px-2 py-0.5 text-[11px] font-bold uppercase text-lime-800">
+                  {dt}
+                </span>
+              ))}
             </div>
             <h2 className="mt-1 text-lg font-extrabold text-slate-900 sm:text-xl">{product.name}</h2>
             {product.description && <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">{product.description}</p>}
-            <p className="mt-1.5 text-sm font-bold text-slate-900">A partir de {formatBrl(product.effectivePrice)}</p>
+            <p className="mt-1.5 text-sm font-bold text-slate-900">
+              {product.discountAmount > 0 && (
+                <span className="mr-2 text-xs text-slate-400 line-through">{formatBrl(product.price)}</span>
+              )}
+              A partir de {formatBrl(product.effectivePrice)}
+              {(product.discountPercent ?? 0) > 0 && (
+                <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                  -{product.discountPercent}%
+                </span>
+              )}
+            </p>
           </div>
           <button
             type="button"
@@ -360,17 +382,20 @@ export function ProductCustomizationModal({
               <div className={product.variations.every((v) => v.variationName.length <= 16) ? "flex flex-wrap gap-2.5" : "grid gap-2 sm:grid-cols-2"}>
                 {product.variations.map((v) => {
                   const selected = v.id === activeVariation?.id;
+                  const varOutOfStock = v.isInStock === false;
                   const compact = product.variations.every((x) => x.variationName.length <= 16);
                   return (
                     <button
                       key={v.id}
                       type="button"
+                      disabled={varOutOfStock}
                       onClick={() => {
+                        if (varOutOfStock) return;
                         setVariationId(v.id);
                         setErrorMsg(null);
                       }}
                       style={
-                        selected
+                        selected && !varOutOfStock
                           ? compact
                             ? { borderColor: "var(--store-primary)", backgroundColor: "var(--store-primary)", color: "#ffffff" }
                             : { borderColor: "var(--store-primary)", backgroundColor: "color-mix(in srgb, var(--store-primary) 7%, white)" }
@@ -379,17 +404,25 @@ export function ProductCustomizationModal({
                       className={
                         compact
                           ? `rounded-2xl border px-4 py-2.5 text-left transition ${
-                              selected ? "shadow-sm" : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                              varOutOfStock
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-60"
+                                : selected
+                                  ? "shadow-sm"
+                                  : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
                             }`
                           : `flex items-center justify-between rounded-xl border p-3 text-left transition ${
-                              selected ? "ring-1 ring-[var(--store-primary)]" : "border-slate-200 hover:border-slate-300"
+                              varOutOfStock
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-60"
+                                : selected
+                                  ? "ring-1 ring-[var(--store-primary)]"
+                                  : "border-slate-200 hover:border-slate-300"
                             }`
                       }
                     >
                       {compact ? (
                         <>
                           <span className="text-sm font-extrabold">
-                            {v.variationName} · {formatBrl(v.price)}
+                            {v.variationName} · {varOutOfStock ? "Esgotado" : formatBrl(v.price)}
                           </span>
                           {v.description && (
                             <span className={`block text-[11px] ${selected ? "text-white/85" : "text-slate-500"}`}>{v.description}</span>
@@ -401,7 +434,9 @@ export function ProductCustomizationModal({
                             <p className="text-sm font-bold text-slate-900">{v.variationName}</p>
                             {v.description && <p className="text-xs text-slate-500">{v.description}</p>}
                           </div>
-                          <span className="shrink-0 font-mono text-sm font-extrabold text-slate-900">{formatBrl(v.price)}</span>
+                          <span className="shrink-0 font-mono text-sm font-extrabold text-slate-900">
+                            {varOutOfStock ? "Esgotado" : formatBrl(v.price)}
+                          </span>
                         </>
                       )}
                     </button>
@@ -711,8 +746,10 @@ export function ProductCustomizationModal({
                 <div className="mt-3 space-y-2">
                   {group.options.map((opt) => {
                     const qty = counts[`${group.id}:${opt.id}`] ?? 0;
-                    const singleSelectMode = rule.maxSelections === 1 && opt.maxQuantity === 1;
+                    const radioMode = rule.maxSelections === 1 && opt.maxQuantity === 1;
+                    const checkboxMode = !radioMode && group.countingMode === 1 && opt.maxQuantity === 1;
                     const unavailable = !opt.isAvailable;
+                    const optImg = resolveMediaUrl(opt.imageUrl);
 
                     return (
                       <div
@@ -729,6 +766,9 @@ export function ProductCustomizationModal({
                           unavailable ? "opacity-50" : qty > 0 ? "shadow-sm" : "border-slate-200"
                         }`}
                       >
+                        {optImg && (
+                          <img src={optImg} alt={opt.name} className="h-11 w-11 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <p className="text-sm font-semibold text-slate-900">{opt.name}</p>
@@ -749,7 +789,7 @@ export function ProductCustomizationModal({
                           </p>
                         </div>
 
-                        {singleSelectMode ? (
+                        {radioMode ? (
                           <button
                             type="button"
                             disabled={unavailable}
@@ -760,6 +800,18 @@ export function ProductCustomizationModal({
                             }`}
                           >
                             <Check className="h-4 w-4" />
+                          </button>
+                        ) : checkboxMode ? (
+                          <button
+                            type="button"
+                            disabled={unavailable}
+                            onClick={() => updateOptionCount(group, opt, qty > 0 ? -1 : 1)}
+                            style={qty > 0 ? { backgroundColor: "var(--store-primary)", borderColor: "var(--store-primary)" } : undefined}
+                            className={`flex h-6 w-6 items-center justify-center rounded-md border transition ${
+                              qty > 0 ? "text-white" : "border-slate-300 bg-white text-transparent"
+                            }`}
+                          >
+                            <Check className="h-3.5 w-3.5" />
                           </button>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -839,14 +891,24 @@ export function ProductCustomizationModal({
 
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || Boolean(missingRequiredGroup) || activeVariation?.isInStock === false || product.isInStock === false}
               onClick={handleConfirm}
               style={{ backgroundColor: "var(--store-primary)" }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-extrabold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-extrabold text-white shadow-md transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span>{editingItem ? "Salvar Alterações" : "Adicionar"}</span>
-              <span>·</span>
-              <span className="font-mono">{formatBrl(estimatedUnitPrice * quantity)}</span>
+              <span>
+                {missingRequiredGroup
+                  ? `Falta escolher: ${missingRequiredGroup.name}`
+                  : editingItem
+                    ? "Salvar Alterações"
+                    : "Adicionar"}
+              </span>
+              {!missingRequiredGroup && (
+                <>
+                  <span>·</span>
+                  <span className="font-mono">{formatBrl(estimatedUnitPrice * quantity)}</span>
+                </>
+              )}
             </button>
           </div>
           <button

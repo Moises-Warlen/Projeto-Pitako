@@ -30,6 +30,10 @@ export interface MenuCategory {
   displayOrder: number;
   segmentTemplateCode?: string | null;
   ruleNotes?: string | null;
+  templateKind?: number;
+  templateKindName?: string;
+  availabilityScheduleJson?: string | null;
+  isScheduledAvailable?: boolean;
   status: string;
 }
 
@@ -44,6 +48,9 @@ export interface MenuProductVariation {
   sku?: string | null;
   displayOrder: number;
   isActive?: boolean;
+  trackInventory?: boolean;
+  stockQuantity?: number;
+  isInStock?: boolean;
 }
 
 export interface MenuVariationRule {
@@ -71,8 +78,10 @@ export interface MenuProduct {
   description?: string | null;
   sku?: string | null;
   price: number;
+  promotionalPrice?: number | null;
   effectivePrice: number;
   discountAmount: number;
+  discountPercent?: number;
   appliedPromotionName?: string | null;
   saleMode: string;
   pricingStrategy: string;
@@ -82,6 +91,13 @@ export interface MenuProduct {
   isRecommended: boolean;
   allowsNotes: boolean;
   preparationMinutes?: number | null;
+  trackInventory?: boolean;
+  stockQuantity?: number;
+  autoPauseOnZeroStock?: boolean;
+  isInStock?: boolean;
+  isScheduledAvailable?: boolean;
+  servesPeopleCount?: number | null;
+  dietaryTags?: string[];
   tags: string[];
   customTemplateKey?: string | null;
   displayOrder: number;
@@ -102,6 +118,8 @@ export interface MenuModifierOption {
   displayOrder: number;
   isAvailable: boolean;
   replacesLabel?: string | null;
+  imageUrl?: string | null;
+  sku?: string | null;
   incompatibleOptionIds: string[];
 }
 

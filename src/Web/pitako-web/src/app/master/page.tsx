@@ -55,6 +55,18 @@ interface MasterOverviewResponse {
   segments: SegmentOption[];
 }
 
+interface MasterIndicatorsDto {
+  totalCustomers: number;
+  activeSubscriptions: number;
+  trialingSubscriptions: number;
+  pastDueSubscriptions: number;
+  suspendedSubscriptions: number;
+  monthlyRecurringRevenueEstimate: number;
+  paidRevenueTotal: number;
+  overdueInvoicesCount: number;
+  openSupportTicketsCount: number;
+}
+
 const ALL_MODULES = [
   { code: "tenants", label: "Identidade & Lojas" },
   { code: "catalog", label: "Cardápio & Produtos" },
@@ -82,6 +94,8 @@ export default function MasterPanelPage() {
     establishments: [],
     segments: []
   });
+  const [indicators, setIndicators] = useState<MasterIndicatorsDto | null>(null);
+  const [sweepingBilling, setSweepingBilling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [quickModal, setQuickModal] = useState<string | null>(null);
   const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
@@ -169,12 +183,17 @@ export default function MasterPanelPage() {
       return;
     }
 
-    const [plansRes, custRes, smtpRes, outboxRes] = await Promise.all([
+    const [plansRes, custRes, indRes, smtpRes, outboxRes] = await Promise.all([
       apiFetch<PlanItem[]>("/api/v1/master/plans", {}, session.accessToken),
       apiFetch<MasterOverviewResponse>("/api/v1/master/customers", {}, session.accessToken),
+      apiFetch<MasterIndicatorsDto>("/api/v1/master/overview-indicators", {}, session.accessToken),
       apiFetch<{ host: string; port: number; useSsl: boolean; username: string; fromEmail: string; fromName: string; publicWebBaseUrl: string }>("/api/v1/master/email-settings", {}, session.accessToken),
       apiFetch<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>("/api/v1/master/email-outbox", {}, session.accessToken)
     ]);
+
+    if (indRes.ok && indRes.data) {
+      setIndicators(indRes.data);
+    }
 
     if (smtpRes.ok && smtpRes.data) {
       setSmtpHost(smtpRes.data.host || "");
@@ -625,11 +644,69 @@ export default function MasterPanelPage() {
     }
   }
 
+  async function handleRunDelinquencySweep() {
+    const session = loadSession();
+    if (!session || session.scope !== "Saas") return;
+    setSweepingBilling(true);
+    const res = await apiFetch<{ newlyOverdueInvoices: number; suspendedSubscriptions: number; suspendedStores: number }>(
+      "/api/v1/master/billing/sweep-delinquency?gracePeriodDays=3",
+      { method: "POST" },
+      session.accessToken
+    );
+    setSweepingBilling(false);
+    if (res.ok && res.data) {
+      setFeedback(
+        `Varredura concluída: ${res.data.newlyOverdueInvoices} fatura(s) vencida(s), ${res.data.suspendedSubscriptions} assinatura(s) e ${res.data.suspendedStores} loja(s) bloqueada(s).`
+      );
+      await refreshAll();
+    } else {
+      setFeedback(res.errorMessage || "Erro ao verificar inadimplência.");
+    }
+  }
+
   return (
     <PitakoBrandShell
       title="Painel Master PITAKO — Lojas, Modalidades, Clientes e Planos"
       subtitle="Gerencie criação, edição e exclusão completa de Lojas, Modalidades, Clientes/Donos e Planos/Módulos."
     >
+      {indicators && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-[11px] font-semibold uppercase text-zinc-400">Lojas / Clientes</p>
+            <p className="mt-1 text-xl font-extrabold text-white">
+              {overview.establishments.length} lojas · {indicators.totalCustomers} clientes
+            </p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-[11px] font-semibold uppercase text-zinc-400">Assinaturas Ativas / Trial</p>
+            <p className="mt-1 text-xl font-extrabold text-emerald-400">
+              {indicators.activeSubscriptions} ativas · {indicators.trialingSubscriptions} trial
+            </p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-[11px] font-semibold uppercase text-zinc-400">MRR Estimado</p>
+            <p className="mt-1 font-mono text-xl font-extrabold text-white">
+              R$ {indicators.monthlyRecurringRevenueEstimate.toFixed(2)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-[11px] font-semibold uppercase text-zinc-400">Inadimplência / Suspensas</p>
+            <p className="mt-1 text-xl font-extrabold text-rose-400">
+              {indicators.pastDueSubscriptions} atraso · {indicators.suspendedSubscriptions} susp.
+            </p>
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <button
+              type="button"
+              disabled={sweepingBilling}
+              onClick={() => void handleRunDelinquencySweep()}
+              className="w-full rounded-lg bg-amber-500 px-3 py-2 text-xs font-extrabold text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+            >
+              {sweepingBilling ? "Verificando..." : "Bloquear Inadimplentes / Trial"}
+            </button>
+          </div>
+        </div>
+      )}
       {feedback && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm text-amber-100">
           <span>{feedback}</span>

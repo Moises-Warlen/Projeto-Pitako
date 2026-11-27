@@ -4,6 +4,7 @@ using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.Security.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Abstractions;
+using Pitako.Modules.Tenants.Domain;
 using Pitako.MultiTenancy;
 using Pitako.SharedKernel.Results;
 
@@ -156,18 +157,24 @@ public sealed class ApiSecurityGuard(
 
         tenantContextSetter.SetTenant(user.TenantId.Value, TenantResolutionSource.AuthenticatedSession);
 
-        if (!string.IsNullOrWhiteSpace(requiredModuleCode))
-        {
-            var tenant = await tenantRepository.FindByIdAsync(user.TenantId.Value, ct);
-            if (tenant is null)
-                return (null, ProblemFromError(Error.NotFound("Tenant.NotFound", "Estabelecimento não localizado.")));
+        var tenant = await tenantRepository.FindByIdAsync(user.TenantId.Value, ct);
+        if (tenant is null)
+            return (null, ProblemFromError(Error.NotFound("Tenant.NotFound", "Estabelecimento não localizado.")));
 
-            if (tenant.CustomerAccountId.HasValue)
-            {
-                var moduleRes = await planEnforcement.CheckModuleAccessAsync(tenant.CustomerAccountId.Value, requiredModuleCode, ct);
-                if (moduleRes.IsFailure)
-                    return (null, ProblemFromError(moduleRes.Error));
-            }
+        if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+        {
+            return (null, ProblemFromError(Error.Forbidden(
+                "Tenant.Suspended",
+                "Estabelecimento suspenso ou bloqueado. Regularize a assinatura ou contate a plataforma.")));
+        }
+
+        if (tenant.CustomerAccountId.HasValue)
+        {
+            var accessRes = !string.IsNullOrWhiteSpace(requiredModuleCode)
+                ? await planEnforcement.CheckModuleAccessAsync(tenant.CustomerAccountId.Value, requiredModuleCode, ct)
+                : await planEnforcement.EnsureSubscriptionOperationalAsync(tenant.CustomerAccountId.Value, ct);
+            if (accessRes.IsFailure)
+                return (null, ProblemFromError(accessRes.Error));
         }
 
         return (user, null);

@@ -737,6 +737,62 @@ public static class PitakoV1Endpoints
             return Results.Ok(new { success = true });
         });
 
+        master.MapGet("/overview-indicators", async (
+            ApiSecurityGuard guard,
+            MasterOperationsAndDashboardService ops,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+            return ToHttp(await ops.GetOverviewIndicatorsAsync(user!, ct));
+        });
+
+        master.MapPost("/billing/sweep-delinquency", async (
+            int? gracePeriodDays,
+            ApiSecurityGuard guard,
+            MasterPlanAndSubscriptionService planSvc,
+            ISubscriptionRepository subRepo,
+            ITenantRepository tenantRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+
+            var summaryRes = await planSvc.ProcessDelinquencyAsync(user!, Math.Max(0, gracePeriodDays ?? 3), ct);
+            if (summaryRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(summaryRes.Error);
+
+            var subs = await subRepo.ListAllAsync(ct);
+            var blockedCustomerIds = subs
+                .Where(s => s.Status is SubscriptionStatus.Suspended or SubscriptionStatus.Cancelled)
+                .Select(s => s.CustomerAccountId)
+                .ToHashSet();
+
+            var tenants = await tenantRepo.ListAllAsync(ct);
+            var suspendedStores = 0;
+            foreach (var t in tenants)
+            {
+                if (t.CustomerAccountId.HasValue &&
+                    blockedCustomerIds.Contains(t.CustomerAccountId.Value) &&
+                    t.Status is TenantStatus.Trial or TenantStatus.Active)
+                {
+                    t.Suspend();
+                    suspendedStores++;
+                }
+            }
+            if (suspendedStores > 0)
+                await tenantRepo.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                summaryRes.Value.NewlyOverdueInvoices,
+                summaryRes.Value.SuspendedSubscriptions,
+                suspendedStores
+            });
+        });
+
         master.MapGet("/segments", async (
             ApiSecurityGuard guard,
             IGlobalSettingRepository settingRepo,
@@ -1026,6 +1082,8 @@ public static class PitakoV1Endpoints
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
             if (tenant is null)
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se suspensa e não pode receber novos pedidos."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
             return ToHttp(await brandingSvc.GetPublicStorefrontBySlugAsync(slug, ct));
@@ -1050,6 +1108,10 @@ public static class PitakoV1Endpoints
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
             if (tenant is null)
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se suspensa e não pode receber novos pedidos."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se temporariamente suspensa pela administração."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
             var identity = await identityRepo.FindByTenantIdForPublicViewAsync(tenant.Id, ct);
@@ -1318,6 +1380,8 @@ public static class PitakoV1Endpoints
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
             if (tenant is null)
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se suspensa e não pode receber novos pedidos."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
 
@@ -1877,6 +1941,8 @@ public static class PitakoV1Endpoints
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
             if (tenant is null)
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se suspensa e não pode receber novos pedidos."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
             return ToHttp(await qrSvc.StartOrResumeByQrTokenAsync(token, cancellationToken: ct));
@@ -1894,6 +1960,8 @@ public static class PitakoV1Endpoints
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
             if (tenant is null)
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
+            if (tenant.Status is TenantStatus.Suspended or TenantStatus.Cancelled)
+                return ApiSecurityGuard.ProblemFromError(Error.Forbidden("Store.Suspended", "Esta loja encontra-se suspensa e não pode receber novos pedidos."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
             var callRes = await qrSvc.CallWaiterAsync(token, req.CallType, req.Notes, ct);

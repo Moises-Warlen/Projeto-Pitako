@@ -81,6 +81,7 @@ export default function PublicStorefrontPage() {
   const [hoursModalOpen, setHoursModalOpen] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [trackedOrder, setTrackedOrder] = useState<OrderTrackingResponse | null>(null);
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Estado para montador clássico de açaí (compatibilidade garantida)
@@ -104,6 +105,15 @@ export default function PublicStorefrontPage() {
         apiFetch<PublicMenuResponse>(`/api/v1/public/store/${slug}/menu`),
         apiFetch<SmartCartResponse>(`/api/v1/public/store/${slug}/cart/${sKey}`)
       ]);
+
+      if (storeRes.status === 403 || menuRes.status === 403) {
+        setBlockedReason(
+          storeRes.errorMessage ||
+            menuRes.errorMessage ||
+            "Esta loja está temporariamente suspensa pela administração."
+        );
+        return;
+      }
 
       if (storeRes.ok && storeRes.data) {
         setStoreInfo(storeRes.data);
@@ -497,24 +507,66 @@ export default function PublicStorefrontPage() {
 
   function renderProductCard(product: MenuProduct) {
     const hasCustomFlow = product.variations.length > 0 || product.modifierGroupIds.length > 0;
-    const lowestVarPrice = product.variations.length > 0 ? Math.min(...product.variations.map((v) => v.price)) : product.effectivePrice;
+    const activeVars = product.variations.filter((v) => v.isInStock !== false);
+    const lowestVarPrice =
+      activeVars.length > 0
+        ? Math.min(...activeVars.map((v) => v.price))
+        : product.variations.length > 0
+          ? Math.min(...product.variations.map((v) => v.price))
+          : product.effectivePrice;
     const isMonte =
       product.customTemplateKey === "acaiteria-monte" || product.name.toLowerCase().includes("monte do seu jeito");
     const sizeLabels = product.variations.map((v) => v.variationName).filter(Boolean);
+    const outOfStock = product.isInStock === false || (product.variations.length > 0 && activeVars.length === 0);
+    const outsideSchedule = product.isScheduledAvailable === false;
+    const isUnavailable = outOfStock || outsideSchedule;
+    const promoPct =
+      product.discountPercent && product.discountPercent > 0
+        ? product.discountPercent
+        : product.discountAmount > 0 && product.price > 0
+          ? Math.round((product.discountAmount / product.price) * 100)
+          : 0;
+    const dietaryLabelMap: Record<string, string> = {
+      vegano: "🌱 Vegano",
+      vegetariano: "🥗 Vegetariano",
+      "sem-gluten": "🌾 Sem Glúten",
+      "sem-lactose": "🥛 Sem Lactose",
+      "alcoolico-18": "🔞 +18",
+      artesanal: "✨ Artesanal"
+    };
 
     return (
       <button
         key={product.id}
         type="button"
+        disabled={isUnavailable}
         onClick={() => {
+          if (isUnavailable) return;
           setEditingCartItem(null);
           setModalProduct(product);
         }}
-        className="group flex w-full items-stretch justify-between gap-3.5 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
+        className={`group flex w-full items-stretch justify-between gap-3.5 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-sm transition ${
+          isUnavailable ? "cursor-not-allowed opacity-60" : "hover:border-slate-300 hover:shadow-md"
+        }`}
       >
         <div className="flex min-w-0 flex-1 flex-col justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-1.5">
+              {outOfStock && (
+                <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                  Esgotado
+                </span>
+              )}
+              {!outOfStock && outsideSchedule && (
+                <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                  Disponível em outro horário
+                </span>
+              )}
+              {!outOfStock && product.trackInventory && (product.stockQuantity ?? 0) > 0 && (product.stockQuantity ?? 0) <= 3 && (
+                <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-extrabold text-orange-800">
+                  Últimas {product.stockQuantity} un!
+                </span>
+              )}
               {product.isFeatured && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                   <Flame className="h-3 w-3" /> Mais Vendido
@@ -526,10 +578,20 @@ export default function PublicStorefrontPage() {
                 </span>
               )}
               {product.discountAmount > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
-                  <Percent className="h-3 w-3" /> Promoção
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                  <Percent className="h-3 w-3" /> {promoPct > 0 ? `-${promoPct}% OFF` : "Promoção"}
                 </span>
               )}
+              {product.servesPeopleCount && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                  Serve {product.servesPeopleCount} {product.servesPeopleCount === 1 ? "pessoa" : "pessoas"}
+                </span>
+              )}
+              {(product.dietaryTags ?? []).map((dt) => (
+                <span key={dt} className="rounded-full bg-lime-100 px-2 py-0.5 text-[10px] font-bold text-lime-800">
+                  {dietaryLabelMap[dt] || dt}
+                </span>
+              ))}
               {sizeLabels.length > 0 && (
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                   Tamanhos: {sizeLabels.join(" • ")}
@@ -551,16 +613,29 @@ export default function PublicStorefrontPage() {
               </span>
             </div>
             <span
-              style={{ backgroundColor: "var(--store-primary)" }}
-              className="rounded-xl px-3.5 py-1.5 text-xs font-extrabold text-white transition group-hover:opacity-90"
+              style={!isUnavailable ? { backgroundColor: "var(--store-primary)" } : undefined}
+              className={`rounded-xl px-3.5 py-1.5 text-xs font-extrabold transition ${
+                isUnavailable ? "bg-slate-200 text-slate-500" : "text-white group-hover:opacity-90"
+              }`}
             >
-              {isMonte ? "Montar" : hasCustomFlow ? "Pedir" : "+ Adicionar"}
+              {outOfStock ? "Esgotado" : outsideSchedule ? "Indisponível" : isMonte ? "Montar" : hasCustomFlow ? "Pedir" : "+ Adicionar"}
             </span>
           </div>
         </div>
 
         <ProductMediaFrame src={product.primaryImageUrl} alt={product.name} className="h-28 w-28 shrink-0 rounded-xl sm:h-32 sm:w-32" iconSize={30} />
       </button>
+    );
+  }
+
+  if (blockedReason) {
+    return (
+      <StoreBrandShell theme={theme} hideOpsNav>
+        <div className="mx-auto max-w-lg rounded-3xl border border-rose-200 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-extrabold text-slate-900">Cardápio Temporariamente Indisponível</h1>
+          <p className="mt-2 text-sm text-slate-600">{blockedReason}</p>
+        </div>
+      </StoreBrandShell>
     );
   }
 
@@ -793,7 +868,7 @@ export default function PublicStorefrontPage() {
               ...(promoProducts.length > 0 ? [{ id: "promo", label: "Promoções" }] : []),
               ...(menu && menu.combos.length > 0 ? [{ id: "combos", label: "Combos" }] : []),
               ...(menu?.categories
-                .filter((c) => menu.products.some((p) => p.categoryId === c.id))
+                .filter((c) => c.isScheduledAvailable !== false && menu.products.some((p) => p.categoryId === c.id))
                 .sort((a, b) => a.displayOrder - b.displayOrder)
                 .map((c) => ({ id: c.id, label: c.name })) ?? [])
             ].map((chip) => {
@@ -1055,6 +1130,7 @@ export default function PublicStorefrontPage() {
             </div>
           ) : activeFilter === "all" && !query ? (
             [...menu.categories]
+              .filter((c) => c.isScheduledAvailable !== false)
               .sort((a, b) => a.displayOrder - b.displayOrder)
               .map((cat) => {
               const catProds = [...filteredProducts]

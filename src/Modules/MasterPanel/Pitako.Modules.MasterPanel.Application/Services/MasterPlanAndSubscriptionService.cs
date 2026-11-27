@@ -222,6 +222,20 @@ public sealed class MasterPlanAndSubscriptionService
         {
             newlyOverdue += subscription.RefreshOverdueInvoices(utcNow);
 
+            if (subscription.Status == SubscriptionStatus.Trialing &&
+                subscription.TrialEndsAtUtc.HasValue &&
+                subscription.TrialEndsAtUtc.Value <= utcNow)
+            {
+                var suspendTrial = subscription.Suspend("Período de trial gratuito expirado", utcNow);
+                if (suspendTrial.IsSuccess)
+                {
+                    suspendedCount++;
+                    var customer = await _customerRepo.FindByIdAsync(subscription.CustomerAccountId, cancellationToken);
+                    customer?.Suspend();
+                }
+                continue;
+            }
+
             if (subscription.Status == SubscriptionStatus.PastDue)
             {
                 var oldestOverdue = subscription.Invoices

@@ -7,6 +7,7 @@ import { StoreBrandShell } from "@/components/StoreBrandShell";
 import {
   CourierDto,
   DeliveryRoutesModal,
+  DispatchRunDto,
   PedidoOrderItem,
 } from "@/components/pedidos/DeliveryRoutesModal";
 import { ThermalComandaModal } from "@/components/pedidos/ThermalComandaModal";
@@ -65,6 +66,7 @@ export default function OrdersKanbanPage() {
   const [token, setToken] = useState<string>("");
   const [orders, setOrders] = useState<FullOrderDto[]>([]);
   const [couriers, setCouriers] = useState<CourierDto[]>([]);
+  const [recentRuns, setRecentRuns] = useState<DispatchRunDto[]>([]);
   const [originCoords, setOriginCoords] = useState<DeliveryPolicyCoords>({
     originLatitude: -20.5386,
     originLongitude: -47.4008,
@@ -104,7 +106,7 @@ export default function OrdersKanbanPage() {
     setLoading(true);
     const [ordersRes, couriersRes, policyRes, brandRes] = await Promise.all([
       apiFetch<FullOrderDto[]>("/api/v1/orders/all", {}, session.accessToken),
-      apiFetch<{ couriers: CourierDto[] }>("/api/v1/delivery/couriers", {}, session.accessToken),
+      apiFetch<{ couriers: CourierDto[]; recentRuns?: DispatchRunDto[] }>("/api/v1/delivery/couriers", {}, session.accessToken),
       apiFetch<DeliveryPolicyCoords | null>("/api/v1/delivery/policy", {}, session.accessToken),
       apiFetch<StoreMetaDto>("/api/v1/store/branding", {}, session.accessToken),
     ]);
@@ -118,6 +120,7 @@ export default function OrdersKanbanPage() {
 
     if (couriersRes.ok && couriersRes.data?.couriers) {
       setCouriers(couriersRes.data.couriers);
+      setRecentRuns(couriersRes.data.recentRuns ?? []);
     }
     if (policyRes.ok && policyRes.data) {
       setOriginCoords({
@@ -608,6 +611,7 @@ export default function OrdersKanbanPage() {
         onClose={() => setRoutesOpen(false)}
         orders={orders}
         couriers={couriers}
+        recentRuns={recentRuns}
         storeName={storeMeta.tradeName || "Loja"}
         storeAddress={storeMeta.address || "Ponto de Partida"}
         originLat={originCoords.originLatitude}

@@ -44,11 +44,36 @@ interface GeneratedRoute {
   estimatedKm: number;
 }
 
+export interface DispatchRunDto {
+  id: string;
+  courierId: string;
+  runCode: string;
+  status?: string;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  totalEstimatedDistanceKm: number;
+  courierCommissionAmount: number;
+  assignedAtUtc: string;
+  stops: Array<{
+    id: string;
+    stopSequence: number;
+    orderId: string;
+    orderNumber: string;
+    customerName: string;
+    destinationAddress: string;
+    destinationLatitude: number;
+    destinationLongitude: number;
+    distanceFromPreviousKm: number;
+    status: string;
+  }>;
+}
+
 interface DeliveryRoutesModalProps {
   open: boolean;
   onClose: () => void;
   orders: PedidoOrderItem[];
   couriers: CourierDto[];
+  recentRuns?: DispatchRunDto[];
   storeName: string;
   storeAddress: string;
   originLat: number;
@@ -84,6 +109,7 @@ export function DeliveryRoutesModal({
   onClose,
   orders,
   couriers,
+  recentRuns = [],
   storeName,
   storeAddress,
   originLat,
@@ -96,6 +122,7 @@ export function DeliveryRoutesModal({
   const [zoom, setZoom] = useState(14);
   const [excludedOrderIds, setExcludedOrderIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [settlingId, setSettlingId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [generatedRoutes, setGeneratedRoutes] = useState<GeneratedRoute[]>([]);
 
@@ -138,6 +165,46 @@ export function DeliveryRoutesModal({
 
   function toggleOne(id: string) {
     setExcludedOrderIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function handleStartRun(runId: string) {
+    setSettlingId(runId);
+    const res = await apiFetch(`/api/v1/delivery/dispatch-runs/${runId}/start`, { method: "POST" }, token);
+    setSettlingId(null);
+    if (res.ok) {
+      setStatusMsg("Saída do motoboy iniciada! Pedidos vinculados atualizados para Em Entrega.");
+      await onRoutesGenerated();
+    } else {
+      setStatusMsg(res.errorMessage || "Não foi possível iniciar a rota.");
+    }
+  }
+
+  async function handleResolveStop(runId: string, stopId: string) {
+    setSettlingId(stopId);
+    const res = await apiFetch(
+      `/api/v1/delivery/dispatch-runs/${runId}/stops/${stopId}/resolve`,
+      { method: "POST", body: JSON.stringify({ delivered: true, notes: "Entrega confirmada" }) },
+      token
+    );
+    setSettlingId(null);
+    if (res.ok) {
+      setStatusMsg("Parada baixada e pedido concluído com sucesso!");
+      await onRoutesGenerated();
+    } else {
+      setStatusMsg(res.errorMessage || "Não foi possível baixar a parada.");
+    }
+  }
+
+  async function handleCompleteAllRun(runId: string) {
+    setSettlingId(runId);
+    const res = await apiFetch(`/api/v1/delivery/dispatch-runs/${runId}/complete-all`, { method: "POST" }, token);
+    setSettlingId(null);
+    if (res.ok) {
+      setStatusMsg("Baixa completa da rota realizada! Entregas concluídas e comissão liberada.");
+      await onRoutesGenerated();
+    } else {
+      setStatusMsg(res.errorMessage || "Erro ao finalizar toda a rota.");
+    }
   }
 
   async function handleGenerateRoutes() {
@@ -552,6 +619,89 @@ export function DeliveryRoutesModal({
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* Recent / Active Dispatch Runs with Baixa / Settlement Controls */}
+            {recentRuns.length > 0 && (
+              <div className="space-y-2 border-t border-white/10 pt-3">
+                <div className="text-xs font-bold text-white">Romaneios & Baixa dos Entregadores ({recentRuns.length})</div>
+                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                  {recentRuns.map((run) => {
+                    const courierName = couriers.find((c) => c.id === run.courierId)?.fullName || "Motoboy";
+                    const isDone = run.status === "Completed" || run.stops.every((s) => s.status !== "Pending");
+                    return (
+                      <div key={run.id} className="rounded-xl border border-white/15 bg-[#1b1330] p-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-extrabold text-amber-300">{run.runCode}</span>
+                            <span className="ml-2 font-bold text-white">{courierName}</span>
+                            <span className="ml-2 text-[11px] text-slate-300">
+                              · {run.totalEstimatedDistanceKm.toFixed(1)} km · Frete/Comissão: R$ {run.courierCommissionAmount.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                isDone
+                                  ? "bg-emerald-500/20 text-emerald-300"
+                                  : run.status === "InTransit"
+                                    ? "bg-violet-500/30 text-violet-200"
+                                    : "bg-amber-500/20 text-amber-300"
+                              }`}
+                            >
+                              {isDone ? "Baixada / Concluída" : run.status === "InTransit" ? "Em Trânsito" : "Aguardando Saída"}
+                            </span>
+                            {!isDone && run.status !== "InTransit" && (
+                              <button
+                                type="button"
+                                disabled={settlingId === run.id}
+                                onClick={() => void handleStartRun(run.id)}
+                                className="rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-violet-500 disabled:opacity-50"
+                              >
+                                Iniciar Saída
+                              </button>
+                            )}
+                            {!isDone && (
+                              <button
+                                type="button"
+                                disabled={settlingId === run.id}
+                                onClick={() => void handleCompleteAllRun(run.id)}
+                                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                Dar Baixa Total ✓
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <ul className="mt-2 space-y-1">
+                          {run.stops.map((st) => {
+                            const delivered = st.status === "Delivered";
+                            return (
+                              <li key={st.id} className="flex items-center justify-between gap-2 rounded bg-white/5 px-2 py-1 text-[11px]">
+                                <span className={delivered ? "text-emerald-300 line-through" : "text-slate-200"}>
+                                  {st.stopSequence}. {st.orderNumber} — {st.customerName} ({st.destinationAddress})
+                                </span>
+                                {delivered ? (
+                                  <span className="shrink-0 font-bold text-emerald-400">Entregue ✓</span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={settlingId === st.id}
+                                    onClick={() => void handleResolveStop(run.id, st.id)}
+                                    className="shrink-0 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-500"
+                                  >
+                                    Baixar Parada ✓
+                                  </button>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
