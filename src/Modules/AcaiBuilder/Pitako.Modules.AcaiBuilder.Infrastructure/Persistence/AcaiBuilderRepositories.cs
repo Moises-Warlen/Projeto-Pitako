@@ -136,3 +136,25 @@ public sealed class EfAcaiPaidAddonRepository(AcaiBuilderDbContext db) : IAcaiPa
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
+
+public sealed class EfAcaiAddonCategoryRepository(AcaiBuilderDbContext db) : IAcaiAddonCategoryRepository
+{
+    public Task<AcaiAddonCategory?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.AddonCategories.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<AcaiAddonCategory>> ListAsync(bool includePaused, CancellationToken cancellationToken = default) =>
+        await db.AddonCategories
+            .AsNoTracking()
+            .Where(c => includePaused || c.IsActive)
+            .OrderBy(c => c.DisplayOrder)
+            .ThenBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddAsync(AcaiAddonCategory category, CancellationToken cancellationToken = default) =>
+        await db.AddonCategories.AddAsync(category, cancellationToken);
+
+    public void Remove(AcaiAddonCategory category) => db.AddonCategories.Remove(category);
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        db.SaveChangesAsync(cancellationToken);
+}

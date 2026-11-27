@@ -17,8 +17,100 @@ public enum AcaiFreeCountingMode
 }
 
 /// <summary>
-/// Tamanho configurável de copo/recipiente de açaí com capacidade em ml, preço base
-/// e limite próprio de acompanhamentos gratuitos (Seção 13).
+/// Tipo de categoria de adicionais no montador de açaí (Grátis, Pago, Frutas, Cremes, Complementos).
+/// </summary>
+public enum AcaiAddonCategoryKind
+{
+    FreeIncluded = 1,
+    PaidAddon = 2,
+    Fruits = 3,
+    CreamsAndToppings = 4,
+    DryComplements = 5
+}
+
+/// <summary>
+/// Categoria organizacional para adicionais gratuitos, pagos e frutas do açaí.
+/// </summary>
+public sealed class AcaiAddonCategory : TenantScopedAggregateRoot
+{
+    private AcaiAddonCategory()
+    {
+        Name = string.Empty;
+    }
+
+    private AcaiAddonCategory(
+        Guid id,
+        Guid tenantId,
+        string name,
+        AcaiAddonCategoryKind kind,
+        bool isFreeByDefault,
+        string? description,
+        int displayOrder) : base(id, tenantId)
+    {
+        Name = name;
+        Kind = kind;
+        IsFreeByDefault = isFreeByDefault;
+        Description = description;
+        DisplayOrder = displayOrder;
+        IsActive = true;
+    }
+
+    public string Name { get; private set; }
+    public AcaiAddonCategoryKind Kind { get; private set; }
+    public bool IsFreeByDefault { get; private set; }
+    public string? Description { get; private set; }
+    public int DisplayOrder { get; private set; }
+    public bool IsActive { get; private set; }
+
+    public static Result<AcaiAddonCategory> Create(
+        Guid tenantId,
+        string name,
+        AcaiAddonCategoryKind kind = AcaiAddonCategoryKind.FreeIncluded,
+        bool isFreeByDefault = true,
+        string? description = null,
+        int displayOrder = 0)
+    {
+        if (tenantId == Guid.Empty)
+            return Result.Failure<AcaiAddonCategory>(Error.Validation("Acai.TenantRequired", "TenantId é obrigatório."));
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure<AcaiAddonCategory>(Error.Validation("Acai.CategoryNameRequired", "Nome da categoria de adicionais é obrigatório."));
+
+        return Result.Success(new AcaiAddonCategory(
+            Guid.NewGuid(),
+            tenantId,
+            name.Trim(),
+            kind,
+            isFreeByDefault,
+            string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+            displayOrder));
+    }
+
+    public Result Update(
+        string name,
+        AcaiAddonCategoryKind kind,
+        bool isFreeByDefault,
+        string? description = null,
+        int displayOrder = 0)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure(Error.Validation("Acai.CategoryNameRequired", "Nome da categoria de adicionais é obrigatório."));
+
+        Name = name.Trim();
+        Kind = kind;
+        IsFreeByDefault = isFreeByDefault;
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        DisplayOrder = displayOrder;
+        return Result.Success();
+    }
+
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
+    public void Pause() => IsActive = false;
+    public void Reactivate() => IsActive = true;
+}
+
+/// <summary>
+/// Tamanho configurável de copo/recipiente de açaí com capacidade em ml, preço base,
+/// preço de custo, descrição e regras de adicionais gratuitos/pagos (Seção 13).
 /// </summary>
 public sealed class AcaiCupSize : TenantScopedAggregateRoot
 {
@@ -26,6 +118,9 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
     {
         Name = string.Empty;
         BasePrice = Money.Zero();
+        CostPrice = Money.Zero();
+        AllowFreeToppings = true;
+        AllowPaidAddons = true;
     }
 
     private AcaiCupSize(
@@ -40,7 +135,11 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
         int? maxPaidAddonsPerCup,
         Guid? linkedProductId,
         string? sku,
-        int displayOrder) : base(id, tenantId)
+        int displayOrder,
+        string? description,
+        Money costPrice,
+        bool allowFreeToppings,
+        bool allowPaidAddons) : base(id, tenantId)
     {
         Name = name;
         VolumeMl = volumeMl;
@@ -52,15 +151,23 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
         LinkedProductId = linkedProductId;
         Sku = sku;
         DisplayOrder = displayOrder;
+        Description = description;
+        CostPrice = costPrice;
+        AllowFreeToppings = allowFreeToppings;
+        AllowPaidAddons = allowPaidAddons;
         IsActive = true;
     }
 
     public string Name { get; private set; }
     public int VolumeMl { get; private set; }
     public Money BasePrice { get; private set; }
+    public Money CostPrice { get; private set; }
+    public string? Description { get; private set; }
     public int FreeToppingsLimit { get; private set; }
     public int MinFreeToppings { get; private set; }
     public AcaiFreeCountingMode CountingMode { get; private set; }
+    public bool AllowFreeToppings { get; private set; }
+    public bool AllowPaidAddons { get; private set; }
     public int? MaxPaidAddonsPerCup { get; private set; }
     public Guid? LinkedProductId { get; private set; }
     public string? Sku { get; private set; }
@@ -78,7 +185,11 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
         int? maxPaidAddonsPerCup = null,
         Guid? linkedProductId = null,
         string? sku = null,
-        int displayOrder = 0)
+        int displayOrder = 0,
+        string? description = null,
+        Money? costPrice = null,
+        bool allowFreeToppings = true,
+        bool allowPaidAddons = true)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<AcaiCupSize>(Error.Validation("Acai.TenantRequired", "TenantId é obrigatório."));
@@ -112,7 +223,11 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
             maxPaidAddonsPerCup,
             linkedProductId == Guid.Empty ? null : linkedProductId,
             string.IsNullOrWhiteSpace(sku) ? null : sku.Trim().ToUpperInvariant(),
-            displayOrder));
+            displayOrder,
+            string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+            costPrice ?? Money.Zero(basePrice.Currency),
+            allowFreeToppings,
+            allowPaidAddons));
     }
 
     public Result UpdateConfiguration(
@@ -123,7 +238,11 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
         int minFreeToppings,
         AcaiFreeCountingMode countingMode,
         int? maxPaidAddonsPerCup,
-        int displayOrder)
+        int displayOrder,
+        string? description = null,
+        Money? costPrice = null,
+        bool? allowFreeToppings = null,
+        bool? allowPaidAddons = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Acai.CupNameRequired", "Nome do tamanho do copo é obrigatório."));
@@ -144,9 +263,14 @@ public sealed class AcaiCupSize : TenantScopedAggregateRoot
         CountingMode = countingMode;
         MaxPaidAddonsPerCup = maxPaidAddonsPerCup;
         DisplayOrder = displayOrder;
+        if (description is not null) Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (costPrice is not null) CostPrice = costPrice;
+        if (allowFreeToppings.HasValue) AllowFreeToppings = allowFreeToppings.Value;
+        if (allowPaidAddons.HasValue) AllowPaidAddons = allowPaidAddons.Value;
         return Result.Success();
     }
 
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
     public void Pause() => IsActive = false;
     public void Reactivate() => IsActive = true;
 }
@@ -222,6 +346,7 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
     private AcaiFreeTopping()
     {
         Name = string.Empty;
+        CostPrice = Money.Zero();
     }
 
     private AcaiFreeTopping(
@@ -232,7 +357,11 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
         Guid? supplyItemId,
         decimal? consumptionQuantityPerPortion,
         string? consumptionUnitCode,
-        int displayOrder) : base(id, tenantId)
+        int displayOrder,
+        string? description,
+        Money costPrice,
+        Guid? addonCategoryId,
+        string? categoryName) : base(id, tenantId)
     {
         Name = name;
         MaxPortionsPerCup = maxPortionsPerCup;
@@ -240,10 +369,18 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
         ConsumptionQuantityPerPortion = consumptionQuantityPerPortion;
         ConsumptionUnitCode = consumptionUnitCode;
         DisplayOrder = displayOrder;
+        Description = description;
+        CostPrice = costPrice;
+        AddonCategoryId = addonCategoryId;
+        CategoryName = categoryName;
         IsActive = true;
     }
 
     public string Name { get; private set; }
+    public string? Description { get; private set; }
+    public Money CostPrice { get; private set; }
+    public Guid? AddonCategoryId { get; private set; }
+    public string? CategoryName { get; private set; }
     public int MaxPortionsPerCup { get; private set; }
     public Guid? SupplyItemId { get; private set; }
     public decimal? ConsumptionQuantityPerPortion { get; private set; }
@@ -258,7 +395,11 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
         int displayOrder = 0,
         Guid? supplyItemId = null,
         decimal? consumptionQuantityPerPortion = null,
-        string? consumptionUnitCode = null)
+        string? consumptionUnitCode = null,
+        string? description = null,
+        Money? costPrice = null,
+        Guid? addonCategoryId = null,
+        string? categoryName = null)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<AcaiFreeTopping>(Error.Validation("Acai.TenantRequired", "TenantId é obrigatório."));
@@ -277,7 +418,11 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
             supplyItemId == Guid.Empty ? null : supplyItemId,
             consumptionQuantityPerPortion,
             string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant(),
-            displayOrder));
+            displayOrder,
+            string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+            costPrice ?? Money.Zero(),
+            addonCategoryId == Guid.Empty ? null : addonCategoryId,
+            string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim()));
     }
 
     public Result Update(
@@ -286,7 +431,11 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
         int displayOrder = 0,
         Guid? supplyItemId = null,
         decimal? consumptionQuantityPerPortion = null,
-        string? consumptionUnitCode = null)
+        string? consumptionUnitCode = null,
+        string? description = null,
+        Money? costPrice = null,
+        Guid? addonCategoryId = null,
+        string? categoryName = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Acai.ToppingNameRequired", "Nome do acompanhamento gratuito é obrigatório."));
@@ -301,9 +450,14 @@ public sealed class AcaiFreeTopping : TenantScopedAggregateRoot
         SupplyItemId = supplyItemId == Guid.Empty ? null : supplyItemId;
         ConsumptionQuantityPerPortion = consumptionQuantityPerPortion;
         ConsumptionUnitCode = string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant();
+        if (description is not null) Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (costPrice is not null) CostPrice = costPrice;
+        if (addonCategoryId.HasValue) AddonCategoryId = addonCategoryId == Guid.Empty ? null : addonCategoryId;
+        if (categoryName is not null) CategoryName = string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim();
         return Result.Success();
     }
 
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
     public void Pause() => IsActive = false;
     public void Reactivate() => IsActive = true;
 }
@@ -317,6 +471,7 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
     {
         Name = string.Empty;
         AdditionalPrice = Money.Zero();
+        CostPrice = Money.Zero();
     }
 
     private AcaiPaidAddon(
@@ -328,20 +483,32 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
         Guid? supplyItemId,
         decimal? consumptionQuantityPerUnit,
         string? consumptionUnitCode,
-        int displayOrder) : base(id, tenantId)
+        int displayOrder,
+        string? description,
+        Money costPrice,
+        Guid? addonCategoryId,
+        string? categoryName) : base(id, tenantId)
     {
         Name = name;
         AdditionalPrice = additionalPrice;
+        CostPrice = costPrice;
         MaxQuantityPerCup = maxQuantityPerCup;
         SupplyItemId = supplyItemId;
         ConsumptionQuantityPerUnit = consumptionQuantityPerUnit;
         ConsumptionUnitCode = consumptionUnitCode;
         DisplayOrder = displayOrder;
+        Description = description;
+        AddonCategoryId = addonCategoryId;
+        CategoryName = categoryName;
         IsActive = true;
     }
 
     public string Name { get; private set; }
+    public string? Description { get; private set; }
     public Money AdditionalPrice { get; private set; }
+    public Money CostPrice { get; private set; }
+    public Guid? AddonCategoryId { get; private set; }
+    public string? CategoryName { get; private set; }
     public int MaxQuantityPerCup { get; private set; }
     public Guid? SupplyItemId { get; private set; }
     public decimal? ConsumptionQuantityPerUnit { get; private set; }
@@ -357,7 +524,11 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
         int displayOrder = 0,
         Guid? supplyItemId = null,
         decimal? consumptionQuantityPerUnit = null,
-        string? consumptionUnitCode = null)
+        string? consumptionUnitCode = null,
+        string? description = null,
+        Money? costPrice = null,
+        Guid? addonCategoryId = null,
+        string? categoryName = null)
     {
         if (tenantId == Guid.Empty)
             return Result.Failure<AcaiPaidAddon>(Error.Validation("Acai.TenantRequired", "TenantId é obrigatório."));
@@ -379,7 +550,11 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
             supplyItemId == Guid.Empty ? null : supplyItemId,
             consumptionQuantityPerUnit,
             string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant(),
-            displayOrder));
+            displayOrder,
+            string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+            costPrice ?? Money.Zero(additionalPrice.Currency),
+            addonCategoryId == Guid.Empty ? null : addonCategoryId,
+            string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim()));
     }
 
     public Result UpdatePrice(Money newPrice)
@@ -396,7 +571,11 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
         int displayOrder = 0,
         Guid? supplyItemId = null,
         decimal? consumptionQuantityPerUnit = null,
-        string? consumptionUnitCode = null)
+        string? consumptionUnitCode = null,
+        string? description = null,
+        Money? costPrice = null,
+        Guid? addonCategoryId = null,
+        string? categoryName = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Acai.AddonNameRequired", "Nome do adicional pago é obrigatório."));
@@ -413,9 +592,14 @@ public sealed class AcaiPaidAddon : TenantScopedAggregateRoot
         SupplyItemId = supplyItemId == Guid.Empty ? null : supplyItemId;
         ConsumptionQuantityPerUnit = consumptionQuantityPerUnit;
         ConsumptionUnitCode = string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant();
+        if (description is not null) Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (costPrice is not null) CostPrice = costPrice;
+        if (addonCategoryId.HasValue) AddonCategoryId = addonCategoryId == Guid.Empty ? null : addonCategoryId;
+        if (categoryName is not null) CategoryName = string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim();
         return Result.Success();
     }
 
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
     public void Pause() => IsActive = false;
     public void Reactivate() => IsActive = true;
 }

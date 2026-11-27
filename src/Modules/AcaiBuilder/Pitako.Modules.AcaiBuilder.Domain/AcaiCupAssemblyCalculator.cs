@@ -86,6 +86,13 @@ public static class AcaiCupAssemblyCalculator
         var selectedFree = new List<AcaiSelectedFreeToppingSummary>();
         var usedFreeCount = 0;
 
+        if (!cupSize.AllowFreeToppings && groupedFree.Count > 0)
+        {
+            return Result.Failure<AcaiCupAssemblySummary>(Error.Validation(
+                "Acai.FreeToppingsNotAllowed",
+                $"O tamanho '{cupSize.Name}' está configurado para não incluir acompanhamentos gratuitos."));
+        }
+
         foreach (var entry in groupedFree)
         {
             if (entry.TotalQty <= 0)
@@ -105,14 +112,14 @@ public static class AcaiCupAssemblyCalculator
             selectedFree.Add(new AcaiSelectedFreeToppingSummary(topping.Id, topping.Name, entry.TotalQty));
         }
 
-        if (usedFreeCount > cupSize.FreeToppingsLimit)
+        if (cupSize.AllowFreeToppings && usedFreeCount > cupSize.FreeToppingsLimit)
         {
             return Result.Failure<AcaiCupAssemblySummary>(Error.Validation(
                 "Acai.FreeToppingsLimitExceeded",
                 $"Limite de {cupSize.FreeToppingsLimit} acompanhamento(s) gratuito(s) excedido (selecionados: {usedFreeCount})."));
         }
 
-        if (usedFreeCount < cupSize.MinFreeToppings)
+        if (cupSize.AllowFreeToppings && usedFreeCount < cupSize.MinFreeToppings)
         {
             return Result.Failure<AcaiCupAssemblySummary>(Error.Validation(
                 "Acai.MinFreeToppingsRequired",
@@ -123,6 +130,13 @@ public static class AcaiCupAssemblyCalculator
             .GroupBy(x => x.ItemId)
             .Select(g => new { ItemId = g.Key, TotalQty = g.Sum(i => i.Quantity) })
             .ToList();
+
+        if (!cupSize.AllowPaidAddons && groupedPaid.Count > 0)
+        {
+            return Result.Failure<AcaiCupAssemblySummary>(Error.Validation(
+                "Acai.PaidAddonsNotAllowed",
+                $"O tamanho '{cupSize.Name}' não aceita adicionais pagos."));
+        }
 
         var selectedPaid = new List<AcaiSelectedPaidAddonSummary>();
         var totalPaidQty = 0;

@@ -274,6 +274,7 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<IAcaiBaseFlavorRepository, EfAcaiBaseFlavorRepository>();
         services.AddScoped<IAcaiFreeToppingRepository, EfAcaiFreeToppingRepository>();
         services.AddScoped<IAcaiPaidAddonRepository, EfAcaiPaidAddonRepository>();
+        services.AddScoped<IAcaiAddonCategoryRepository, EfAcaiAddonCategoryRepository>();
         services.AddScoped<AcaiBuilderManagementService>();
         services.AddScoped<IAcaiAssemblyPricingService>(
             sp => sp.GetRequiredService<AcaiBuilderManagementService>());
@@ -479,11 +480,14 @@ public static class PitakoServiceCollectionExtensions
             if (!await creator.ExistsAsync(ct))
                 await creator.CreateAsync(ct);
 
-            var firstTable = db.Model.GetEntityTypes()
+            var tableNames = db.Model.GetEntityTypes()
                 .Select(e => e.GetTableName())
-                .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
 
-            if (firstTable is null)
+            if (tableNames.Count == 0)
                 continue;
 
             var conn = (SqliteConnection)db.Database.GetDbConnection();
@@ -491,15 +495,112 @@ public static class PitakoServiceCollectionExtensions
             if (conn.State != System.Data.ConnectionState.Open)
                 await conn.OpenAsync(ct);
 
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText =
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
-            cmd.Parameters.AddWithValue("$name", firstTable);
+            var anyExists = false;
+            foreach (var tbl in tableNames)
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
+                cmd.Parameters.AddWithValue("$name", tbl);
+                if (Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) > 0)
+                {
+                    anyExists = true;
+                    break;
+                }
+            }
 
-            var exists = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) > 0;
-
-            if (!exists)
+            if (!anyExists)
                 await creator.CreateTablesAsync(ct);
+
+            if (db is CatalogDbContext)
+            {
+                await EnsureSqliteColumnAsync(conn, "product_variations", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "product_variations", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+                await EnsureSqliteColumnAsync(conn, "modifier_options", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "modifier_options", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+            }
+            else if (db is AcaiBuilderDbContext)
+            {
+                await EnsureSqliteTableAsync(conn, "addon_categories", """
+                    CREATE TABLE IF NOT EXISTS "addon_categories" (
+                        "id" TEXT NOT NULL CONSTRAINT "PK_addon_categories" PRIMARY KEY,
+                        "tenant_id" TEXT NOT NULL,
+                        "name" TEXT NOT NULL,
+                        "kind" INTEGER NOT NULL,
+                        "is_free_by_default" INTEGER NOT NULL,
+                        "description" TEXT NULL,
+                        "display_order" INTEGER NOT NULL,
+                        "is_active" INTEGER NOT NULL,
+                        "created_at_utc" TEXT NOT NULL,
+                        "updated_at_utc" TEXT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS "IX_addon_categories_tenant_id_display_order" ON "addon_categories" ("tenant_id", "display_order");
+                    """, ct);
+
+                await EnsureSqliteColumnAsync(conn, "cup_sizes", "description", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "cup_sizes", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "cup_sizes", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+                await EnsureSqliteColumnAsync(conn, "cup_sizes", "allow_free_toppings", "INTEGER NOT NULL DEFAULT 1", ct);
+                await EnsureSqliteColumnAsync(conn, "cup_sizes", "allow_paid_addons", "INTEGER NOT NULL DEFAULT 1", ct);
+
+                await EnsureSqliteColumnAsync(conn, "free_toppings", "description", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "free_toppings", "addon_category_id", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "free_toppings", "category_name", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "free_toppings", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "free_toppings", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+
+                await EnsureSqliteColumnAsync(conn, "paid_addons", "description", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "paid_addons", "addon_category_id", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "paid_addons", "category_name", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "paid_addons", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "paid_addons", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+            }
+        }
+    }
+
+    private static async Task EnsureSqliteColumnAsync(
+        SqliteConnection conn,
+        string tableName,
+        string columnName,
+        string columnDefinition,
+        CancellationToken ct)
+    {
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = $"PRAGMA table_info(\"{tableName}\");";
+        await using var reader = await checkCmd.ExecuteReaderAsync(ct);
+        var exists = false;
+        while (await reader.ReadAsync(ct))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+        await reader.CloseAsync();
+
+        if (!exists)
+        {
+            await using var alterCmd = conn.CreateCommand();
+            alterCmd.CommandText = $"ALTER TABLE \"{tableName}\" ADD COLUMN \"{columnName}\" {columnDefinition};";
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsureSqliteTableAsync(
+        SqliteConnection conn,
+        string tableName,
+        string createSql,
+        CancellationToken ct)
+    {
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        checkCmd.Parameters.AddWithValue("$name", tableName);
+        var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(ct)) > 0;
+        if (!exists)
+        {
+            await using var createCmd = conn.CreateCommand();
+            createCmd.CommandText = createSql;
+            await createCmd.ExecuteNonQueryAsync(ct);
         }
     }
 

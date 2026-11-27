@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit3, Pause, Play, Plus, Sliders, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Edit3, Pause, Play, Plus, Sliders, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -9,6 +9,7 @@ export interface AdminModifierOptionDto {
   name: string;
   description?: string | null;
   additionalPrice: number;
+  costPrice?: number;
   maxQuantity: number;
   displayOrder: number;
   isAvailable: boolean;
@@ -51,6 +52,18 @@ const GROUP_KIND_LABELS: Record<number, string> = {
   6: "Seleção de Sabores (Pizza/Sorvete)"
 };
 
+const CATEGORY_TAG_OPTIONS = [
+  { value: "gratis", label: "Grátis / Acompanhamentos" },
+  { value: "frutas", label: "Frutas Frescas" },
+  { value: "pagos", label: "Adicionais Pagos" },
+  { value: "cremes", label: "Cremes & Chocolates" },
+  { value: "caldas", label: "Caldas & Coberturas" },
+  { value: "complementos", label: "Complementos Secos" },
+  { value: "confeitos", label: "Confeitos & Bombons" },
+  { value: "fitness", label: "Linha Fitness" },
+  { value: "outros", label: "Outros" }
+];
+
 export function AdminModifiersTab({
   token,
   groups,
@@ -67,6 +80,7 @@ export function AdminModifiersTab({
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [gName, setGName] = useState("");
   const [gKind, setGKind] = useState("2");
+  const [gCategoryTag, setGCategoryTag] = useState("frutas");
   const [gMin, setGMin] = useState("0");
   const [gMax, setGMax] = useState("5");
   const [gFree, setGFree] = useState("3");
@@ -77,6 +91,8 @@ export function AdminModifiersTab({
   const [activeGroupForOpt, setActiveGroupForOpt] = useState<string | null>(groups[0]?.id || null);
   const [editingOptId, setEditingOptId] = useState<string | null>(null);
   const [optName, setOptName] = useState("");
+  const [optDescription, setOptDescription] = useState("");
+  const [optCostPrice, setOptCostPrice] = useState("0");
   const [optPrice, setOptPrice] = useState("0");
   const [optMaxQty, setOptMaxQty] = useState("2");
   const [optSupplyId, setOptSupplyId] = useState("");
@@ -96,10 +112,11 @@ export function AdminModifiersTab({
       selectionKind: kindNum,
       minSelections: Number(gMin),
       maxSelections: Number(gMax),
-      freeAllowance: Number(gFree),
+      freeAllowance: kindNum === 3 ? 0 : Number(gFree),
       isRequired: gRequired,
       countingMode: Number(gCounting),
-      displayOrder: groups.length + 1,
+      categoryTag: gCategoryTag || null,
+      displayOrder: editingGroupId ? (groups.find((g) => g.id === editingGroupId)?.displayOrder ?? groups.length + 1) : groups.length + 1,
       isActive: true
     };
 
@@ -110,15 +127,65 @@ export function AdminModifiersTab({
     if (res.ok) {
       setEditingGroupId(null);
       setGName("");
-      onNotify(editingGroupId ? "Grupo atualizado!" : "Grupo criado! Agora adicione opções ou vincule aos produtos.");
+      onNotify(editingGroupId ? "Categoria de adicionais atualizada!" : "Categoria de adicionais criada! Agora adicione itens.");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao salvar grupo.");
+  }
+
+  async function moveGroup(idx: number, dir: -1 | 1) {
+    const ordered = [...groups].sort((a, b) => a.displayOrder - b.displayOrder);
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= ordered.length) return;
+    const [moved] = ordered.splice(idx, 1);
+    ordered.splice(targetIdx, 0, moved);
+    const payload: Record<string, number> = {};
+    ordered.forEach((g, i) => {
+      payload[g.id] = i + 1;
+    });
+    const res = await apiFetch("/api/v1/catalog/modifier-groups/reorder", { method: "POST", body: JSON.stringify(payload) }, token);
+    if (res.ok) {
+      onNotify("Ordem das categorias de adicionais atualizada!");
+      await onReload();
+    }
+  }
+
+  async function reorderOption(group: AdminModifierGroupDto, optId: string, dir: -1 | 1) {
+    const ordered = [...group.options].sort((a, b) => a.displayOrder - b.displayOrder);
+    const idx = ordered.findIndex((o) => o.id === optId);
+    const targetIdx = idx + dir;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= ordered.length) return;
+    const [moved] = ordered.splice(idx, 1);
+    ordered.splice(targetIdx, 0, moved);
+    const payload: Record<string, number> = {};
+    ordered.forEach((o, i) => {
+      payload[o.id] = i + 1;
+    });
+    const res = await apiFetch(`/api/v1/catalog/modifier-groups/${group.id}/options/reorder`, { method: "POST", body: JSON.stringify(payload) }, token);
+    if (res.ok) {
+      onNotify("Ordem dos adicionais atualizada!");
+      await onReload();
+    }
+  }
+
+  async function moveOptionToGroup(sourceGroupId: string, optionId: string, targetGroupId: string) {
+    const res = await apiFetch(
+      `/api/v1/catalog/modifier-groups/${sourceGroupId}/options/${optionId}/move`,
+      { method: "POST", body: JSON.stringify({ targetGroupId }) },
+      token
+    );
+    if (res.ok) {
+      const targetName = groups.find((g) => g.id === targetGroupId)?.name || "outra categoria";
+      onNotify(`Adicional movido para "${targetName}"!`);
+      await onReload();
+    } else {
+      onNotify(res.errorMessage || "Erro ao mover adicional.");
+    }
   }
 
   async function deleteGroup(id: string) {
     const res = await apiFetch(`/api/v1/catalog/modifier-groups/${id}`, { method: "DELETE" }, token);
     if (res.ok) {
-      onNotify("Grupo excluído!");
+      onNotify("Categoria excluída!");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao excluir grupo.");
   }
@@ -128,11 +195,14 @@ export function AdminModifiersTab({
     const groupId = activeGroupForOpt || groups[0]?.id;
     if (!groupId) return;
 
+    const currentGroup = groups.find((g) => g.id === groupId);
     const input = {
       name: optName,
-      additionalPrice: Number(optPrice),
+      description: optDescription.trim() || null,
+      additionalPrice: Number(optPrice) || 0,
+      costPrice: Number(optCostPrice) || 0,
       maxQuantity: Number(optMaxQty) || 1,
-      displayOrder: 0,
+      displayOrder: editingOptId ? (currentGroup?.options.find((o) => o.id === editingOptId)?.displayOrder ?? 0) : (currentGroup?.options.length ?? 0) + 1,
       supplyItemId: optSupplyId || null,
       consumptionQuantity: optSupplyId ? Number(optConsumeQty) || 0 : 0,
       consumptionUnitCode: optSupplyId ? optConsumeUnit || "g" : null,
@@ -152,10 +222,12 @@ export function AdminModifiersTab({
     if (res.ok) {
       setEditingOptId(null);
       setOptName("");
+      setOptDescription("");
+      setOptCostPrice("0");
       setOptPrice("0");
       setOptReplaces("");
       setOptIncompatibleCsv("");
-      onNotify("Ingrediente / opção salvo com integração de estoque!");
+      onNotify("Adicional / ingrediente salvo!");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao salvar opção.");
   }
@@ -164,6 +236,7 @@ export function AdminModifiersTab({
     const input = {
       name: opt.name,
       additionalPrice: opt.additionalPrice,
+      costPrice: opt.costPrice ?? 0,
       maxQuantity: opt.maxQuantity,
       displayOrder: opt.displayOrder,
       description: opt.description,
@@ -187,26 +260,41 @@ export function AdminModifiersTab({
     await onReload();
   }
 
+  const orderedGroups = [...groups].sort((a, b) => a.displayOrder - b.displayOrder);
+
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
-        {groups.map((g) => (
+        {orderedGroups.map((g, gIdx) => (
           <section key={g.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="text-base font-extrabold text-slate-900">{g.name}</h3>
-                <p className="text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold">#{g.displayOrder}</span>
+                  <h3 className="text-base font-extrabold text-slate-900">{g.name}</h3>
+                  {g.categoryTag && (
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase text-purple-800">{g.categoryTag}</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">
                   {GROUP_KIND_LABELS[g.selectionKind] || "Personalização"} · Mín {g.minSelections} / Máx {g.maxSelections} · Grátis: {g.freeAllowance}
                   {g.isRequired ? " · Obrigatório" : ""}
                 </p>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex flex-wrap items-center gap-1">
+                <button type="button" title="Subir categoria" onClick={() => void moveGroup(gIdx, -1)} className="rounded-lg border px-2 py-1 hover:bg-slate-100">
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" title="Descer categoria" onClick={() => void moveGroup(gIdx, 1)} className="rounded-lg border px-2 py-1 hover:bg-slate-100">
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setEditingGroupId(g.id);
                     setGName(g.name);
                     setGKind(String(g.selectionKind));
+                    setGCategoryTag(g.categoryTag || "outros");
                     setGMin(String(g.minSelections));
                     setGMax(String(g.maxSelections));
                     setGFree(String(g.freeAllowance));
@@ -224,66 +312,117 @@ export function AdminModifiersTab({
             </div>
 
             <div className="mt-3 space-y-1.5">
-              {g.options.map((o) => (
-                <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-900">{o.name}</span> ·{" "}
-                    <span className="font-mono text-slate-700">{o.additionalPrice > 0 ? `+R$ ${o.additionalPrice.toFixed(2)}` : "Grátis"}</span>
-                    {o.supplyItemId && (
-                      <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
-                        Baixa {o.consumptionQuantity} {o.consumptionUnitCode} ({o.lossPercent}% perda)
-                      </span>
-                    )}
-                    {!o.isAvailable && <span className="ml-2 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Pausado</span>}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveGroupForOpt(g.id);
-                        setEditingOptId(o.id);
-                        setOptName(o.name);
-                        setOptPrice(String(o.additionalPrice));
-                        setOptMaxQty(String(o.maxQuantity));
-                        setOptSupplyId(o.supplyItemId || "");
-                        setOptConsumeQty(String(o.consumptionQuantity || 0));
-                        setOptConsumeUnit(o.consumptionUnitCode || "g");
-                        setOptLossPct(String(o.lossPercent || 0));
-                        setOptReplaces(o.replacesLabel || "");
-                        setOptIncompatibleCsv(o.incompatibleOptionIdsCsv || "");
-                      }}
-                      className="rounded px-2 py-1 text-slate-700 hover:bg-slate-200"
-                    >
-                      Editar
-                    </button>
-                    <button type="button" onClick={() => toggleOptionAvailability(g.id, o)} className="rounded px-2 py-1 hover:bg-slate-200">
-                      {o.isAvailable ? <Pause className="inline h-3 w-3" /> : <Play className="inline h-3 w-3" />}
-                    </button>
-                    <button type="button" onClick={() => deleteOption(g.id, o.id)} className="rounded px-2 py-1 text-rose-600 hover:bg-rose-50">
-                      <Trash2 className="inline h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+              {[...g.options]
+                .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name))
+                .map((o) => {
+                  const cost = o.costPrice ?? 0;
+                  const profit = o.additionalPrice - cost;
+                  return (
+                    <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-slate-900">{o.name}</span>
+                          <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700 border border-slate-200">
+                            {o.additionalPrice > 0 ? `Venda +R$ ${o.additionalPrice.toFixed(2)}` : "Grátis (R$ 0,00)"}
+                          </span>
+                          {cost > 0 && (
+                            <span className="rounded bg-rose-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-rose-700">
+                              Custo R$ {cost.toFixed(2)}
+                            </span>
+                          )}
+                          {o.additionalPrice > 0 && cost > 0 && (
+                            <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${profit >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-100 text-rose-800"}`}>
+                              Lucro {profit >= 0 ? `+R$ ${profit.toFixed(2)}` : `-R$ ${Math.abs(profit).toFixed(2)}`}
+                            </span>
+                          )}
+                          {!o.isAvailable && <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Pausado</span>}
+                        </div>
+                        {o.description && <p className="text-[11px] text-slate-500">{o.description}</p>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button type="button" title="Subir item" onClick={() => void reorderOption(g, o.id, -1)} className="rounded p-1 hover:bg-slate-200">
+                          <ArrowUp className="h-3 w-3" />
+                        </button>
+                        <button type="button" title="Descer item" onClick={() => void reorderOption(g, o.id, 1)} className="rounded p-1 hover:bg-slate-200">
+                          <ArrowDown className="h-3 w-3" />
+                        </button>
+                        {groups.length > 1 && (
+                          <select
+                            aria-label={`Mover ${o.name} para categoria`}
+                            value={g.id}
+                            onChange={(e) => void moveOptionToGroup(g.id, o.id, e.target.value)}
+                            className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-slate-700"
+                          >
+                            {orderedGroups.map((dest) => (
+                              <option key={dest.id} value={dest.id}>
+                                {dest.id === g.id ? `Cat: ${dest.name}` : `Mover → ${dest.name}`}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveGroupForOpt(g.id);
+                            setEditingOptId(o.id);
+                            setOptName(o.name);
+                            setOptDescription(o.description || "");
+                            setOptCostPrice(String(o.costPrice ?? 0));
+                            setOptPrice(String(o.additionalPrice));
+                            setOptMaxQty(String(o.maxQuantity));
+                            setOptSupplyId(o.supplyItemId || "");
+                            setOptConsumeQty(String(o.consumptionQuantity || 0));
+                            setOptConsumeUnit(o.consumptionUnitCode || "g");
+                            setOptLossPct(String(o.lossPercent || 0));
+                            setOptReplaces(o.replacesLabel || "");
+                            setOptIncompatibleCsv(o.incompatibleOptionIdsCsv || "");
+                          }}
+                          className="rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-200"
+                        >
+                          Editar
+                        </button>
+                        <button type="button" onClick={() => toggleOptionAvailability(g.id, o)} className="rounded px-2 py-1 hover:bg-slate-200">
+                          {o.isAvailable ? <Pause className="inline h-3 w-3" /> : <Play className="inline h-3 w-3" />}
+                        </button>
+                        <button type="button" onClick={() => deleteOption(g.id, o.id)} className="rounded px-2 py-1 text-rose-600 hover:bg-rose-50">
+                          <Trash2 className="inline h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </section>
         ))}
       </div>
 
-      {/* Formulários Laterais: Grupo & Opção */}
+      {/* Formulários Laterais: Categoria de Adicionais & Item Adicional */}
       <div className="space-y-6">
         <form onSubmit={saveGroup} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-xs">
           <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-            <Sliders className="h-4 w-4" /> {editingGroupId ? "Editar Grupo" : "Novo Grupo Universal"}
+            <Sliders className="h-4 w-4" /> {editingGroupId ? "Editar Categoria de Adicionais" : "Nova Categoria de Adicionais"}
           </h3>
-          <input value={gName} onChange={(e) => setGName(e.target.value)} required placeholder="Ex: Acompanhamentos Grátis / Borda" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          <select value={gKind} onChange={(e) => setGKind(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2">
-            {Object.entries(GROUP_KIND_LABELS).map(([k, lbl]) => (
-              <option key={k} value={k}>
-                {lbl}
-              </option>
-            ))}
-          </select>
+          <input value={gName} onChange={(e) => setGName(e.target.value)} required placeholder="Ex: Frutas / Acompanhamentos Grátis / Pagos" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          <label className="block font-semibold text-slate-700">
+            Tipo de Cobrança
+            <select value={gKind} onChange={(e) => setGKind(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
+              {Object.entries(GROUP_KIND_LABELS).map(([k, lbl]) => (
+                <option key={k} value={k}>
+                  {lbl}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block font-semibold text-slate-700">
+            Segmentação (ex: Frutas, Cremes, Caldas)
+            <select value={gCategoryTag} onChange={(e) => setGCategoryTag(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
+              {CATEGORY_TAG_OPTIONS.map((tag) => (
+                <option key={tag.value} value={tag.value}>
+                  {tag.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="grid grid-cols-3 gap-2">
             <label>Mín<input type="number" value={gMin} onChange={(e) => setGMin(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
             <label>Máx<input type="number" value={gMax} onChange={(e) => setGMax(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
@@ -296,29 +435,41 @@ export function AdminModifiersTab({
           <label className="flex items-center gap-2 font-semibold">
             <input type="checkbox" checked={gRequired} onChange={(e) => setGRequired(e.target.checked)} /> Seleção Obrigatória
           </label>
-          <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="w-full rounded-xl py-2.5 text-sm font-bold text-white">
-            {editingGroupId ? "Salvar Grupo" : "Criar Grupo"}
-          </button>
+          <div className="flex gap-2">
+            <button type="submit" style={{ backgroundColor: "var(--store-primary)" }} className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white">
+              {editingGroupId ? "Salvar Categoria" : "Criar Categoria"}
+            </button>
+            {editingGroupId && (
+              <button type="button" onClick={() => setEditingGroupId(null)} className="rounded-xl border px-3 py-2">
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
 
         <form onSubmit={saveOption} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-xs">
           <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-            <Plus className="h-4 w-4" /> {editingOptId ? "Editar Ingrediente / Opção" : "Nova Opção + Ficha/Estoque"}
+            <Plus className="h-4 w-4" /> {editingOptId ? "Editar Adicional / Fruta" : "Novo Adicional / Fruta"}
           </h3>
-          <select value={activeGroupForOpt || groups[0]?.id || ""} onChange={(e) => setActiveGroupForOpt(e.target.value)} required className="w-full rounded-xl border border-slate-300 px-3 py-2">
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-          <input value={optName} onChange={(e) => setOptName(e.target.value)} required placeholder="Nome (ex: Leite Ninho, Bacon Extra)" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-2">
-            <label>Preço Extra<input type="number" step="0.01" value={optPrice} onChange={(e) => setOptPrice(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
-            <label>Qtd Máx<input type="number" value={optMaxQty} onChange={(e) => setOptMaxQty(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
+          <label className="block font-semibold text-slate-700">
+            Categoria de Adicionais
+            <select value={activeGroupForOpt || groups[0]?.id || ""} onChange={(e) => setActiveGroupForOpt(e.target.value)} required className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
+              {orderedGroups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({GROUP_KIND_LABELS[g.selectionKind] || "Grupo"})
+                </option>
+              ))}
+            </select>
+          </label>
+          <input value={optName} onChange={(e) => setOptName(e.target.value)} required placeholder="Nome (ex: Morango Fresco, Nutella, Leite Ninho)" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          <input value={optDescription} onChange={(e) => setOptDescription(e.target.value)} placeholder="Descrição / Porção (ex: Porção 45g fatiada)" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
+          <div className="grid grid-cols-3 gap-2">
+            <label>Custo (R$)<input type="number" step="0.01" value={optCostPrice} onChange={(e) => setOptCostPrice(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5 font-mono text-rose-700" /></label>
+            <label>Venda (R$)<input type="number" step="0.01" value={optPrice} onChange={(e) => setOptPrice(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5 font-mono font-bold text-emerald-700" /></label>
+            <label>Qtd Máx<input type="number" value={optMaxQty} onChange={(e) => setOptMaxQty(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5 font-mono" /></label>
           </div>
           <label className="block font-semibold text-slate-700">
-            Vincular Insumo para Baixa Automática de Estoque
+            Vincular Insumo (Opcional)
             <select value={optSupplyId} onChange={(e) => setOptSupplyId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-2.5 py-2">
               <option value="">Sem vínculo de estoque</option>
               {supplies.map((s) => (
@@ -335,11 +486,9 @@ export function AdminModifiersTab({
               <label>Perda %<input type="number" step="0.1" value={optLossPct} onChange={(e) => setOptLossPct(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
             </div>
           )}
-          <input value={optReplaces} onChange={(e) => setOptReplaces(e.target.value)} placeholder="Substitui item (opcional)" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
-          <input value={optIncompatibleCsv} onChange={(e) => setOptIncompatibleCsv(e.target.value)} placeholder="IDs incompatíveis CSV (opcional)" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
           <div className="flex gap-2">
             <button type="submit" style={{ backgroundColor: "var(--store-accent)" }} className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white">
-              {editingOptId ? "Salvar Opção" : "Adicionar Opção"}
+              {editingOptId ? "Salvar Adicional" : "Adicionar à Categoria"}
             </button>
             {editingOptId && (
               <button type="button" onClick={() => setEditingOptId(null)} className="rounded-xl border px-3 py-2">

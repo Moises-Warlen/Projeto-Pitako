@@ -444,11 +444,11 @@ public static class PitakoUniversalMenuEndpoints
             return ToHttp(await svc.UpdateCategoryAsync(user!, id, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.IsActive, req.SegmentTemplateCode, req.RuleNotes, ct));
         });
 
-        catalog.MapDelete("/categories/{id:guid}", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        catalog.MapDelete("/categories/{id:guid}", async (Guid id, Guid? moveToCategoryId, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.DeleteCategoryAsync(user!, id, ct));
+            return ToHttp(await svc.DeleteCategoryAsync(user!, id, ct, moveToCategoryId));
         });
 
         catalog.MapPost("/categories/reorder", async (Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -456,6 +456,20 @@ public static class PitakoUniversalMenuEndpoints
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
             return ToHttp(await svc.ReorderCategoriesAsync(user!, newOrders, ct));
+        });
+
+        catalog.MapPost("/products/reorder", async (Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.ReorderProductsAsync(user!, newOrders, ct));
+        });
+
+        catalog.MapPost("/products/{id:guid}/move", async (Guid id, MoveProductCategoryReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.MoveProductToCategoryAsync(user!, id, req.CategoryId, req.DisplayOrder, ct));
         });
 
         catalog.MapPut("/products/{id:guid}", async (Guid id, UpdateProductReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -508,14 +522,14 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.AddProductVariationAsync(user!, id, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.AddProductVariationAsync(user!, id, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, ct, req.CostPrice ?? 0m), StatusCodes.Status201Created);
         });
 
         catalog.MapPut("/products/{id:guid}/variations/{variationId:guid}", async (Guid id, Guid variationId, UpsertProductVariationReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateProductVariationAsync(user!, id, variationId, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, req.IsActive, ct));
+            return ToHttp(await svc.UpdateProductVariationAsync(user!, id, variationId, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, req.IsActive, ct, req.CostPrice ?? 0m));
         });
 
         catalog.MapDelete("/products/{id:guid}/variations/{variationId:guid}", async (Guid id, Guid variationId, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -571,6 +585,7 @@ public static class PitakoUniversalMenuEndpoints
                     o.Name,
                     o.Description,
                     additionalPrice = o.AdditionalPrice.Amount,
+                    costPrice = o.CostPrice.Amount,
                     o.MaxQuantity,
                     o.DisplayOrder,
                     o.IsAvailable,
@@ -651,6 +666,27 @@ public static class PitakoUniversalMenuEndpoints
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
             return ToHttp(await svc.RemoveModifierOptionAsync(user!, groupId, optionId, ct));
+        });
+
+        catalog.MapPost("/modifier-groups/reorder", async (Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.ReorderModifierGroupsAsync(user!, newOrders, ct));
+        });
+
+        catalog.MapPost("/modifier-groups/{groupId:guid}/options/reorder", async (Guid groupId, Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.ReorderModifierOptionsAsync(user!, groupId, newOrders, ct));
+        });
+
+        catalog.MapPost("/modifier-groups/{groupId:guid}/options/{optionId:guid}/move", async (Guid groupId, Guid optionId, MoveModifierOptionReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.MoveModifierOptionAsync(user!, groupId, optionId, req.TargetGroupId, req.NewAdditionalPrice, ct));
         });
 
         catalog.MapGet("/combos", async (ApiSecurityGuard guard, IComboRepository repo, HttpContext http, CancellationToken ct) =>
@@ -800,7 +836,29 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateCupSizeAsync(user!, id, req.Name, req.VolumeMl, req.BasePrice, req.FreeToppingsLimit, req.MinFreeToppings, req.CountingMode, req.MaxPaidAddonsPerCup, req.DisplayOrder, ct));
+            return ToHttp(await svc.UpdateCupSizeAsync(
+                user!,
+                id,
+                req.Name,
+                req.VolumeMl,
+                req.BasePrice,
+                req.FreeToppingsLimit,
+                req.MinFreeToppings,
+                req.CountingMode,
+                req.MaxPaidAddonsPerCup,
+                req.DisplayOrder,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AllowFreeToppings,
+                req.AllowPaidAddons));
+        });
+
+        acai.MapPost("/cup-sizes/reorder", async (Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.ReorderCupSizesAsync(user!, newOrders, ct));
         });
 
         acai.MapPost("/cup-sizes/{id:guid}/pause", async (Guid id, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -842,7 +900,20 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateFreeToppingAsync(user!, id, req.Name, req.MaxPortionsPerCup, req.DisplayOrder, req.SupplyItemId, req.ConsumptionQuantityPerPortion, req.ConsumptionUnitCode, ct));
+            return ToHttp(await svc.UpdateFreeToppingAsync(
+                user!,
+                id,
+                req.Name,
+                req.MaxPortionsPerCup,
+                req.DisplayOrder,
+                req.SupplyItemId,
+                req.ConsumptionQuantityPerPortion,
+                req.ConsumptionUnitCode,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AddonCategoryId,
+                req.CategoryName));
         });
 
         acai.MapPost("/free-toppings/{id:guid}/pause", async (Guid id, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -870,7 +941,21 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdatePaidAddonAsync(user!, id, req.Name, req.AdditionalPrice, req.MaxQuantityPerCup, req.DisplayOrder, req.SupplyItemId, req.ConsumptionQuantityPerUnit, req.ConsumptionUnitCode, ct));
+            return ToHttp(await svc.UpdatePaidAddonAsync(
+                user!,
+                id,
+                req.Name,
+                req.AdditionalPrice,
+                req.MaxQuantityPerCup,
+                req.DisplayOrder,
+                req.SupplyItemId,
+                req.ConsumptionQuantityPerUnit,
+                req.ConsumptionUnitCode,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AddonCategoryId,
+                req.CategoryName));
         });
 
         acai.MapPost("/paid-addons/{id:guid}/pause", async (Guid id, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -892,6 +977,41 @@ public static class PitakoUniversalMenuEndpoints
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
             if (err is not null) return err;
             return ToHttp(await svc.DeletePaidAddonAsync(user!, id, ct));
+        });
+
+        acai.MapPost("/addon-categories", async (UpsertAcaiAddonCategoryReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.CreateAddonCategoryAsync(user!, req.Name, req.Kind, req.IsFreeByDefault, req.Description, req.DisplayOrder, ct), StatusCodes.Status201Created);
+        });
+
+        acai.MapPut("/addon-categories/{id:guid}", async (Guid id, UpsertAcaiAddonCategoryReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.UpdateAddonCategoryAsync(user!, id, req.Name, req.Kind, req.IsFreeByDefault, req.Description, req.DisplayOrder, ct));
+        });
+
+        acai.MapDelete("/addon-categories/{id:guid}", async (Guid id, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.DeleteAddonCategoryAsync(user!, id, ct));
+        });
+
+        acai.MapPost("/addon-categories/reorder", async (Dictionary<Guid, int> newOrders, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.ReorderAddonCategoriesAsync(user!, newOrders, ct));
+        });
+
+        acai.MapPost("/addons/move", async (MoveAcaiAddonReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Acai, ct);
+            if (err is not null) return err;
+            return ToHttp(await svc.MoveAcaiAddonAsync(user!, req.ItemId, req.SourceIsFree, req.TargetIsFree, req.TargetAddonCategoryId, req.TargetCategoryName, req.SalePriceIfPaid, ct));
         });
     }
 
@@ -1238,7 +1358,9 @@ public sealed record PublicDeliveryQuoteReq(FulfillmentMode FulfillmentMode, dec
 public sealed record UpdateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, bool IsActive = true, string? SegmentTemplateCode = null, string? RuleNotes = null);
 public sealed record UpdateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, bool IsFeatured = false, int DisplayOrder = 0, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
 public sealed record AddProductImageReq(string ImageUrl, int DisplayOrder = 0, bool IsPrimary = true);
-public sealed record UpsertProductVariationReq(string VariationName, decimal Price, string? Sku = null, int DisplayOrder = 0, string? Description = null, decimal? MeasureAmount = null, string? MeasureUnit = null, int MaxFlavors = 1, bool IsActive = true);
+public sealed record UpsertProductVariationReq(string VariationName, decimal Price, string? Sku = null, int DisplayOrder = 0, string? Description = null, decimal? MeasureAmount = null, string? MeasureUnit = null, int MaxFlavors = 1, bool IsActive = true, decimal? CostPrice = null);
+public sealed record MoveProductCategoryReq(Guid CategoryId, int? DisplayOrder = null);
+public sealed record MoveModifierOptionReq(Guid TargetGroupId, decimal? NewAdditionalPrice = null);
 public sealed record SetVariationRuleReq(Guid? VariationId, Guid ModifierGroupId, int MinSelections, int MaxSelections, int FreeAllowance, bool IsRequired, bool IsHidden = false);
 public sealed record UpsertModifierGroupReq(string Name, ModifierGroupType Type, int MinSelections, int MaxSelections, bool IsRequired, IReadOnlyList<ModifierOptionInput>? Options = null, int DisplayOrder = 0, ModifierGroupKind? SelectionKind = null, int FreeAllowance = 0, OptionCountingMode CountingMode = OptionCountingMode.ByTotalQuantity, string? CategoryTag = null, bool IsActive = true);
 public sealed record UpdateModifierOptionReq(ModifierOptionInput Input, bool IsAvailable = true);
@@ -1248,10 +1370,12 @@ public sealed record PromotionTargetDto(PromotionTargetType TargetType, Guid Tar
 public sealed record UpsertPromotionReq(string Name, PromotionDiscountType DiscountType, decimal DiscountValue, DateTimeOffset StartsAtUtc, DateTimeOffset EndsAtUtc, IReadOnlyList<PromotionTargetDto> Targets, bool CanCombineWithCoupons = false, bool IsActive = true);
 public sealed record ApplySegmentTemplateReq(string SegmentCode);
 
-public sealed record UpdateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0, AcaiFreeCountingMode CountingMode = AcaiFreeCountingMode.ByPortion, int? MaxPaidAddonsPerCup = null, int DisplayOrder = 0);
+public sealed record UpdateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0, AcaiFreeCountingMode CountingMode = AcaiFreeCountingMode.ByPortion, int? MaxPaidAddonsPerCup = null, int DisplayOrder = 0, string? Description = null, decimal? CostPrice = null, bool? AllowFreeToppings = null, bool? AllowPaidAddons = null);
 public sealed record UpdateAcaiFlavorReq(string Name, decimal ExtraPrice = 0m, int DisplayOrder = 0);
-public sealed record UpdateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1, int DisplayOrder = 0, Guid? SupplyItemId = null, decimal? ConsumptionQuantityPerPortion = null, string? ConsumptionUnitCode = null);
-public sealed record UpdateAcaiPaidReq(string Name, decimal AdditionalPrice, int MaxQuantityPerCup = 3, int DisplayOrder = 0, Guid? SupplyItemId = null, decimal? ConsumptionQuantityPerUnit = null, string? ConsumptionUnitCode = null);
+public sealed record UpdateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1, int DisplayOrder = 0, Guid? SupplyItemId = null, decimal? ConsumptionQuantityPerPortion = null, string? ConsumptionUnitCode = null, string? Description = null, decimal? CostPrice = null, Guid? AddonCategoryId = null, string? CategoryName = null);
+public sealed record UpdateAcaiPaidReq(string Name, decimal AdditionalPrice, int MaxQuantityPerCup = 3, int DisplayOrder = 0, Guid? SupplyItemId = null, decimal? ConsumptionQuantityPerUnit = null, string? ConsumptionUnitCode = null, string? Description = null, decimal? CostPrice = null, Guid? AddonCategoryId = null, string? CategoryName = null);
+public sealed record UpsertAcaiAddonCategoryReq(string Name, AcaiAddonCategoryKind Kind = AcaiAddonCategoryKind.FreeIncluded, bool IsFreeByDefault = true, string? Description = null, int DisplayOrder = 0);
+public sealed record MoveAcaiAddonReq(Guid ItemId, bool SourceIsFree, bool TargetIsFree, Guid? TargetAddonCategoryId = null, string? TargetCategoryName = null, decimal? SalePriceIfPaid = null);
 
 public sealed record UpsertSupplyReq(string Name, decimal PurchasePrice, decimal PurchaseQuantity, string PurchaseUnitCode, string? SupplierName = null, string? Sku = null, decimal? ContentQuantityPerPackage = null, string? ContentUnitCode = null, decimal DefaultLossPercent = 0m, bool IsActive = true, string? ControlUnitCode = null, decimal? MinimumStockQuantity = 0m, bool? AllowNegativeStock = false);
 public sealed record ConfigureStockBalanceReq(Guid SupplyItemId, string ControlUnitCode, decimal MinimumStockQuantity = 0m, bool AllowNegativeStock = false, bool AutoDeductOnOrder = true, bool BlockExpiredLots = true);

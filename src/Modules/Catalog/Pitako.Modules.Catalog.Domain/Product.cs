@@ -58,6 +58,7 @@ public sealed class ProductVariation : Entity<Guid>
     {
         Name = string.Empty;
         Price = Money.Zero();
+        CostPrice = Money.Zero();
     }
 
     internal ProductVariation(
@@ -71,13 +72,15 @@ public sealed class ProductVariation : Entity<Guid>
         string? description = null,
         decimal? measureAmount = null,
         string? measureUnit = null,
-        int maxFlavors = 1) : base(id)
+        int maxFlavors = 1,
+        Money? costPrice = null) : base(id)
     {
         TenantId = tenantId;
         ProductId = productId;
         Name = name;
         Sku = sku;
         Price = price;
+        CostPrice = costPrice ?? Money.Zero(price.Currency);
         DisplayOrder = displayOrder;
         Description = description;
         MeasureAmount = measureAmount;
@@ -91,6 +94,7 @@ public sealed class ProductVariation : Entity<Guid>
     public string Name { get; private set; }
     public string? Sku { get; private set; }
     public Money Price { get; private set; }
+    public Money CostPrice { get; private set; }
     public int DisplayOrder { get; private set; }
     public bool IsActive { get; private set; }
     public string? Description { get; private set; }
@@ -106,7 +110,8 @@ public sealed class ProductVariation : Entity<Guid>
         string? description = null,
         decimal? measureAmount = null,
         string? measureUnit = null,
-        int maxFlavors = 1)
+        int maxFlavors = 1,
+        Money? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Product.VariationNameRequired", "Nome da variação é obrigatório."));
@@ -114,6 +119,7 @@ public sealed class ProductVariation : Entity<Guid>
 
         Name = name.Trim();
         Price = price;
+        if (costPrice is not null) CostPrice = costPrice;
         Sku = string.IsNullOrWhiteSpace(sku) ? null : sku.Trim().ToUpperInvariant();
         DisplayOrder = displayOrder;
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -419,7 +425,8 @@ public sealed class Product : TenantScopedAggregateRoot
         string? description = null,
         decimal? measureAmount = null,
         string? measureUnit = null,
-        int maxFlavors = 1)
+        int maxFlavors = 1,
+        Money? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ProductVariation>(Error.Validation("Product.VariationNameRequired", "Nome da variação é obrigatório."));
@@ -437,7 +444,8 @@ public sealed class Product : TenantScopedAggregateRoot
             string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
             measureAmount,
             string.IsNullOrWhiteSpace(measureUnit) ? null : measureUnit.Trim().ToLowerInvariant(),
-            maxFlavors);
+            maxFlavors,
+            costPrice);
 
         _variations.Add(variation);
         return Result.Success(variation);
@@ -520,6 +528,16 @@ public sealed class Product : TenantScopedAggregateRoot
     }
 
     public void SetFeatured(bool isFeatured) => IsFeatured = isFeatured;
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
+
+    public Result MoveToCategory(Guid newCategoryId, int? newDisplayOrder = null)
+    {
+        if (newCategoryId == Guid.Empty)
+            return Result.Failure(Error.Validation("Product.CategoryRequired", "Categoria destino é obrigatória."));
+        CategoryId = newCategoryId;
+        if (newDisplayOrder.HasValue) DisplayOrder = newDisplayOrder.Value;
+        return Result.Success();
+    }
 
     /// <summary>
     /// Produtos pausados ou arquivados não podem receber novos pedidos (Seção 12).

@@ -238,7 +238,21 @@ public static partial class PitakoStoreSuiteEndpoints
                 foreach (var sz in req.Sizes)
                 {
                     if (string.IsNullOrWhiteSpace(sz.VariationName)) continue;
-                    var descNote = sz.CostAmount.HasValue ? $"Custo estimado R$ {sz.CostAmount.Value:0.00}" : sz.Description;
+                    var descNote = string.IsNullOrWhiteSpace(sz.Description) ? null : sz.Description.Trim();
+                    var costVal = Math.Max(0m, sz.CostAmount ?? 0m);
+                    var mode = (sz.AddonMode ?? string.Empty).Trim().ToLowerInvariant();
+                    var allowFree = mode switch
+                    {
+                        "none" or "paid_only" => false,
+                        "free_only" or "both" => true,
+                        _ => sz.AllowFree
+                    };
+                    var allowPaid = mode switch
+                    {
+                        "none" or "free_only" => false,
+                        "paid_only" or "both" => true,
+                        _ => sz.AllowPaidExtras
+                    };
                     Guid? resolvedVarId = null;
 
                     if (sz.Id.HasValue && prod.Variations.Any(v => v.Id == sz.Id.Value))
@@ -256,7 +270,8 @@ public static partial class PitakoStoreSuiteEndpoints
                             sz.MeasureUnit,
                             Math.Max(1, sz.MaxFlavors),
                             true,
-                            ct);
+                            ct,
+                            costVal);
                         if (vRes.IsSuccess) resolvedVarId = vRes.Value.Id;
                     }
                     else
@@ -272,7 +287,8 @@ public static partial class PitakoStoreSuiteEndpoints
                             sz.MeasureAmount,
                             sz.MeasureUnit,
                             Math.Max(1, sz.MaxFlavors),
-                            ct);
+                            ct,
+                            costVal);
                         if (vRes.IsSuccess) resolvedVarId = vRes.Value.Id;
                     }
 
@@ -281,17 +297,19 @@ public static partial class PitakoStoreSuiteEndpoints
                         foreach (var fgId in freeIncludedGroupIds)
                         {
                             var grp = allGroups.First(g => g.Id == fgId);
-                            var maxSel = sz.FreeAllowance > 0 ? Math.Max(sz.FreeAllowance, grp.MaxSelections) : grp.MaxSelections;
+                            var hideFree = !allowFree || (sz.FreeAllowance <= 0 && !grp.IsRequired);
+                            var effectiveFree = allowFree ? Math.Max(0, sz.FreeAllowance) : 0;
+                            var maxSel = effectiveFree > 0 ? Math.Max(effectiveFree, grp.MaxSelections) : grp.MaxSelections;
                             await catalogSvc.SetVariationModifierRuleAsync(
                                 user,
                                 id,
                                 resolvedVarId.Value,
                                 fgId,
-                                grp.IsRequired ? Math.Max(1, grp.MinSelections) : 0,
-                                maxSel,
-                                Math.Max(0, sz.FreeAllowance),
-                                grp.IsRequired,
-                                isHidden: false,
+                                hideFree ? 0 : (grp.IsRequired ? Math.Max(1, grp.MinSelections) : 0),
+                                hideFree ? 0 : maxSel,
+                                effectiveFree,
+                                !hideFree && grp.IsRequired,
+                                isHidden: hideFree,
                                 ct);
                         }
 
@@ -304,10 +322,10 @@ public static partial class PitakoStoreSuiteEndpoints
                                 resolvedVarId.Value,
                                 pgId,
                                 0,
-                                Math.Max(1, grp.MaxSelections),
+                                allowPaid ? Math.Max(1, grp.MaxSelections) : 0,
                                 0,
                                 false,
-                                isHidden: !sz.AllowPaidExtras,
+                                isHidden: !allowPaid,
                                 ct);
                         }
                     }
@@ -703,7 +721,9 @@ public static partial class PitakoStoreSuiteEndpoints
         int FreeAllowance,
         decimal? CostAmount,
         bool AllowPaidExtras,
-        string? Description = null);
+        string? Description = null,
+        bool AllowFree = true,
+        string? AddonMode = null);
     public sealed record FullProductConfigReq(
         Guid CategoryId,
         string Name,

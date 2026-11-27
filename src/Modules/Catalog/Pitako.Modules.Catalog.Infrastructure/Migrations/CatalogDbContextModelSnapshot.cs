@@ -756,6 +756,33 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
 
                     b.Navigation("AdditionalPrice")
                         .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CostPrice", b1 =>
+                        {
+                            b1.Property<Guid>("ModifierOptionId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("cost_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("cost_price_currency");
+
+                            b1.HasKey("ModifierOptionId");
+
+                            b1.ToTable("modifier_options", "catalog");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ModifierOptionId");
+                        });
+
+                    b.Navigation("CostPrice")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Pitako.Modules.Catalog.Domain.Product", b =>
@@ -839,6 +866,33 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         });
 
                     b.Navigation("Price")
+                        .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CostPrice", b1 =>
+                        {
+                            b1.Property<Guid>("ProductVariationId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("cost_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("cost_price_currency");
+
+                            b1.HasKey("ProductVariationId");
+
+                            b1.ToTable("product_variations", "catalog");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductVariationId");
+                        });
+
+                    b.Navigation("CostPrice")
                         .IsRequired();
                 });
 

@@ -177,15 +177,44 @@ export interface PublicMenuResponse {
       id: string;
       name: string;
       volumeMl: number;
+      description?: string | null;
       basePrice: number;
       freeToppingsLimit: number;
       minFreeToppings?: number;
       countingMode?: string;
+      allowFreeToppings?: boolean;
+      allowPaidAddons?: boolean;
       maxPaidAddonsPerCup?: number | null;
+      displayOrder?: number;
+    }>;
+    addonCategories?: Array<{
+      id: string;
+      name: string;
+      kind: number;
+      isFreeByDefault: boolean;
+      description?: string | null;
+      displayOrder: number;
     }>;
     baseFlavors: Array<{ id: string; name: string; extraPrice: number }>;
-    freeToppings: Array<{ id: string; name: string; maxPortionsPerCup: number }>;
-    paidAddons: Array<{ id: string; name: string; price: number; maxQuantityPerCup: number }>;
+    freeToppings: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      addonCategoryId?: string | null;
+      categoryName?: string | null;
+      maxPortionsPerCup: number;
+      displayOrder?: number;
+    }>;
+    paidAddons: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      addonCategoryId?: string | null;
+      categoryName?: string | null;
+      price: number;
+      maxQuantityPerCup: number;
+      displayOrder?: number;
+    }>;
   };
 }
 

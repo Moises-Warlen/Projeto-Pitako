@@ -1250,15 +1250,28 @@ public static class PitakoV1Endpoints
                         c.Id,
                         c.Name,
                         c.VolumeMl,
+                        c.Description,
                         basePrice = c.BasePrice.Amount,
                         c.FreeToppingsLimit,
                         c.MinFreeToppings,
                         countingMode = c.CountingMode.ToString(),
-                        c.MaxPaidAddonsPerCup
+                        c.AllowFreeToppings,
+                        c.AllowPaidAddons,
+                        c.MaxPaidAddonsPerCup,
+                        c.DisplayOrder
+                    }),
+                    addonCategories = (acai.AddonCategories ?? []).Select(cat => new
+                    {
+                        cat.Id,
+                        cat.Name,
+                        kind = (int)cat.Kind,
+                        cat.IsFreeByDefault,
+                        cat.Description,
+                        cat.DisplayOrder
                     }),
                     baseFlavors = acai.BaseFlavors.Select(f => new { f.Id, f.Name, extraPrice = f.ExtraPrice.Amount }),
-                    freeToppings = acai.FreeToppings.Select(t => new { t.Id, t.Name, t.MaxPortionsPerCup }),
-                    paidAddons = acai.PaidAddons.Select(a => new { a.Id, a.Name, price = a.AdditionalPrice.Amount, a.MaxQuantityPerCup })
+                    freeToppings = acai.FreeToppings.Select(t => new { t.Id, t.Name, t.Description, t.AddonCategoryId, t.CategoryName, t.MaxPortionsPerCup, t.DisplayOrder }),
+                    paidAddons = acai.PaidAddons.Select(a => new { a.Id, a.Name, a.Description, a.AddonCategoryId, a.CategoryName, price = a.AdditionalPrice.Amount, a.MaxQuantityPerCup, a.DisplayOrder })
                 }
             });
         });
@@ -1458,6 +1471,7 @@ public static class PitakoV1Endpoints
                         variationName = v.Name,
                         v.Description,
                         price = v.Price.Amount,
+                        costPrice = v.CostPrice.Amount,
                         v.MeasureAmount,
                         v.MeasureUnit,
                         v.MaxFlavors,
@@ -1498,6 +1512,7 @@ public static class PitakoV1Endpoints
                         o.Name,
                         o.Description,
                         additionalPrice = o.AdditionalPrice.Amount,
+                        costPrice = o.CostPrice.Amount,
                         o.MaxQuantity,
                         o.DisplayOrder,
                         o.IsAvailable,
@@ -1575,7 +1590,23 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateCupSizeAsync(user!, req.Name, req.VolumeMl, req.BasePrice, req.FreeToppingsLimit, req.MinFreeToppings, cancellationToken: ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateCupSizeAsync(
+                user!,
+                req.Name,
+                req.VolumeMl,
+                req.BasePrice,
+                req.FreeToppingsLimit,
+                req.MinFreeToppings,
+                req.CountingMode,
+                req.MaxPaidAddonsPerCup,
+                null,
+                null,
+                req.DisplayOrder,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AllowFreeToppings,
+                req.AllowPaidAddons), StatusCodes.Status201Created);
         });
 
         acai.MapPost("/flavors", async (CreateAcaiFlavorReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -1593,7 +1624,19 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateFreeToppingAsync(user!, req.Name, req.MaxPortionsPerCup, cancellationToken: ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateFreeToppingAsync(
+                user!,
+                req.Name,
+                req.MaxPortionsPerCup,
+                req.DisplayOrder,
+                null,
+                null,
+                null,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AddonCategoryId,
+                req.CategoryName), StatusCodes.Status201Created);
         });
 
         acai.MapPost("/paid-addons", async (CreateAcaiPaidReq req, ApiSecurityGuard guard, AcaiBuilderManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -1602,7 +1645,20 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreatePaidAddonAsync(user!, req.Name, req.AdditionalPrice, req.MaxQuantityPerCup, cancellationToken: ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreatePaidAddonAsync(
+                user!,
+                req.Name,
+                req.AdditionalPrice,
+                req.MaxQuantityPerCup,
+                req.DisplayOrder,
+                null,
+                null,
+                null,
+                ct,
+                req.Description,
+                req.CostPrice,
+                req.AddonCategoryId,
+                req.CategoryName), StatusCodes.Status201Created);
         });
     }
 
@@ -2064,10 +2120,10 @@ public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, str
 public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null, string? Neighborhood = null, string? ZipCode = null, double? DestinationLatitude = null, double? DestinationLongitude = null, decimal? PrecomputedDistanceKm = null, string? PaymentMethod = null, bool LgpdConsentAccepted = true, bool ClearCartAfterCheckout = true, string? CouponCode = null);
 public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, string? SegmentTemplateCode = null, string? RuleNotes = null);
 public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
-public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0);
+public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0, string? Description = null, decimal CostPrice = 0m, bool AllowFreeToppings = true, bool AllowPaidAddons = true, int? MaxPaidAddonsPerCup = null, AcaiFreeCountingMode CountingMode = AcaiFreeCountingMode.ByPortion, int DisplayOrder = 0);
 public sealed record CreateAcaiFlavorReq(string Name, decimal ExtraPrice = 0m);
-public sealed record CreateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1);
-public sealed record CreateAcaiPaidReq(string Name, decimal AdditionalPrice, int MaxQuantityPerCup = 3);
+public sealed record CreateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1, string? Description = null, decimal CostPrice = 0m, Guid? AddonCategoryId = null, string? CategoryName = null, int DisplayOrder = 0);
+public sealed record CreateAcaiPaidReq(string Name, decimal AdditionalPrice, int MaxQuantityPerCup = 3, string? Description = null, decimal CostPrice = 0m, Guid? AddonCategoryId = null, string? CategoryName = null, int DisplayOrder = 0);
 public sealed record RegisterScaleReq(string Name, ScaleManufacturer Manufacturer, ScaleConnectionType ConnectionType, string EndpointOrPort, bool AllowManualFallback = true);
 public sealed record ManualWeighingReq(string ProductName, decimal PricePerKg, decimal GrossGrams, string Reason, Guid? ScaleDeviceId = null, Guid? ProductId = null, Guid? TarePresetId = null, decimal? ManualTareGrams = null);
 public sealed record TransitionOrderReq(OrderStatus NextStatus, string? Reason = null);

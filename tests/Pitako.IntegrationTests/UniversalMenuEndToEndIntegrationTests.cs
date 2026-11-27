@@ -309,4 +309,157 @@ public sealed class UniversalMenuEndToEndIntegrationTests : IAsyncLifetime
         var stockAfterCancel = await (await _client.SendAsync(AuthReq(HttpMethod.Get, "/api/v1/inventory/stock", pizzaToken))).Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(2000m, stockAfterCancel.EnumerateArray().First(s => s.GetProperty("supplyItemId").GetGuid() == supplyId).GetProperty("quantityOnHand").GetDecimal());
     }
+
+    [Fact]
+    public async Task Acai_Categories_Move_Reorder_AddonsCost_And_CupAddonModes_EndToEnd()
+    {
+        var loginRes = await _client!.PostAsJsonAsync("/api/v1/auth/login-store", new
+        {
+            storeSlug = "acai-demo",
+            email = "admin@tropicalexpress.com.br",
+            password = "Store@12345"
+        });
+        Assert.Equal(HttpStatusCode.OK, loginRes.StatusCode);
+        var token = (await loginRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString()!;
+
+        // 1. Criar 2 categorias de cardápio e produtos, mover produto e excluir categoria vazia/com transferência
+        var catARes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/catalog/categories", token, new
+        {
+            name = "Explosão Teste A",
+            description = "Linha A",
+            displayOrder = 10
+        }));
+        var catAId = (await catARes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var catBRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/catalog/categories", token, new
+        {
+            name = "Explosão Teste B",
+            description = "Linha B",
+            displayOrder = 11
+        }));
+        var catBId = (await catBRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var prod1Res = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/catalog/products", token, new
+        {
+            categoryId = catAId,
+            name = "Copo Morango Especial",
+            basePrice = 24.90m,
+            description = "Morango fresco e creme",
+            displayOrder = 1
+        }));
+        var prod1Id = (await prod1Res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        // Excluir Cat A transferindo produto automaticamente para Cat B
+        var delCatARes = await _client.SendAsync(AuthReq(HttpMethod.Delete, $"/api/v1/catalog/categories/{catAId}?moveToCategoryId={catBId}", token));
+        Assert.Equal(HttpStatusCode.OK, delCatARes.StatusCode);
+
+        // Configurar produto com copo pago-apenas e outro grátis+pago, preservando descrição e custo
+        var cfgRes = await _client.SendAsync(AuthReq(HttpMethod.Put, $"/api/v1/catalog/products/{prod1Id}/full-config", token, new
+        {
+            categoryId = catBId,
+            name = "Copo Morango Especial",
+            description = "Morango fresco e creme",
+            basePrice = 19.90m,
+            isNew = true,
+            isPromotion = false,
+            displayOrder = 2,
+            sizes = new[]
+            {
+                new { variationName = "Copo 300ml Só Pago", description = "Copo 300ml com extras pagos", price = 19.90m, measureAmount = (decimal?)300m, measureUnit = "ml", maxFlavors = 1, freeAllowance = 0, costAmount = (decimal?)7.20m, allowFree = false, allowPaidExtras = true, addonMode = "paid_only" },
+                new { variationName = "Copo 500ml Completo", description = "Copo 500ml grátis + pagos", price = 26.90m, measureAmount = (decimal?)500m, measureUnit = "ml", maxFlavors = 1, freeAllowance = 4, costAmount = (decimal?)10.50m, allowFree = true, allowPaidExtras = true, addonMode = "both" }
+            }
+        }));
+        Assert.Equal(HttpStatusCode.OK, cfgRes.StatusCode);
+
+        // Reordenar produtos
+        var reorderRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/catalog/products/reorder", token, new Dictionary<Guid, int> { [prod1Id] = 1 }));
+        Assert.Equal(HttpStatusCode.OK, reorderRes.StatusCode);
+
+        // 2. Categorias de adicionais de Açaí (Frutas), item grátis com custo, mover entre Grátis <-> Pago e Copo paid-only
+        var acaiCatRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/acai/addon-categories", token, new
+        {
+            name = "Frutas Frescas E2E",
+            kind = 3,
+            isFreeByDefault = true,
+            description = "Frutas selecionadas do dia",
+            displayOrder = 1
+        }));
+        Assert.Equal(HttpStatusCode.Created, acaiCatRes.StatusCode);
+        var acaiCatId = (await acaiCatRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var freeFruitRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/acai/free-toppings", token, new
+        {
+            name = "Kiwi Fatiado E2E",
+            description = "Porção 40g",
+            costPrice = 1.40m,
+            addonCategoryId = acaiCatId,
+            maxPortionsPerCup = 2
+        }));
+        Assert.Equal(HttpStatusCode.Created, freeFruitRes.StatusCode);
+        var freeFruitId = (await freeFruitRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var cupPaidOnlyRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/acai/cup-sizes", token, new
+        {
+            name = "Copo Puro + Pagos 300ml",
+            description = "Açaí batido sem gratuitos, apenas adicionais pagos",
+            volumeMl = 300,
+            basePrice = 18.00m,
+            costPrice = 6.50m,
+            freeToppingsLimit = 0,
+            minFreeToppings = 0,
+            allowFreeToppings = false,
+            allowPaidAddons = true,
+            displayOrder = 10
+        }));
+        Assert.Equal(HttpStatusCode.Created, cupPaidOnlyRes.StatusCode);
+        var cupPaidOnlyId = (await cupPaidOnlyRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        // Tentar colocar item grátis num copo que só permite pagos deve falhar na validação!
+        var pubMenu = await (await _client.GetAsync("/api/v1/public/store/acai-demo/menu")).Content.ReadFromJsonAsync<JsonElement>();
+        var firstFlavorId = pubMenu.GetProperty("acai").GetProperty("baseFlavors")[0].GetProperty("id").GetGuid();
+
+        var rejectFreeOnPaidCup = await _client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/e2e-acai-rules/items", new
+        {
+            kind = "acai",
+            acaiCup = new
+            {
+                cupSizeId = cupPaidOnlyId,
+                baseFlavorIds = new[] { firstFlavorId },
+                freeToppings = new[] { new { itemId = freeFruitId, quantity = 1 } },
+                paidAddons = Array.Empty<object>()
+            },
+            quantity = 1
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectFreeOnPaidCup.StatusCode);
+
+        // Mover a fruta de Grátis para Pago por R$ 4.00 e adicionar com sucesso ao copo paid-only!
+        var moveRes = await _client.SendAsync(AuthReq(HttpMethod.Post, "/api/v1/acai/addons/move", token, new
+        {
+            itemId = freeFruitId,
+            sourceIsFree = true,
+            targetIsFree = false,
+            targetAddonCategoryId = acaiCatId,
+            salePriceIfPaid = 4.00m
+        }));
+        Assert.Equal(HttpStatusCode.OK, moveRes.StatusCode);
+
+        var acaiConfig = await (await _client.SendAsync(AuthReq(HttpMethod.Get, "/api/v1/acai/config", token))).Content.ReadFromJsonAsync<JsonElement>();
+        var movedPaidId = acaiConfig.GetProperty("paidAddons").EnumerateArray().First(a => a.GetProperty("name").GetString() == "Kiwi Fatiado E2E").GetProperty("id").GetGuid();
+
+        var acceptPaidOnPaidCup = await _client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/e2e-acai-rules/items", new
+        {
+            kind = "acai",
+            acaiCup = new
+            {
+                cupSizeId = cupPaidOnlyId,
+                baseFlavorIds = new[] { firstFlavorId },
+                freeToppings = Array.Empty<object>(),
+                paidAddons = new[] { new { itemId = movedPaidId, quantity = 1 } }
+            },
+            quantity = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, acceptPaidOnPaidCup.StatusCode);
+        var cartJson = await acceptPaidOnPaidCup.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(22.00m, cartJson.GetProperty("totalAmount").GetDecimal());
+    }
 }

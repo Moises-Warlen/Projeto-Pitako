@@ -179,14 +179,18 @@ export function AdminCategoryEditModal({
   );
 }
 
+type CupAddonMode = "both" | "free_only" | "paid_only" | "none";
+
 interface SizeFormRow {
   id?: string | null;
   variationName: string;
+  description: string;
   measureAmount: string;
   measureUnit: string;
   price: string;
   costAmount: string;
   freeAllowance: string;
+  addonMode: CupAddonMode;
   allowPaidExtras: boolean;
 }
 
@@ -218,6 +222,7 @@ export function AdminProductFullModal({
 
   const [name, setName] = useState(product?.name || "");
   const [categoryId, setCategoryId] = useState(product?.categoryId || categories[0]?.id || "");
+  const [displayOrder, setDisplayOrder] = useState(String(product?.displayOrder ?? 1));
   const [isNew, setIsNew] = useState(Boolean(product?.isNew));
   const [isPromotion, setIsPromotion] = useState(Boolean(product?.tagsCsv?.toLowerCase().includes("promo")));
   const [description, setDescription] = useState(product?.description || "");
@@ -249,33 +254,48 @@ export function AdminProductFullModal({
         const freeRule = product.variationRules.find((r) => r.variationId === v.id && freeGroups.some((fg) => fg.id === r.modifierGroupId));
         const paidRule = product.variationRules.find((r) => r.variationId === v.id && paidGroups.some((pg) => pg.id === r.modifierGroupId));
         const costMatch = v.description?.match(/Custo\s*(?:estimado)?\s*R\$\s*([\d.,]+)/i);
+        const allowFree = freeRule ? !freeRule.isHidden : true;
+        const allowPaid = paidRule ? !paidRule.isHidden : true;
+        const resolvedMode: CupAddonMode =
+          allowFree && allowPaid ? "both" : allowFree ? "free_only" : allowPaid ? "paid_only" : "none";
+        const resolvedCost =
+          v.costPrice !== undefined && v.costPrice > 0
+            ? String(v.costPrice)
+            : costMatch
+              ? costMatch[1].replace(",", ".")
+              : estimatedSheetCost
+                ? String(estimatedSheetCost)
+                : "0";
+        const cleanDesc = v.description && costMatch && v.description.trim().startsWith("Custo") ? "" : (v.description || "");
         return {
           id: v.id,
           variationName: v.variationName,
+          description: cleanDesc,
           measureAmount: v.measureAmount ? String(v.measureAmount) : "",
           measureUnit: v.measureUnit || labels.defaultUnit,
           price: String(v.price),
-          costAmount: costMatch ? costMatch[1].replace(",", ".") : estimatedSheetCost ? String(estimatedSheetCost) : "0",
+          costAmount: resolvedCost,
           freeAllowance: String(freeRule?.freeAllowance ?? Math.max(0, v.maxFlavors || 3)),
-          allowPaidExtras: paidRule ? !paidRule.isHidden : true
+          addonMode: resolvedMode,
+          allowPaidExtras: allowPaid
         };
       });
     }
     if (segmentCode?.toLowerCase() === "pizzaria") {
       return [
-        { variationName: "Broto (4 fatias)", measureAmount: "4", measureUnit: "fatias", price: basePrice || "32.90", costAmount: "11.50", freeAllowance: "2", allowPaidExtras: true },
-        { variationName: "Grande (8 fatias)", measureAmount: "8", measureUnit: "fatias", price: "49.90", costAmount: "16.80", freeAllowance: "2", allowPaidExtras: true }
+        { variationName: "Broto (4 fatias)", description: "4 fatias individuais", measureAmount: "4", measureUnit: "fatias", price: basePrice || "32.90", costAmount: "11.50", freeAllowance: "2", addonMode: "both", allowPaidExtras: true },
+        { variationName: "Grande (8 fatias)", description: "8 fatias tradicionais", measureAmount: "8", measureUnit: "fatias", price: "49.90", costAmount: "16.80", freeAllowance: "2", addonMode: "both", allowPaidExtras: true }
       ];
     }
     if (segmentCode?.toLowerCase() === "acaiteria" || !segmentCode) {
       return [
-        { variationName: "300 ml", measureAmount: "300", measureUnit: "ml", price: "15.90", costAmount: "6.80", freeAllowance: "3", allowPaidExtras: true },
-        { variationName: "500 ml", measureAmount: "500", measureUnit: "ml", price: "19.90", costAmount: "9.40", freeAllowance: "4", allowPaidExtras: true },
-        { variationName: "700 ml", measureAmount: "700", measureUnit: "ml", price: "26.90", costAmount: "12.50", freeAllowance: "5", allowPaidExtras: true }
+        { variationName: "300 ml", description: "Copo 300 ml cremoso", measureAmount: "300", measureUnit: "ml", price: "15.90", costAmount: "6.80", freeAllowance: "3", addonMode: "both", allowPaidExtras: true },
+        { variationName: "500 ml", description: "Copo 500 ml caprichado", measureAmount: "500", measureUnit: "ml", price: "19.90", costAmount: "9.40", freeAllowance: "4", addonMode: "both", allowPaidExtras: true },
+        { variationName: "700 ml", description: "Copo 700 ml tamanho família", measureAmount: "700", measureUnit: "ml", price: "26.90", costAmount: "12.50", freeAllowance: "5", addonMode: "both", allowPaidExtras: true }
       ];
     }
     return [
-      { variationName: "Individual", measureAmount: "1", measureUnit: labels.defaultUnit, price: basePrice || "24.90", costAmount: String(estimatedSheetCost ?? 8.5), freeAllowance: "2", allowPaidExtras: true }
+      { variationName: "Individual", description: "", measureAmount: "1", measureUnit: labels.defaultUnit, price: basePrice || "24.90", costAmount: String(estimatedSheetCost ?? 8.5), freeAllowance: "2", addonMode: "both", allowPaidExtras: true }
     ];
   });
 
@@ -309,11 +329,13 @@ export function AdminProductFullModal({
       ...sizes,
       {
         variationName: segmentCode?.toLowerCase() === "pizzaria" ? "Família (12 fatias)" : "1 Litro",
+        description: segmentCode?.toLowerCase() === "pizzaria" ? "12 fatias família" : "Pote / Copo 1 Litro",
         measureAmount: segmentCode?.toLowerCase() === "pizzaria" ? "12" : "1000",
         measureUnit: labels.defaultUnit,
         price: "34.90",
         costAmount: "14.00",
         freeAllowance: "4",
+        addonMode: "both",
         allowPaidExtras: true
       }
     ]);
@@ -326,6 +348,7 @@ export function AdminProductFullModal({
 
     let targetId = product?.id;
     const minPrice = sizes.length > 0 ? Math.min(...sizes.map((s) => Number(s.price) || 1)) : Number(basePrice) || 1;
+    const parsedOrder = Math.max(0, Number(displayOrder) || 1);
 
     if (!targetId) {
       const createRes = await apiFetch<{ id: string }>(
@@ -338,7 +361,7 @@ export function AdminProductFullModal({
             basePrice: Math.max(0.01, minPrice),
             description: description.trim() || null,
             isFeatured: false,
-            displayOrder: 99,
+            displayOrder: parsedOrder,
             isNew,
             isRecommended: false,
             pricingStrategy: segmentCode?.toLowerCase() === "pizzaria" ? 2 : 1,
@@ -371,20 +394,23 @@ export function AdminProductFullModal({
           isNew,
           isPromotion,
           isFeatured: product?.isFeatured ?? false,
-          displayOrder: 0,
+          displayOrder: parsedOrder,
           pricingStrategy: product?.pricingStrategy ?? (segmentCode?.toLowerCase() === "pizzaria" ? 2 : 1),
           imageUrl: imageUrl || null,
           attachedGroupIds,
           sizes: sizes.map((s) => ({
             id: s.id || null,
             variationName: s.variationName.trim() || `${s.measureAmount} ${s.measureUnit}`.trim(),
+            description: s.description.trim() || null,
             price: Math.max(0.01, Number(s.price) || minPrice),
             measureAmount: s.measureAmount ? Number(s.measureAmount) : null,
             measureUnit: s.measureUnit || null,
             maxFlavors: segmentCode?.toLowerCase() === "pizzaria" ? Math.max(1, Number(s.freeAllowance) || 2) : 1,
-            freeAllowance: Math.max(0, Number(s.freeAllowance) || 0),
-            costAmount: s.costAmount ? Number(s.costAmount) : null,
-            allowPaidExtras: s.allowPaidExtras
+            freeAllowance: s.addonMode === "paid_only" || s.addonMode === "none" ? 0 : Math.max(0, Number(s.freeAllowance) || 0),
+            costAmount: s.costAmount ? Number(s.costAmount) : 0,
+            allowFree: s.addonMode === "both" || s.addonMode === "free_only",
+            allowPaidExtras: s.addonMode === "both" || s.addonMode === "paid_only",
+            addonMode: s.addonMode
           }))
         })
       },
@@ -417,7 +443,7 @@ export function AdminProductFullModal({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5 text-xs">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <label className="font-bold text-slate-700">Nome do Produto</label>
               <input
@@ -435,12 +461,22 @@ export function AdminProductFullModal({
                 onChange={(e) => setCategoryId(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold"
               >
-                {categories.map((c) => (
+                {[...categories].sort((a, b) => a.displayOrder - b.displayOrder).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="font-bold text-slate-700">Ordem na Categoria</label>
+              <input
+                type="number"
+                min="1"
+                value={displayOrder}
+                onChange={(e) => setDisplayOrder(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm font-bold"
+              />
             </div>
           </div>
 
@@ -642,7 +678,12 @@ export function AdminProductFullModal({
             )}
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {sizes.map((sz, idx) => (
+              {sizes.map((sz, idx) => {
+                const saleNum = Number(sz.price) || 0;
+                const costNum = Number(sz.costAmount) || 0;
+                const profitNum = saleNum - costNum;
+                const marginPct = saleNum > 0 ? Math.round((profitNum / saleNum) * 100) : 0;
+                return (
                 <div key={idx} className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <input
@@ -652,6 +693,7 @@ export function AdminProductFullModal({
                         copy[idx] = { ...sz, variationName: e.target.value };
                         setSizes(copy);
                       }}
+                      placeholder="Nome do copo/tamanho"
                       className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-extrabold text-amber-700"
                     />
                     <button
@@ -661,6 +703,20 @@ export function AdminProductFullModal({
                     >
                       <Trash2 className="h-3 w-3" /> Remover
                     </button>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600">Descrição deste Copo / Tamanho</label>
+                    <input
+                      value={sz.description}
+                      onChange={(e) => {
+                        const copy = [...sizes];
+                        copy[idx] = { ...sz, description: e.target.value };
+                        setSizes(copy);
+                      }}
+                      placeholder="Ex: 315g de açaí puro + acompanhamentos inclusos"
+                      className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px]"
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -695,18 +751,27 @@ export function AdminProductFullModal({
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-bold text-slate-600">{labels.allowanceLabel}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={sz.freeAllowance}
+                      <label className="text-[10px] font-bold text-slate-600">Adicionais no Copo</label>
+                      <select
+                        value={sz.addonMode}
                         onChange={(e) => {
+                          const mode = e.target.value as CupAddonMode;
                           const copy = [...sizes];
-                          copy[idx] = { ...sz, freeAllowance: e.target.value };
+                          copy[idx] = {
+                            ...sz,
+                            addonMode: mode,
+                            allowPaidExtras: mode === "both" || mode === "paid_only",
+                            freeAllowance: mode === "paid_only" || mode === "none" ? "0" : sz.freeAllowance
+                          };
                           setSizes(copy);
                         }}
-                        className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono"
-                      />
+                        className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold"
+                      >
+                        <option value="both">Gratuitos + Pagos (Os dois)</option>
+                        <option value="free_only">Somente Gratuitos</option>
+                        <option value="paid_only">Somente Pagos</option>
+                        <option value="none">Sem Adicionais</option>
+                      </select>
                     </div>
 
                     <div>
@@ -725,7 +790,7 @@ export function AdminProductFullModal({
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-bold text-slate-600">Custo Insumos (R$)</label>
+                      <label className="text-[10px] font-bold text-slate-600">Preço Custo (R$)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -740,20 +805,34 @@ export function AdminProductFullModal({
                     </div>
                   </div>
 
-                  <label className="flex cursor-pointer items-center gap-1.5 border-t border-slate-200 pt-2 text-[11px] font-semibold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={sz.allowPaidExtras}
-                      onChange={(e) => {
-                        const copy = [...sizes];
-                        copy[idx] = { ...sz, allowPaidExtras: e.target.checked };
-                        setSizes(copy);
-                      }}
-                    />
-                    Permitir Adicionais Extras neste tamanho
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2">
+                    {(sz.addonMode === "both" || sz.addonMode === "free_only") ? (
+                      <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                        <span>{labels.allowanceLabel}:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={sz.freeAllowance}
+                          onChange={(e) => {
+                            const copy = [...sizes];
+                            copy[idx] = { ...sz, freeAllowance: e.target.value };
+                            setSizes(copy);
+                          }}
+                          className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-0.5 font-mono font-bold"
+                        />
+                      </label>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        {sz.addonMode === "paid_only" ? "Sem itens grátis neste copo" : "Copo pronto (sem adicionais)"}
+                      </span>
+                    )}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${profitNum >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                      Lucro: R$ {profitNum.toFixed(2)} ({marginPct}%)
+                    </span>
+                  </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
 
             <button

@@ -300,6 +300,8 @@ export default function PublicStorefrontPage() {
 
   async function handleAddClassicAcai() {
     if (!sessionKey || !activeCup || !selectedFlavorId) return;
+    const allowFree = activeCup.allowFreeToppings !== false && activeCup.freeToppingsLimit > 0;
+    const allowPaid = activeCup.allowPaidAddons !== false;
     const res = await apiFetch<SmartCartResponse>(`/api/v1/public/store/${slug}/cart/${sessionKey}/items`, {
       method: "POST",
       body: JSON.stringify({
@@ -307,8 +309,8 @@ export default function PublicStorefrontPage() {
         acaiCup: {
           cupSizeId: activeCup.id,
           baseFlavorIds: [selectedFlavorId],
-          freeToppings: selectedFreeIds.map((id) => ({ itemId: id, quantity: 1 })),
-          paidAddons: selectedPaidIds.map((id) => ({ itemId: id, quantity: 1 }))
+          freeToppings: allowFree ? selectedFreeIds.map((id) => ({ itemId: id, quantity: 1 })) : [],
+          paidAddons: allowPaid ? selectedPaidIds.map((id) => ({ itemId: id, quantity: 1 })) : []
         },
         quantity: 1
       })
@@ -761,33 +763,54 @@ export default function PublicStorefrontPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-extrabold text-slate-900">Monte seu Açaí do Zero</h2>
-              <p className="text-xs text-slate-500">Escolha o tamanho do copo, seu creme base e acompanhe quantos itens grátis restam.</p>
+              <p className="text-xs text-slate-500">
+                {activeCup.description || "Escolha o tamanho do copo, seu creme base e monte com seus acompanhamentos favoritos."}
+              </p>
             </div>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-              {selectedFreeIds.length}/{activeCup.freeToppingsLimit} acompanhamentos grátis usados
-            </span>
+            {activeCup.allowFreeToppings !== false && activeCup.freeToppingsLimit > 0 ? (
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                {selectedFreeIds.length}/{activeCup.freeToppingsLimit} acompanhamentos grátis usados
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                {activeCup.allowPaidAddons !== false ? "Adicionais pagos opcionais" : "Copo puro sem adicionais"}
+              </span>
+            )}
           </div>
 
           <div className="mt-4 space-y-5">
             <div>
               <p className="mb-2 text-xs font-bold uppercase text-slate-500">1. Escolha o Tamanho</p>
               <div className="flex flex-wrap gap-2">
-                {menu.acai.cupSizes.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCupId(c.id);
-                      setSelectedFreeIds([]);
-                    }}
-                    style={selectedCupId === c.id ? { borderColor: "var(--store-primary)", backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-                    className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition ${
-                      selectedCupId === c.id ? "border-transparent" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {c.name} · {formatBrl(c.basePrice)} (até {c.freeToppingsLimit} grátis)
-                  </button>
-                ))}
+                {menu.acai.cupSizes.map((c) => {
+                  const hasFree = c.allowFreeToppings !== false && c.freeToppingsLimit > 0;
+                  const hasPaid = c.allowPaidAddons !== false;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCupId(c.id);
+                        setSelectedFreeIds([]);
+                        if (c.allowPaidAddons === false) setSelectedPaidIds([]);
+                      }}
+                      style={selectedCupId === c.id ? { borderColor: "var(--store-primary)", backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                      className={`rounded-xl border px-3.5 py-2 text-left text-xs font-bold transition ${
+                        selectedCupId === c.id ? "border-transparent" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>
+                        {c.name} · {formatBrl(c.basePrice)}
+                        {hasFree ? ` (até ${c.freeToppingsLimit} grátis)` : hasPaid ? " (só pagos)" : " (puro)"}
+                      </span>
+                      {c.description && (
+                        <span className={`block text-[10px] font-normal ${selectedCupId === c.id ? "text-white/85" : "text-slate-500"}`}>
+                          {c.description}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -811,55 +834,83 @@ export default function PublicStorefrontPage() {
               </div>
             )}
 
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase text-slate-500">
-                3. Acompanhamentos Gratuitos ({selectedFreeIds.length}/{activeCup.freeToppingsLimit})
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {menu.acai.freeToppings.map((t) => {
-                  const chosen = selectedFreeIds.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedFreeIds((prev) => {
-                          if (prev.includes(t.id)) return prev.filter((x) => x !== t.id);
-                          if (prev.length >= activeCup.freeToppingsLimit) return prev;
-                          return [...prev, t.id];
-                        })
-                      }
-                      className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
-                        chosen ? "border-emerald-600 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700"
-                      }`}
-                    >
-                      {t.name} (Grátis)
-                    </button>
-                  );
-                })}
+            {activeCup.allowFreeToppings !== false && activeCup.freeToppingsLimit > 0 && menu.acai.freeToppings.length > 0 && (
+              <div className="space-y-2.5">
+                <p className="text-xs font-bold uppercase text-slate-500">
+                  3. Acompanhamentos Gratuitos ({selectedFreeIds.length}/{activeCup.freeToppingsLimit})
+                </p>
+                {Array.from(
+                  menu.acai.freeToppings.reduce((map, item) => {
+                    const cat = item.categoryName?.trim() || "Acompanhamentos";
+                    const arr = map.get(cat) ?? [];
+                    arr.push(item);
+                    map.set(cat, arr);
+                    return map;
+                  }, new Map<string, typeof menu.acai.freeToppings>())
+                ).map(([catLabel, items]) => (
+                  <div key={catLabel} className="space-y-1.5">
+                    <p className="text-[11px] font-bold text-slate-600">{catLabel}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((t) => {
+                        const chosen = selectedFreeIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedFreeIds((prev) => {
+                                if (prev.includes(t.id)) return prev.filter((x) => x !== t.id);
+                                if (prev.length >= activeCup.freeToppingsLimit) return prev;
+                                return [...prev, t.id];
+                              })
+                            }
+                            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+                              chosen ? "border-emerald-600 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {t.name} (Grátis)
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
 
-            {menu.acai.paidAddons.length > 0 && (
-              <div>
-                <p className="mb-2 text-xs font-bold uppercase text-amber-700">4. Adicionais Pagos</p>
-                <div className="flex flex-wrap gap-2">
-                  {menu.acai.paidAddons.map((a) => {
-                    const chosen = selectedPaidIds.includes(a.id);
-                    return (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => setSelectedPaidIds((prev) => (prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
-                        className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
-                          chosen ? "border-amber-600 bg-amber-50 text-amber-900" : "border-slate-200 text-slate-700"
-                        }`}
-                      >
-                        {a.name} (+{formatBrl(a.price)})
-                      </button>
-                    );
-                  })}
-                </div>
+            {activeCup.allowPaidAddons !== false && menu.acai.paidAddons.length > 0 && (
+              <div className="space-y-2.5">
+                <p className="text-xs font-bold uppercase text-amber-700">4. Adicionais Pagos</p>
+                {Array.from(
+                  menu.acai.paidAddons.reduce((map, item) => {
+                    const cat = item.categoryName?.trim() || "Adicionais";
+                    const arr = map.get(cat) ?? [];
+                    arr.push(item);
+                    map.set(cat, arr);
+                    return map;
+                  }, new Map<string, typeof menu.acai.paidAddons>())
+                ).map(([catLabel, items]) => (
+                  <div key={catLabel} className="space-y-1.5">
+                    <p className="text-[11px] font-bold text-amber-800">{catLabel}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((a) => {
+                        const chosen = selectedPaidIds.includes(a.id);
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => setSelectedPaidIds((prev) => (prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
+                            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+                              chosen ? "border-amber-600 bg-amber-50 text-amber-900" : "border-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {a.name} (+{formatBrl(a.price)})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -883,8 +934,12 @@ export default function PublicStorefrontPage() {
               Nenhum produto encontrado para este filtro ou busca.
             </div>
           ) : activeFilter === "all" && !query ? (
-            menu.categories.map((cat) => {
-              const catProds = filteredProducts.filter((p) => p.categoryId === cat.id);
+            [...menu.categories]
+              .sort((a, b) => a.displayOrder - b.displayOrder)
+              .map((cat) => {
+              const catProds = [...filteredProducts]
+                .filter((p) => p.categoryId === cat.id)
+                .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
               if (catProds.length === 0) return null;
               return (
                 <section key={cat.id}>

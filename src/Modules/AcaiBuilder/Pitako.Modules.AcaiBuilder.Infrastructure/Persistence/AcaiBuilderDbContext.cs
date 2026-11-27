@@ -25,6 +25,7 @@ public sealed class AcaiBuilderDbContext : PitakoDbContextBase
     public DbSet<AcaiBaseFlavor> BaseFlavors => Set<AcaiBaseFlavor>();
     public DbSet<AcaiFreeTopping> FreeToppings => Set<AcaiFreeTopping>();
     public DbSet<AcaiPaidAddon> PaidAddons => Set<AcaiPaidAddon>();
+    public DbSet<AcaiAddonCategory> AddonCategories => Set<AcaiAddonCategory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,8 +35,29 @@ public sealed class AcaiBuilderDbContext : PitakoDbContextBase
         modelBuilder.ApplyConfiguration(new AcaiBaseFlavorConfiguration());
         modelBuilder.ApplyConfiguration(new AcaiFreeToppingConfiguration());
         modelBuilder.ApplyConfiguration(new AcaiPaidAddonConfiguration());
+        modelBuilder.ApplyConfiguration(new AcaiAddonCategoryConfiguration());
 
         base.OnModelCreating(modelBuilder);
+    }
+}
+
+internal sealed class AcaiAddonCategoryConfiguration : IEntityTypeConfiguration<AcaiAddonCategory>
+{
+    public void Configure(EntityTypeBuilder<AcaiAddonCategory> builder)
+    {
+        builder.ToTable("addon_categories");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(140).IsRequired();
+        builder.Property(x => x.Kind).HasColumnName("kind").IsRequired();
+        builder.Property(x => x.IsFreeByDefault).HasColumnName("is_free_by_default").IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(400);
+        builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
+        builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
+        builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+        builder.HasIndex(x => new { x.TenantId, x.DisplayOrder });
     }
 }
 
@@ -49,9 +71,12 @@ internal sealed class AcaiCupSizeConfiguration : IEntityTypeConfiguration<AcaiCu
         builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(120).IsRequired();
         builder.Property(x => x.VolumeMl).HasColumnName("volume_ml").IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(400);
         builder.Property(x => x.FreeToppingsLimit).HasColumnName("free_toppings_limit").IsRequired();
         builder.Property(x => x.MinFreeToppings).HasColumnName("min_free_toppings").IsRequired();
         builder.Property(x => x.CountingMode).HasColumnName("counting_mode").IsRequired();
+        builder.Property(x => x.AllowFreeToppings).HasColumnName("allow_free_toppings").HasDefaultValue(true).IsRequired();
+        builder.Property(x => x.AllowPaidAddons).HasColumnName("allow_paid_addons").HasDefaultValue(true).IsRequired();
         builder.Property(x => x.MaxPaidAddonsPerCup).HasColumnName("max_paid_addons_per_cup");
         builder.Property(x => x.LinkedProductId).HasColumnName("linked_product_id");
         builder.Property(x => x.Sku).HasColumnName("sku").HasMaxLength(64);
@@ -64,6 +89,11 @@ internal sealed class AcaiCupSizeConfiguration : IEntityTypeConfiguration<AcaiCu
         {
             m.Property(p => p.Amount).HasColumnName("base_price_amount").HasPrecision(18, 2).IsRequired();
             m.Property(p => p.Currency).HasColumnName("base_price_currency").HasMaxLength(3).IsRequired();
+        });
+        builder.OwnsOne(x => x.CostPrice, m =>
+        {
+            m.Property(p => p.Amount).HasColumnName("cost_price_amount").HasPrecision(18, 2).IsRequired();
+            m.Property(p => p.Currency).HasColumnName("cost_price_currency").HasMaxLength(3).IsRequired();
         });
 
         builder.HasIndex(x => new { x.TenantId, x.DisplayOrder });
@@ -103,6 +133,9 @@ internal sealed class AcaiFreeToppingConfiguration : IEntityTypeConfiguration<Ac
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(140).IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(300);
+        builder.Property(x => x.AddonCategoryId).HasColumnName("addon_category_id");
+        builder.Property(x => x.CategoryName).HasColumnName("category_name").HasMaxLength(140);
         builder.Property(x => x.MaxPortionsPerCup).HasColumnName("max_portions_per_cup").IsRequired();
         builder.Property(x => x.SupplyItemId).HasColumnName("supply_item_id");
         builder.Property(x => x.ConsumptionQuantityPerPortion).HasColumnName("consumption_quantity_per_portion").HasPrecision(18, 4);
@@ -111,6 +144,12 @@ internal sealed class AcaiFreeToppingConfiguration : IEntityTypeConfiguration<Ac
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+
+        builder.OwnsOne(x => x.CostPrice, m =>
+        {
+            m.Property(p => p.Amount).HasColumnName("cost_price_amount").HasPrecision(18, 2).IsRequired();
+            m.Property(p => p.Currency).HasColumnName("cost_price_currency").HasMaxLength(3).IsRequired();
+        });
 
         builder.HasIndex(x => new { x.TenantId, x.DisplayOrder });
     }
@@ -125,6 +164,9 @@ internal sealed class AcaiPaidAddonConfiguration : IEntityTypeConfiguration<Acai
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(140).IsRequired();
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(300);
+        builder.Property(x => x.AddonCategoryId).HasColumnName("addon_category_id");
+        builder.Property(x => x.CategoryName).HasColumnName("category_name").HasMaxLength(140);
         builder.Property(x => x.MaxQuantityPerCup).HasColumnName("max_quantity_per_cup").IsRequired();
         builder.Property(x => x.SupplyItemId).HasColumnName("supply_item_id");
         builder.Property(x => x.ConsumptionQuantityPerUnit).HasColumnName("consumption_quantity_per_unit").HasPrecision(18, 4);
@@ -138,6 +180,11 @@ internal sealed class AcaiPaidAddonConfiguration : IEntityTypeConfiguration<Acai
         {
             m.Property(p => p.Amount).HasColumnName("additional_price_amount").HasPrecision(18, 2).IsRequired();
             m.Property(p => p.Currency).HasColumnName("additional_price_currency").HasMaxLength(3).IsRequired();
+        });
+        builder.OwnsOne(x => x.CostPrice, m =>
+        {
+            m.Property(p => p.Amount).HasColumnName("cost_price_amount").HasPrecision(18, 2).IsRequired();
+            m.Property(p => p.Currency).HasColumnName("cost_price_currency").HasMaxLength(3).IsRequired();
         });
 
         builder.HasIndex(x => new { x.TenantId, x.DisplayOrder });

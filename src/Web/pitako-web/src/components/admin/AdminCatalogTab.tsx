@@ -24,6 +24,7 @@ export interface AdminVariationDto {
   variationName: string;
   description?: string | null;
   price: number;
+  costPrice?: number;
   measureAmount?: number | null;
   measureUnit?: string | null;
   maxFlavors: number;
@@ -59,6 +60,7 @@ export interface AdminProductDto {
   allowsNotes: boolean;
   preparationMinutes?: number | null;
   tagsCsv?: string | null;
+  displayOrder?: number;
   primaryImageUrl?: string | null;
   variations: AdminVariationDto[];
   modifierGroupIds: string[];
@@ -115,6 +117,9 @@ export function AdminCatalogTab({
   const [flyerOpen, setFlyerOpen] = useState(false);
   const [bestSellerPickId, setBestSellerPickId] = useState("");
   const [sidebarUploadingImg, setSidebarUploadingImg] = useState(false);
+  const [selectedCatFilter, setSelectedCatFilter] = useState<string>("all");
+  const [catToDelete, setCatToDelete] = useState<AdminCategoryDto | null>(null);
+  const [moveTargetCatId, setMoveTargetCatId] = useState<string>("");
 
   // Categoria form
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -234,9 +239,10 @@ export function AdminCatalogTab({
   }
 
   async function moveCategory(idx: number, dir: -1 | 1) {
+    const orderedCats = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
     const targetIdx = idx + dir;
-    if (targetIdx < 0 || targetIdx >= categories.length) return;
-    const copy = [...categories];
+    if (targetIdx < 0 || targetIdx >= orderedCats.length) return;
+    const copy = [...orderedCats];
     const [moved] = copy.splice(idx, 1);
     copy.splice(targetIdx, 0, moved);
     const payload: Record<string, number> = {};
@@ -244,15 +250,78 @@ export function AdminCatalogTab({
       payload[c.id] = i + 1;
     });
     await apiFetch("/api/v1/catalog/categories/reorder", { method: "POST", body: JSON.stringify(payload) }, token);
+    onNotify("Ordem das categorias atualizada!");
     await onReload();
   }
 
-  async function deleteCategory(id: string) {
-    const res = await apiFetch(`/api/v1/catalog/categories/${id}`, { method: "DELETE" }, token);
+  async function deleteCategory(cat: AdminCategoryDto) {
+    const catProds = products.filter((p) => p.categoryId === cat.id);
+    if (catProds.length > 0) {
+      const otherCat = categories.find((c) => c.id !== cat.id);
+      if (!otherCat) {
+        onNotify("Crie outra categoria antes de excluir a única categoria com produtos.");
+        return;
+      }
+      setCatToDelete(cat);
+      setMoveTargetCatId(otherCat.id);
+      return;
+    }
+    const res = await apiFetch(`/api/v1/catalog/categories/${cat.id}`, { method: "DELETE" }, token);
     if (res.ok) {
       onNotify("Categoria excluída!");
       await onReload();
-    } else onNotify(res.errorMessage || "Não foi possível excluir categoria com produtos.");
+    } else onNotify(res.errorMessage || "Não foi possível excluir categoria.");
+  }
+
+  async function confirmDeleteWithMove() {
+    if (!catToDelete || !moveTargetCatId) return;
+    const res = await apiFetch(
+      `/api/v1/catalog/categories/${catToDelete.id}?moveToCategoryId=${encodeURIComponent(moveTargetCatId)}`,
+      { method: "DELETE" },
+      token
+    );
+    if (res.ok) {
+      onNotify(`Categoria "${catToDelete.name}" removida e produtos transferidos!`);
+      setCatToDelete(null);
+      await onReload();
+    } else {
+      onNotify(res.errorMessage || "Erro ao transferir e excluir categoria.");
+    }
+  }
+
+  async function moveProductCategory(productId: string, targetCategoryId: string) {
+    const res = await apiFetch(
+      `/api/v1/catalog/products/${productId}/move`,
+      { method: "POST", body: JSON.stringify({ categoryId: targetCategoryId }) },
+      token
+    );
+    if (res.ok) {
+      const targetName = categories.find((c) => c.id === targetCategoryId)?.name || "nova categoria";
+      onNotify(`Item movido para "${targetName}"!`);
+      await onReload();
+    } else {
+      onNotify(res.errorMessage || "Erro ao mover item.");
+    }
+  }
+
+  async function reorderProductInCategory(catId: string, productId: string, dir: -1 | 1) {
+    const inCat = [...products]
+      .filter((p) => p.categoryId === catId)
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.name.localeCompare(b.name));
+    const idx = inCat.findIndex((p) => p.id === productId);
+    const targetIdx = idx + dir;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= inCat.length) return;
+    const [moved] = inCat.splice(idx, 1);
+    inCat.splice(targetIdx, 0, moved);
+    const payload: Record<string, number> = {};
+    inCat.forEach((p, i) => {
+      payload[p.id] = i + 1;
+    });
+    const res = await apiFetch("/api/v1/catalog/products/reorder", { method: "POST", body: JSON.stringify(payload) }, token);
+    if (res.ok) {
+      onNotify("Ordem dos produtos atualizada!");
+      await onReload();
+    }
   }
 
   function startEditProduct(p: AdminProductDto) {
@@ -481,20 +550,23 @@ export function AdminCatalogTab({
             <div className="space-y-2">
               {[...categories]
                 .sort((a, b) => a.displayOrder - b.displayOrder)
-                .map((c, idx) => (
+                .map((c, idx) => {
+                const countInCat = products.filter((p) => p.categoryId === c.id).length;
+                return (
                 <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 text-xs">
                   <div>
                     <p className="font-bold text-slate-900">
-                      <span className="mr-2 rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px]">#{c.displayOrder}</span>
+                      <span className="mr-2 rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px]">Ordem {c.displayOrder}</span>
                       {c.name}
+                      <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">{countInCat} itens</span>
                     </p>
                     {c.description && <p className="text-slate-500">{c.description}</p>}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => moveCategory(idx, -1)} className="rounded p-1 hover:bg-slate-200">
+                    <button type="button" title="Subir categoria" onClick={() => moveCategory(idx, -1)} className="rounded p-1 hover:bg-slate-200">
                       <ArrowUp className="h-3.5 w-3.5" />
                     </button>
-                    <button type="button" onClick={() => moveCategory(idx, 1)} className="rounded p-1 hover:bg-slate-200">
+                    <button type="button" title="Descer categoria" onClick={() => moveCategory(idx, 1)} className="rounded p-1 hover:bg-slate-200">
                       <ArrowDown className="h-3.5 w-3.5" />
                     </button>
                     <button
@@ -505,14 +577,15 @@ export function AdminCatalogTab({
                       }}
                       className="rounded px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
                     >
-                      <Edit3 className="inline h-3.5 w-3.5" /> Ordem/Editar
+                      <Edit3 className="inline h-3.5 w-3.5" /> Editar
                     </button>
-                    <button type="button" onClick={() => deleteCategory(c.id)} className="rounded p-1 text-rose-600 hover:bg-rose-50">
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <button type="button" onClick={() => deleteCategory(c)} className="rounded p-1 text-rose-600 hover:bg-rose-50">
+                      <Trash2 className="inline h-3.5 w-3.5" /> Excluir
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -556,57 +629,126 @@ export function AdminCatalogTab({
                 </button>
               </div>
             </div>
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedCatFilter("all")}
+                className={`rounded-full border px-3 py-1 text-[11px] font-bold ${selectedCatFilter === "all" ? "border-transparent bg-slate-900 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+              >
+                Todas ({products.length})
+              </button>
+              {[...categories]
+                .sort((a, b) => a.displayOrder - b.displayOrder)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setSelectedCatFilter(c.id)}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-bold ${selectedCatFilter === c.id ? "border-transparent bg-purple-700 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+                  >
+                    #{c.displayOrder} {c.name} ({products.filter((p) => p.categoryId === c.id).length})
+                  </button>
+                ))}
+            </div>
+
             {viewMode === "table" ? (
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                <table className="w-full min-w-[780px] text-left text-xs">
+                <table className="w-full min-w-[820px] text-left text-xs">
                   <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600">
                     <tr>
-                      <th className="px-3 py-2.5">Produto</th>
-                      <th className="px-3 py-2.5">Tamanhos / Preços</th>
-                      <th className="px-3 py-2.5">Margem &amp; FT</th>
+                      <th className="px-3 py-2.5">Ordem</th>
+                      <th className="px-3 py-2.5">Nome &amp; Categoria</th>
+                      <th className="px-3 py-2.5">Preços de Venda &amp; Custos</th>
+                      <th className="px-3 py-2.5">Destaques</th>
                       <th className="px-3 py-2.5 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {products.map((p) => {
-                      const catNameLookup = categories.find((c) => c.id === p.categoryId)?.name || "";
+                    {[...products]
+                      .filter((p) => selectedCatFilter === "all" || p.categoryId === selectedCatFilter)
+                      .sort((a, b) => {
+                        const ca = categories.find((c) => c.id === a.categoryId)?.displayOrder ?? 999;
+                        const cb = categories.find((c) => c.id === b.categoryId)?.displayOrder ?? 999;
+                        return ca - cb || (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.name.localeCompare(b.name);
+                      })
+                      .map((p) => {
                       const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
                       return (
                         <tr key={p.id} className="hover:bg-slate-50/70">
                           <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1">
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold">#{p.displayOrder ?? 1}</span>
+                              <button type="button" title="Subir na categoria" onClick={() => void reorderProductInCategory(p.categoryId, p.id, -1)} className="rounded p-0.5 hover:bg-slate-200">
+                                <ArrowUp className="h-3 w-3" />
+                              </button>
+                              <button type="button" title="Descer na categoria" onClick={() => void reorderProductInCategory(p.categoryId, p.id, 1)} className="rounded p-0.5 hover:bg-slate-200">
+                                <ArrowDown className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2.5">
                               <ProductMediaFrame src={p.primaryImageUrl} alt={p.name} className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white" iconSize={16} />
                               <div>
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="font-extrabold text-slate-900">{p.name}</span>
-                                  {p.isFeatured && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">Top</span>}
-                                  {p.isNew && <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">Novo</span>}
+                                <p className="font-extrabold text-slate-900">{p.name}</p>
+                                <div className="mt-0.5 flex items-center gap-1">
+                                  <select
+                                    aria-label={`Mover ${p.name} para categoria`}
+                                    value={p.categoryId}
+                                    onChange={(e) => void moveProductCategory(p.id, e.target.value)}
+                                    className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
+                                  >
+                                    {[...categories].sort((a, b) => a.displayOrder - b.displayOrder).map((cat) => (
+                                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                    ))}
+                                  </select>
+                                  <span className="text-[10px] text-slate-400">· {p.modifierGroupIds.length} grp</span>
                                 </div>
-                                <span className="text-[11px] text-slate-500">{catNameLookup || "Sem categoria"} · {p.modifierGroupIds.length} grupo(s)</span>
                               </div>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-slate-700">
-                            {p.variations.length > 0
-                              ? p.variations.map((v) => `${v.variationName}: R$ ${v.price.toFixed(2)}`).join(" | ")
-                              : `R$ ${p.basePrice.toFixed(2)}`}
+                            {p.variations.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {p.variations.map((v) => {
+                                  const freeRule = p.variationRules.find((r) => r.variationId === v.id && !r.isHidden && r.freeAllowance > 0);
+                                  const costMatch = v.description?.match(/Custo\s*(?:estimado)?\s*R\$\s*([\d.,]+)/i);
+                                  const costVal = v.costPrice && v.costPrice > 0 ? v.costPrice : costMatch ? Number(costMatch[1].replace(",", ".")) : (matchedSheet?.costPerPortion ?? 0);
+                                  const profit = v.price - costVal;
+                                  return (
+                                    <div key={v.id} className="text-[11px]">
+                                      <strong>{v.variationName}:</strong> Venda R$ {v.price.toFixed(2)}
+                                      {costVal > 0 && <> · Custo R$ {costVal.toFixed(2)}</>}
+                                      {freeRule && <> ({freeRule.freeAllowance} acomp.)</>}
+                                      {costVal > 0 && (
+                                        <span className={`ml-1 font-bold ${profit >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                                          {profit >= 0 ? `+R$ ${profit.toFixed(2)}` : `-R$ ${Math.abs(profit).toFixed(2)}`}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div>
+                                <span>Venda R$ {p.basePrice.toFixed(2)}</span>
+                                {matchedSheet && (
+                                  <span className="ml-1 font-bold text-emerald-700">
+                                    · Custo R$ {matchedSheet.costPerPortion.toFixed(2)} (+R$ {matchedSheet.profitPerUnit.toFixed(2)})
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2.5">
-                            {matchedSheet ? (
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                  matchedSheet.isLossAlert
-                                    ? "bg-rose-100 text-rose-800"
-                                    : matchedSheet.isLowMarginAlert
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-emerald-100 text-emerald-800"
-                                }`}
-                              >
-                                {matchedSheet.marginPercent}% (+R$ {matchedSheet.profitPerUnit.toFixed(2)})
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400">Sem FT</span>
-                            )}
+                            <div className="flex flex-wrap gap-1">
+                              {p.isFeatured && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Mais Vendido</span>}
+                              {p.isNew && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">Lançamento</span>}
+                              {p.tagsCsv?.toLowerCase().includes("promo") && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>}
+                              {!p.isFeatured && !p.isNew && !p.tagsCsv?.toLowerCase().includes("promo") && (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">Padrão</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2.5 text-right">
                             <div className="inline-flex flex-wrap justify-end gap-1">
@@ -617,7 +759,7 @@ export function AdminCatalogTab({
                                   p.isFeatured ? "border-amber-400 bg-amber-100 text-amber-900" : "border-slate-300 bg-white text-slate-600"
                                 }`}
                               >
-                                <Star className="inline h-3 w-3" /> {p.isFeatured ? "Topo" : "+ Topo"}
+                                <Star className="inline h-3 w-3" /> {p.isFeatured ? "No Topo" : "+ Mais Vendido"}
                               </button>
                               {matchedSheet && onOpenTechSheetPdf && (
                                 <button
@@ -625,7 +767,7 @@ export function AdminCatalogTab({
                                   onClick={() => onOpenTechSheetPdf(matchedSheet)}
                                   className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-800"
                                 >
-                                  FT PDF
+                                  Receita &amp; PDF
                                 </button>
                               )}
                               <button
@@ -642,7 +784,7 @@ export function AdminCatalogTab({
                                 {p.status === "Active" ? <Pause className="inline h-3 w-3" /> : <Play className="inline h-3 w-3" />}
                               </button>
                               <button type="button" onClick={() => deleteProduct(p.id)} className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-600">
-                                <Trash2 className="inline h-3 w-3" />
+                                <Trash2 className="inline h-3 w-3" /> Excluir
                               </button>
                             </div>
                           </td>
@@ -654,7 +796,14 @@ export function AdminCatalogTab({
               </div>
             ) : (
             <div className="space-y-3">
-              {products.map((p) => {
+              {[...products]
+                .filter((p) => selectedCatFilter === "all" || p.categoryId === selectedCatFilter)
+                .sort((a, b) => {
+                  const ca = categories.find((c) => c.id === a.categoryId)?.displayOrder ?? 999;
+                  const cb = categories.find((c) => c.id === b.categoryId)?.displayOrder ?? 999;
+                  return ca - cb || (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.name.localeCompare(b.name);
+                })
+                .map((p) => {
                 const isExpanded = expandedProdId === p.id;
                 const catNameLookup = categories.find((c) => c.id === p.categoryId)?.name || "";
                 const matchedSheet = techSheetSummaries.find((ts) => ts.productId === p.id);
@@ -697,6 +846,23 @@ export function AdminCatalogTab({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 border border-slate-200">#{p.displayOrder ?? 1}</span>
+                        <button type="button" title="Subir na categoria" onClick={() => void reorderProductInCategory(p.categoryId, p.id, -1)} className="rounded-lg border border-slate-300 bg-white p-1 hover:bg-slate-100">
+                          <ArrowUp className="h-3 w-3" />
+                        </button>
+                        <button type="button" title="Descer na categoria" onClick={() => void reorderProductInCategory(p.categoryId, p.id, 1)} className="rounded-lg border border-slate-300 bg-white p-1 hover:bg-slate-100">
+                          <ArrowDown className="h-3 w-3" />
+                        </button>
+                        <select
+                          aria-label={`Mover ${p.name} para categoria`}
+                          value={p.categoryId}
+                          onChange={(e) => void moveProductCategory(p.id, e.target.value)}
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                        >
+                          {[...categories].sort((a, b) => a.displayOrder - b.displayOrder).map((cat) => (
+                            <option key={cat.id} value={cat.id}>Mover: {cat.name}</option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           onClick={() => void toggleBestSeller(p)}
@@ -925,6 +1091,46 @@ export function AdminCatalogTab({
           </form>
         </div>
       </div>
+
+      {catToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-xs">
+            <h3 className="text-base font-extrabold text-slate-900">Excluir Categoria &quot;{catToDelete.name}&quot;</h3>
+            <p className="text-slate-600">
+              Esta categoria possui <strong>{products.filter((p) => p.categoryId === catToDelete.id).length}</strong> produto(s). Escolha para qual categoria deseja transferi-los antes de excluir:
+            </p>
+            <select
+              value={moveTargetCatId}
+              onChange={(e) => setMoveTargetCatId(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-semibold"
+            >
+              {categories
+                .filter((c) => c.id !== catToDelete.id)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void confirmDeleteWithMove()}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 font-extrabold text-white hover:bg-rose-700"
+              >
+                Mover Produtos &amp; Excluir Categoria
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatToDelete(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 font-bold text-slate-700"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {catModalOpen && (
         <AdminCategoryEditModal

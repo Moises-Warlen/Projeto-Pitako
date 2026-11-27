@@ -27,7 +27,8 @@ public sealed record ModifierOptionInput(
     string? ConsumptionUnitCode = null,
     decimal LossPercent = 0m,
     string? ReplacesLabel = null,
-    string? IncompatibleOptionIdsCsv = null);
+    string? IncompatibleOptionIdsCsv = null,
+    decimal CostPrice = 0m);
 
 /// <summary>
 /// Caso de uso de gestão do catálogo por estabelecimento com isolamento multi-tenant,
@@ -131,7 +132,11 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         return Result.Success(category);
     }
 
-    public async Task<Result> DeleteCategoryAsync(User actor, Guid categoryId, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteCategoryAsync(
+        User actor,
+        Guid categoryId,
+        CancellationToken cancellationToken = default,
+        Guid? moveToCategoryId = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Delete);
         if (guard.IsFailure)
@@ -144,8 +149,33 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         TenantGuard.EnsureOwnership(_tenantContext, category);
 
         var products = await _productRepo.ListAllOrderedAsync(cancellationToken);
-        if (products.Any(p => p.CategoryId == categoryId && p.Status != CatalogItemStatus.Archived))
-            return Result.Failure(Error.Conflict("Category.HasProducts", "Exclua ou mova os produtos desta categoria antes de excluí-la."));
+        var activeProducts = products.Where(p => p.CategoryId == categoryId && p.Status != CatalogItemStatus.Archived).ToList();
+        if (activeProducts.Count > 0)
+        {
+            if (!moveToCategoryId.HasValue || moveToCategoryId.Value == Guid.Empty)
+                return Result.Failure(Error.Conflict("Category.HasProducts", "Exclua ou mova os produtos desta categoria antes de excluí-la."));
+
+            if (moveToCategoryId.Value == categoryId)
+                return Result.Failure(Error.Validation("Category.InvalidDestination", "Escolha outra categoria para receber os produtos."));
+
+            var targetCategory = await _categoryRepo.FindByIdAsync(moveToCategoryId.Value, cancellationToken);
+            if (targetCategory is null)
+                return Result.Failure(Error.NotFound("Category.DestinationNotFound", "Categoria de destino não encontrada."));
+
+            TenantGuard.EnsureOwnership(_tenantContext, targetCategory);
+
+            var nextOrder = products
+                .Where(p => p.CategoryId == targetCategory.Id && p.Status != CatalogItemStatus.Archived)
+                .Select(p => p.DisplayOrder)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+
+            foreach (var prod in activeProducts)
+            {
+                prod.MoveToCategory(targetCategory.Id, nextOrder++);
+            }
+            await _productRepo.SaveChangesAsync(cancellationToken);
+        }
 
         _categoryRepo.Remove(category);
         await _categoryRepo.SaveChangesAsync(cancellationToken);
@@ -170,6 +200,69 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         }
 
         await _categoryRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<Product>> MoveProductToCategoryAsync(
+        User actor,
+        Guid productId,
+        Guid targetCategoryId,
+        int? displayOrder = null,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<Product>(guard.Error);
+
+        var product = await _productRepo.FindByIdAsync(productId, cancellationToken);
+        if (product is null)
+            return Result.Failure<Product>(Error.NotFound("Product.NotFound", "Produto não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, product);
+
+        var targetCategory = await _categoryRepo.FindByIdAsync(targetCategoryId, cancellationToken);
+        if (targetCategory is null)
+            return Result.Failure<Product>(Error.NotFound("Category.NotFound", "Categoria de destino não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, targetCategory);
+
+        var resolvedOrder = displayOrder;
+        if (!resolvedOrder.HasValue)
+        {
+            var allProducts = await _productRepo.ListAllOrderedAsync(cancellationToken);
+            resolvedOrder = allProducts
+                .Where(p => p.CategoryId == targetCategoryId && p.Id != productId && p.Status != CatalogItemStatus.Archived)
+                .Select(p => p.DisplayOrder)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+        }
+
+        var moveRes = product.MoveToCategory(targetCategoryId, resolvedOrder);
+        if (moveRes.IsFailure)
+            return Result.Failure<Product>(moveRes.Error);
+
+        await _productRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success(product);
+    }
+
+    public async Task<Result> ReorderProductsAsync(
+        User actor,
+        IReadOnlyDictionary<Guid, int> newOrders,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var products = await _productRepo.ListAllOrderedAsync(cancellationToken);
+        foreach (var product in products)
+        {
+            TenantGuard.EnsureOwnership(_tenantContext, product);
+            if (newOrders.TryGetValue(product.Id, out var order))
+                product.ChangeOrder(order);
+        }
+
+        await _productRepo.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
@@ -363,7 +456,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         decimal? measureAmount = null,
         string? measureUnit = null,
         int maxFlavors = 1,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        decimal costPriceAmount = 0m)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -379,7 +473,11 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (price.IsFailure)
             return Result.Failure<ProductVariation>(price.Error);
 
-        var variation = product.AddVariation(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors);
+        var cost = Money.Create(Math.Max(0m, costPriceAmount));
+        if (cost.IsFailure)
+            return Result.Failure<ProductVariation>(cost.Error);
+
+        var variation = product.AddVariation(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value);
         if (variation.IsFailure)
             return variation;
 
@@ -400,7 +498,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         string? measureUnit = null,
         int maxFlavors = 1,
         bool isActive = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        decimal costPriceAmount = 0m)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -419,7 +518,11 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (price.IsFailure)
             return Result.Failure<ProductVariation>(price.Error);
 
-        var res = variation.UpdateDetails(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors);
+        var cost = Money.Create(Math.Max(0m, costPriceAmount));
+        if (cost.IsFailure)
+            return Result.Failure<ProductVariation>(cost.Error);
+
+        var res = variation.UpdateDetails(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value);
         if (res.IsFailure)
             return Result.Failure<ProductVariation>(res.Error);
 
@@ -576,6 +679,10 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             if (price.IsFailure)
                 return Result.Failure<ModifierGroup>(price.Error);
 
+            var cost = Money.Create(Math.Max(0m, opt.CostPrice));
+            if (cost.IsFailure)
+                return Result.Failure<ModifierGroup>(cost.Error);
+
             var added = groupResult.Value.AddOption(
                 opt.Name,
                 price.Value,
@@ -587,7 +694,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
                 opt.ConsumptionUnitCode,
                 opt.LossPercent,
                 opt.ReplacesLabel,
-                opt.IncompatibleOptionIdsCsv);
+                opt.IncompatibleOptionIdsCsv,
+                cost.Value);
             if (added.IsFailure)
                 return Result.Failure<ModifierGroup>(added.Error);
         }
@@ -673,6 +781,10 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (price.IsFailure)
             return Result.Failure<ModifierOption>(price.Error);
 
+        var cost = Money.Create(Math.Max(0m, input.CostPrice));
+        if (cost.IsFailure)
+            return Result.Failure<ModifierOption>(cost.Error);
+
         var optRes = group.AddOption(
             input.Name,
             price.Value,
@@ -684,7 +796,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             input.ConsumptionUnitCode,
             input.LossPercent,
             input.ReplacesLabel,
-            input.IncompatibleOptionIdsCsv);
+            input.IncompatibleOptionIdsCsv,
+            cost.Value);
         if (optRes.IsFailure)
             return optRes;
 
@@ -717,6 +830,10 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (price.IsFailure)
             return Result.Failure<ModifierOption>(price.Error);
 
+        var cost = Money.Create(Math.Max(0m, input.CostPrice));
+        if (cost.IsFailure)
+            return Result.Failure<ModifierOption>(cost.Error);
+
         var res = opt.Update(
             input.Name,
             price.Value,
@@ -728,7 +845,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             input.ConsumptionUnitCode,
             input.LossPercent,
             input.ReplacesLabel,
-            input.IncompatibleOptionIdsCsv);
+            input.IncompatibleOptionIdsCsv,
+            cost.Value);
         if (res.IsFailure)
             return Result.Failure<ModifierOption>(res.Error);
 
@@ -756,6 +874,110 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
 
         await _modifierRepo.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    public async Task<Result> ReorderModifierGroupsAsync(
+        User actor,
+        IReadOnlyDictionary<Guid, int> newOrders,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var groups = await _modifierRepo.ListAllAsync(cancellationToken);
+        foreach (var group in groups)
+        {
+            TenantGuard.EnsureOwnership(_tenantContext, group);
+            if (newOrders.TryGetValue(group.Id, out var order))
+                group.ChangeOrder(order);
+        }
+
+        await _modifierRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> ReorderModifierOptionsAsync(
+        User actor,
+        Guid groupId,
+        IReadOnlyDictionary<Guid, int> newOrders,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return guard;
+
+        var group = await _modifierRepo.FindByIdAsync(groupId, cancellationToken);
+        if (group is null)
+            return Result.Failure(Error.NotFound("ModifierGroup.NotFound", "Grupo de opções não encontrado."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, group);
+        foreach (var opt in group.Options)
+        {
+            if (newOrders.TryGetValue(opt.Id, out var order))
+                opt.ChangeOrder(order);
+        }
+
+        await _modifierRepo.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result<ModifierOption>> MoveModifierOptionAsync(
+        User actor,
+        Guid sourceGroupId,
+        Guid optionId,
+        Guid targetGroupId,
+        decimal? newAdditionalPrice = null,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = ValidateTenantActor(actor, PermissionAction.Edit);
+        if (guard.IsFailure)
+            return Result.Failure<ModifierOption>(guard.Error);
+
+        if (sourceGroupId == targetGroupId)
+            return Result.Failure<ModifierOption>(Error.Validation("ModifierGroup.SameDestination", "Escolha outra categoria de destino."));
+
+        var sourceGroup = await _modifierRepo.FindByIdAsync(sourceGroupId, cancellationToken);
+        var targetGroup = await _modifierRepo.FindByIdAsync(targetGroupId, cancellationToken);
+        if (sourceGroup is null || targetGroup is null)
+            return Result.Failure<ModifierOption>(Error.NotFound("ModifierGroup.NotFound", "Categoria de adicionais não encontrada."));
+
+        TenantGuard.EnsureOwnership(_tenantContext, sourceGroup);
+        TenantGuard.EnsureOwnership(_tenantContext, targetGroup);
+
+        var sourceOpt = sourceGroup.Options.FirstOrDefault(o => o.Id == optionId);
+        if (sourceOpt is null)
+            return Result.Failure<ModifierOption>(Error.NotFound("ModifierOption.NotFound", "Adicional não encontrado na categoria de origem."));
+
+        var resolvedPrice = newAdditionalPrice.HasValue
+            ? Money.Create(Math.Max(0m, newAdditionalPrice.Value))
+            : Result.Success(targetGroup.SelectionKind == ModifierGroupKind.FreeIncluded ? Money.Zero(sourceOpt.AdditionalPrice.Currency) : sourceOpt.AdditionalPrice);
+        if (resolvedPrice.IsFailure)
+            return Result.Failure<ModifierOption>(resolvedPrice.Error);
+
+        var nextOrder = targetGroup.Options.Select(o => o.DisplayOrder).DefaultIfEmpty(0).Max() + 1;
+        var addedRes = targetGroup.AddOption(
+            sourceOpt.Name,
+            resolvedPrice.Value,
+            sourceOpt.MaxQuantity,
+            nextOrder,
+            sourceOpt.Description,
+            sourceOpt.SupplyItemId,
+            sourceOpt.ConsumptionQuantity,
+            sourceOpt.ConsumptionUnitCode,
+            sourceOpt.LossPercent,
+            sourceOpt.ReplacesLabel,
+            sourceOpt.IncompatibleOptionIdsCsv,
+            sourceOpt.CostPrice);
+        if (addedRes.IsFailure)
+            return addedRes;
+
+        if (!sourceOpt.IsAvailable)
+            addedRes.Value.Pause();
+
+        sourceGroup.RemoveOption(optionId);
+        await _modifierRepo.SaveChangesAsync(cancellationToken);
+        return addedRes;
     }
 
     public async Task<Result> AttachModifierGroupToProductAsync(

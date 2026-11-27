@@ -33,6 +33,7 @@ public sealed class ModifierOption : Entity<Guid>
     {
         Name = string.Empty;
         AdditionalPrice = Money.Zero();
+        CostPrice = Money.Zero();
     }
 
     internal ModifierOption(
@@ -49,12 +50,14 @@ public sealed class ModifierOption : Entity<Guid>
         string? consumptionUnitCode = null,
         decimal lossPercent = 0m,
         string? replacesLabel = null,
-        string? incompatibleOptionIdsCsv = null) : base(id)
+        string? incompatibleOptionIdsCsv = null,
+        Money? costPrice = null) : base(id)
     {
         TenantId = tenantId;
         ModifierGroupId = modifierGroupId;
         Name = name;
         AdditionalPrice = additionalPrice;
+        CostPrice = costPrice ?? Money.Zero(additionalPrice.Currency);
         MaxQuantity = maxQuantity;
         DisplayOrder = displayOrder;
         Description = description;
@@ -71,6 +74,7 @@ public sealed class ModifierOption : Entity<Guid>
     public Guid ModifierGroupId { get; private set; }
     public string Name { get; private set; }
     public Money AdditionalPrice { get; private set; }
+    public Money CostPrice { get; private set; }
     public int MaxQuantity { get; private set; }
     public int DisplayOrder { get; private set; }
     public bool IsAvailable { get; private set; }
@@ -93,7 +97,8 @@ public sealed class ModifierOption : Entity<Guid>
         string? consumptionUnitCode = null,
         decimal lossPercent = 0m,
         string? replacesLabel = null,
-        string? incompatibleOptionIdsCsv = null)
+        string? incompatibleOptionIdsCsv = null,
+        Money? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
@@ -106,6 +111,7 @@ public sealed class ModifierOption : Entity<Guid>
 
         Name = name.Trim();
         AdditionalPrice = additionalPrice;
+        if (costPrice is not null) CostPrice = costPrice;
         MaxQuantity = maxQuantity;
         DisplayOrder = displayOrder;
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -118,6 +124,7 @@ public sealed class ModifierOption : Entity<Guid>
         return Result.Success();
     }
 
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
     public void Pause() => IsAvailable = false;
     public void Reactivate() => IsAvailable = true;
 }
@@ -253,6 +260,7 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         return Result.Success();
     }
 
+    public void ChangeOrder(int displayOrder) => DisplayOrder = displayOrder;
     public void Pause() => IsActive = false;
     public void Reactivate() => IsActive = true;
 
@@ -267,7 +275,8 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         string? consumptionUnitCode = null,
         decimal lossPercent = 0m,
         string? replacesLabel = null,
-        string? incompatibleOptionIdsCsv = null)
+        string? incompatibleOptionIdsCsv = null,
+        Money? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ModifierOption>(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
@@ -294,7 +303,8 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
             string.IsNullOrWhiteSpace(consumptionUnitCode) ? null : consumptionUnitCode.Trim().ToLowerInvariant(),
             lossPercent,
             string.IsNullOrWhiteSpace(replacesLabel) ? null : replacesLabel.Trim(),
-            string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim());
+            string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim(),
+            costPrice);
         _options.Add(option);
         return Result.Success(option);
     }

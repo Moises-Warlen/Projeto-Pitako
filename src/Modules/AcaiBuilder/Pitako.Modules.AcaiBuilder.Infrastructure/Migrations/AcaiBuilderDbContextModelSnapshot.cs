@@ -23,6 +23,58 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Pitako.Modules.AcaiBuilder.Domain.AcaiAddonCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsFreeByDefault")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_free_by_default");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "DisplayOrder");
+
+                    b.ToTable("addon_categories", "acai");
+                });
+
             modelBuilder.Entity("Pitako.Modules.AcaiBuilder.Domain.AcaiBaseFlavor", b =>
                 {
                     b.Property<Guid>("Id")
@@ -68,6 +120,18 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("AllowFreeToppings")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("allow_free_toppings");
+
+                    b.Property<bool>("AllowPaidAddons")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("allow_paid_addons");
+
                     b.Property<int>("CountingMode")
                         .HasColumnType("integer")
                         .HasColumnName("counting_mode");
@@ -75,6 +139,11 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("description");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
@@ -136,6 +205,15 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AddonCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("addon_category_id");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("category_name");
+
                     b.Property<decimal?>("ConsumptionQuantityPerPortion")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)")
@@ -149,6 +227,11 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
@@ -193,6 +276,15 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AddonCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("addon_category_id");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("category_name");
+
                     b.Property<decimal?>("ConsumptionQuantityPerUnit")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)")
@@ -206,6 +298,11 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
@@ -302,6 +399,63 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
 
                     b.Navigation("BasePrice")
                         .IsRequired();
+
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CostPrice", b1 =>
+                        {
+                            b1.Property<Guid>("AcaiCupSizeId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("cost_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("cost_price_currency");
+
+                            b1.HasKey("AcaiCupSizeId");
+
+                            b1.ToTable("cup_sizes", "acai");
+
+                            b1.WithOwner()
+                                .HasForeignKey("AcaiCupSizeId");
+                        });
+
+                    b.Navigation("CostPrice")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pitako.Modules.AcaiBuilder.Domain.AcaiFreeTopping", b =>
+                {
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CostPrice", b1 =>
+                        {
+                            b1.Property<Guid>("AcaiFreeToppingId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("cost_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("cost_price_currency");
+
+                            b1.HasKey("AcaiFreeToppingId");
+
+                            b1.ToTable("free_toppings", "acai");
+
+                            b1.WithOwner()
+                                .HasForeignKey("AcaiFreeToppingId");
+                        });
+
+                    b.Navigation("CostPrice")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Pitako.Modules.AcaiBuilder.Domain.AcaiPaidAddon", b =>
@@ -330,7 +484,34 @@ namespace Pitako.Modules.AcaiBuilder.Infrastructure.Migrations
                                 .HasForeignKey("AcaiPaidAddonId");
                         });
 
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "CostPrice", b1 =>
+                        {
+                            b1.Property<Guid>("AcaiPaidAddonId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("cost_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("cost_price_currency");
+
+                            b1.HasKey("AcaiPaidAddonId");
+
+                            b1.ToTable("paid_addons", "acai");
+
+                            b1.WithOwner()
+                                .HasForeignKey("AcaiPaidAddonId");
+                        });
+
                     b.Navigation("AdditionalPrice")
+                        .IsRequired();
+
+                    b.Navigation("CostPrice")
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

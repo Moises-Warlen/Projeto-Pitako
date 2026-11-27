@@ -42,6 +42,15 @@ public interface IAcaiPaidAddonRepository
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
+public interface IAcaiAddonCategoryRepository
+{
+    Task<AcaiAddonCategory?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AcaiAddonCategory>> ListAsync(bool includePaused, CancellationToken cancellationToken = default);
+    Task AddAsync(AcaiAddonCategory category, CancellationToken cancellationToken = default);
+    void Remove(AcaiAddonCategory category);
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Contrato público para validação e recálculo autoritativo de copos de açaí no cardápio digital,
 /// carrinho e checkout de pedidos (Fases 11 e 13).
