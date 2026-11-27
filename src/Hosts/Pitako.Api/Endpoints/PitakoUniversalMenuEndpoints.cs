@@ -138,6 +138,7 @@ public static class PitakoUniversalMenuEndpoints
             ITenantRepository tenantRepo,
             ITenantContextSetter setter,
             ShoppingCartService cartSvc,
+            CatalogManagementService catalogSvc,
             CancellationToken ct) =>
         {
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
@@ -157,6 +158,10 @@ public static class PitakoUniversalMenuEndpoints
             }
             else if (req.ProductId.HasValue)
             {
+                var stockCheck = await catalogSvc.CheckCatalogStockAvailabilityAsync([(req.ProductId.Value, req.VariationId, req.Quantity)], ct);
+                if (stockCheck.IsFailure)
+                    return ApiSecurityGuard.ProblemFromError(stockCheck.Error);
+
                 res = await cartSvc.AddCatalogProductAsync(sessionKey, req.ProductId.Value, req.VariationId, req.Modifiers, req.Quantity, req.Notes, req.ForceSeparateLine, ct);
             }
             else
@@ -441,7 +446,7 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateCategoryAsync(user!, id, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.IsActive, req.SegmentTemplateCode, req.RuleNotes, ct));
+            return ToHttp(await svc.UpdateCategoryAsync(user!, id, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.IsActive, req.SegmentTemplateCode, req.RuleNotes, ct, req.TemplateKind, req.AvailabilityScheduleJson));
         });
 
         catalog.MapDelete("/categories/{id:guid}", async (Guid id, Guid? moveToCategoryId, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -476,7 +481,33 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateProductAsync(user!, id, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.IsFeatured, req.DisplayOrder, req.SaleMode, req.IsNew, req.IsRecommended, req.PricingStrategy, req.TagsCsv, req.PreparationMinutes, req.CustomTemplateKey, req.AllowsNotes, ct));
+            return ToHttp(await svc.UpdateProductAsync(
+                user!,
+                id,
+                req.CategoryId,
+                req.Name,
+                req.BasePrice,
+                req.Description,
+                req.Sku,
+                req.IsFeatured,
+                req.DisplayOrder,
+                req.SaleMode,
+                req.IsNew,
+                req.IsRecommended,
+                req.PricingStrategy,
+                req.TagsCsv,
+                req.PreparationMinutes,
+                req.CustomTemplateKey,
+                req.AllowsNotes,
+                ct,
+                req.PromotionalPrice,
+                req.TrackInventory,
+                req.StockQuantity,
+                req.AutoPauseOnZeroStock,
+                req.ServesPeopleCount,
+                req.DietaryTagsCsv,
+                req.AvailabilityScheduleJson,
+                req.IsActive));
         });
 
         catalog.MapDelete("/products/{id:guid}", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, ITechnicalSheetRepository sheetRepo, HttpContext http, CancellationToken ct) =>
@@ -522,14 +553,14 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.AddProductVariationAsync(user!, id, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, ct, req.CostPrice ?? 0m), StatusCodes.Status201Created);
+            return ToHttp(await svc.AddProductVariationAsync(user!, id, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, ct, req.CostPrice ?? 0m, req.TrackInventory, req.StockQuantity), StatusCodes.Status201Created);
         });
 
         catalog.MapPut("/products/{id:guid}/variations/{variationId:guid}", async (Guid id, Guid variationId, UpsertProductVariationReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateProductVariationAsync(user!, id, variationId, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, req.IsActive, ct, req.CostPrice ?? 0m));
+            return ToHttp(await svc.UpdateProductVariationAsync(user!, id, variationId, req.VariationName, req.Price, req.Sku, req.DisplayOrder, req.Description, req.MeasureAmount, req.MeasureUnit, req.MaxFlavors, req.IsActive, ct, req.CostPrice ?? 0m, req.TrackInventory, req.StockQuantity));
         });
 
         catalog.MapDelete("/products/{id:guid}/variations/{variationId:guid}", async (Guid id, Guid variationId, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -594,7 +625,9 @@ public static class PitakoUniversalMenuEndpoints
                     o.ConsumptionUnitCode,
                     o.LossPercent,
                     o.ReplacesLabel,
-                    o.IncompatibleOptionIdsCsv
+                    o.IncompatibleOptionIdsCsv,
+                    o.ImageUrl,
+                    o.Sku
                 })
             }));
         });
@@ -1355,10 +1388,10 @@ public sealed record PublicUpdateCartItemReq(int Quantity = 1, Guid? VariationId
 public sealed record PublicApplyCouponReq(string CouponCode, string? CustomerIdentifier = null, string? CustomerPhone = null, string? CustomerName = null);
 public sealed record PublicDeliveryQuoteReq(FulfillmentMode FulfillmentMode, decimal OrderSubtotal, double? DestinationLatitude = null, double? DestinationLongitude = null, string? Neighborhood = null, string? ZipCode = null, decimal? PrecomputedDistanceKm = null);
 
-public sealed record UpdateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, bool IsActive = true, string? SegmentTemplateCode = null, string? RuleNotes = null);
-public sealed record UpdateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, bool IsFeatured = false, int DisplayOrder = 0, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
+public sealed record UpdateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, bool IsActive = true, string? SegmentTemplateCode = null, string? RuleNotes = null, CategoryTemplateKind? TemplateKind = null, string? AvailabilityScheduleJson = null);
+public sealed record UpdateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, bool IsFeatured = false, int DisplayOrder = 0, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true, decimal? PromotionalPrice = null, bool? TrackInventory = null, int? StockQuantity = null, bool? AutoPauseOnZeroStock = null, int? ServesPeopleCount = null, string? DietaryTagsCsv = null, string? AvailabilityScheduleJson = null, bool? IsActive = null);
 public sealed record AddProductImageReq(string ImageUrl, int DisplayOrder = 0, bool IsPrimary = true);
-public sealed record UpsertProductVariationReq(string VariationName, decimal Price, string? Sku = null, int DisplayOrder = 0, string? Description = null, decimal? MeasureAmount = null, string? MeasureUnit = null, int MaxFlavors = 1, bool IsActive = true, decimal? CostPrice = null);
+public sealed record UpsertProductVariationReq(string VariationName, decimal Price, string? Sku = null, int DisplayOrder = 0, string? Description = null, decimal? MeasureAmount = null, string? MeasureUnit = null, int MaxFlavors = 1, bool IsActive = true, decimal? CostPrice = null, bool TrackInventory = false, int StockQuantity = 0);
 public sealed record MoveProductCategoryReq(Guid CategoryId, int? DisplayOrder = null);
 public sealed record MoveModifierOptionReq(Guid TargetGroupId, decimal? NewAdditionalPrice = null);
 public sealed record SetVariationRuleReq(Guid? VariationId, Guid ModifierGroupId, int MinSelections, int MaxSelections, int FreeAllowance, bool IsRequired, bool IsHidden = false);

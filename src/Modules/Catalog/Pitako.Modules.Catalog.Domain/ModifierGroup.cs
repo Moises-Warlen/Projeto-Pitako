@@ -51,7 +51,9 @@ public sealed class ModifierOption : Entity<Guid>
         decimal lossPercent = 0m,
         string? replacesLabel = null,
         string? incompatibleOptionIdsCsv = null,
-        Money? costPrice = null) : base(id)
+        Money? costPrice = null,
+        string? imageUrl = null,
+        string? sku = null) : base(id)
     {
         TenantId = tenantId;
         ModifierGroupId = modifierGroupId;
@@ -67,6 +69,8 @@ public sealed class ModifierOption : Entity<Guid>
         LossPercent = lossPercent;
         ReplacesLabel = replacesLabel;
         IncompatibleOptionIdsCsv = incompatibleOptionIdsCsv;
+        ImageUrl = imageUrl;
+        Sku = sku;
         IsAvailable = true;
     }
 
@@ -85,6 +89,8 @@ public sealed class ModifierOption : Entity<Guid>
     public decimal LossPercent { get; private set; }
     public string? ReplacesLabel { get; private set; }
     public string? IncompatibleOptionIdsCsv { get; private set; }
+    public string? ImageUrl { get; private set; }
+    public string? Sku { get; private set; }
 
     public Result Update(
         string name,
@@ -98,7 +104,9 @@ public sealed class ModifierOption : Entity<Guid>
         decimal lossPercent = 0m,
         string? replacesLabel = null,
         string? incompatibleOptionIdsCsv = null,
-        Money? costPrice = null)
+        Money? costPrice = null,
+        string? imageUrl = null,
+        string? sku = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
@@ -121,6 +129,8 @@ public sealed class ModifierOption : Entity<Guid>
         LossPercent = lossPercent;
         ReplacesLabel = string.IsNullOrWhiteSpace(replacesLabel) ? null : replacesLabel.Trim();
         IncompatibleOptionIdsCsv = string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim();
+        if (imageUrl is not null) ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
+        if (sku is not null) Sku = string.IsNullOrWhiteSpace(sku) ? null : sku.Trim().ToUpperInvariant();
         return Result.Success();
     }
 
@@ -276,7 +286,9 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
         decimal lossPercent = 0m,
         string? replacesLabel = null,
         string? incompatibleOptionIdsCsv = null,
-        Money? costPrice = null)
+        Money? costPrice = null,
+        string? imageUrl = null,
+        string? sku = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ModifierOption>(Error.Validation("ModifierOption.NameRequired", "Nome da opção é obrigatório."));
@@ -304,7 +316,9 @@ public sealed class ModifierGroup : TenantScopedAggregateRoot
             lossPercent,
             string.IsNullOrWhiteSpace(replacesLabel) ? null : replacesLabel.Trim(),
             string.IsNullOrWhiteSpace(incompatibleOptionIdsCsv) ? null : incompatibleOptionIdsCsv.Trim(),
-            costPrice);
+            costPrice,
+            string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim(),
+            string.IsNullOrWhiteSpace(sku) ? null : sku.Trim().ToUpperInvariant());
         _options.Add(option);
         return Result.Success(option);
     }

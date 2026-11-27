@@ -177,7 +177,7 @@ public static partial class PitakoStoreSuiteEndpoints
                 req.Name.Trim(),
                 Math.Max(0.01m, firstSizePrice),
                 req.Description,
-                prod.Sku,
+                req.Sku is not null ? req.Sku : prod.Sku,
                 req.IsFeatured ?? prod.IsFeatured,
                 req.DisplayOrder ?? prod.DisplayOrder,
                 prod.SaleMode,
@@ -185,10 +185,18 @@ public static partial class PitakoStoreSuiteEndpoints
                 prod.IsRecommended,
                 req.PricingStrategy ?? prod.PricingStrategy,
                 string.Join(",", tagsList),
-                prod.PreparationMinutes,
+                req.PreparationMinutes ?? prod.PreparationMinutes,
                 prod.CustomTemplateKey,
-                prod.AllowsNotes,
-                ct);
+                req.AllowsNotes ?? prod.AllowsNotes,
+                ct,
+                req.PromotionalPrice,
+                req.TrackInventory,
+                req.StockQuantity,
+                req.AutoPauseOnZeroStock,
+                req.ServesPeopleCount,
+                req.DietaryTagsCsv,
+                req.AvailabilityScheduleJson,
+                req.IsActive);
 
             if (updRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(updRes.Error);
@@ -263,15 +271,17 @@ public static partial class PitakoStoreSuiteEndpoints
                             sz.Id.Value,
                             sz.VariationName.Trim(),
                             Math.Max(0.01m, sz.Price),
-                            null,
+                            sz.Sku,
                             orderIdx++,
                             descNote,
                             sz.MeasureAmount,
                             sz.MeasureUnit,
                             Math.Max(1, sz.MaxFlavors),
-                            true,
+                            sz.IsActive ?? true,
                             ct,
-                            costVal);
+                            costVal,
+                            sz.TrackInventory,
+                            sz.StockQuantity);
                         if (vRes.IsSuccess) resolvedVarId = vRes.Value.Id;
                     }
                     else
@@ -281,14 +291,16 @@ public static partial class PitakoStoreSuiteEndpoints
                             id,
                             sz.VariationName.Trim(),
                             Math.Max(0.01m, sz.Price),
-                            null,
+                            sz.Sku,
                             orderIdx++,
                             descNote,
                             sz.MeasureAmount,
                             sz.MeasureUnit,
                             Math.Max(1, sz.MaxFlavors),
                             ct,
-                            costVal);
+                            costVal,
+                            sz.TrackInventory ?? false,
+                            sz.StockQuantity ?? 0);
                         if (vRes.IsSuccess) resolvedVarId = vRes.Value.Id;
                     }
 
@@ -723,7 +735,11 @@ public static partial class PitakoStoreSuiteEndpoints
         bool AllowPaidExtras,
         string? Description = null,
         bool AllowFree = true,
-        string? AddonMode = null);
+        string? AddonMode = null,
+        string? Sku = null,
+        bool? IsActive = null,
+        bool? TrackInventory = null,
+        int? StockQuantity = null);
     public sealed record FullProductConfigReq(
         Guid CategoryId,
         string Name,
@@ -736,7 +752,18 @@ public static partial class PitakoStoreSuiteEndpoints
         ProductPricingStrategy? PricingStrategy,
         string? ImageUrl,
         IReadOnlyList<Guid>? AttachedGroupIds,
-        IReadOnlyList<ProductSizeConfigDto>? Sizes);
+        IReadOnlyList<ProductSizeConfigDto>? Sizes,
+        string? Sku = null,
+        int? PreparationMinutes = null,
+        bool? AllowsNotes = null,
+        bool? IsActive = null,
+        decimal? PromotionalPrice = null,
+        bool? TrackInventory = null,
+        int? StockQuantity = null,
+        bool? AutoPauseOnZeroStock = null,
+        int? ServesPeopleCount = null,
+        string? DietaryTagsCsv = null,
+        string? AvailabilityScheduleJson = null);
     public sealed record QuickTechIngDto(Guid? SupplyItemId, string? NewSupplyName, decimal Quantity, string UnitCode, decimal? UnitPriceAmount, decimal LossPercent = 0m);
     public sealed record QuickTechPkgDto(Guid? SupplyItemId, string Description, decimal Quantity, string UnitCode, decimal CostAmount);
     public sealed record QuickTechSheetReq(string? Name, decimal? YieldQuantity, string? YieldUnitCode, string? Notes, IReadOnlyList<QuickTechIngDto> Ingredients, IReadOnlyList<QuickTechPkgDto> Packagings);

@@ -291,4 +291,114 @@ public sealed class UniversalCustomizationEngineUnitTests
         var closedEval = StoreOperatingHoursHelper.Evaluate(null, false, null, lateNight);
         Assert.False(closedEval.IsOpenNow);
     }
+
+    [Fact]
+    public async Task UniversalCatalog_IfoodEngine_ShouldEnforceDirectPromo_Schedule_AndAutoPauseStock()
+    {
+        var (svc, _, prodRepo, _, _, admin) = BuildHarness();
+
+        // BuildHarness clock is 2026-11-25 18:00 UTC => 15:00 BRT (Wednesday = DayOfWeek 3)
+        var schedWedAfternoonOnly = "[{\"dayOfWeek\":3,\"isAvailable\":true,\"startTime\":\"14:00\",\"endTime\":\"16:00\"}]";
+        var schedOutWindow = "[{\"dayOfWeek\":3,\"isAvailable\":true,\"startTime\":\"19:00\",\"endTime\":\"22:00\"}]";
+
+        var catRes = await svc.CreateCategoryAsync(
+            admin,
+            "Pizzas Especiais",
+            "Assadas na lenha",
+            null,
+            1,
+            "pizzaria",
+            null,
+            CancellationToken.None,
+            CategoryTemplateKind.BuildYourOwn,
+            schedWedAfternoonOnly);
+        Assert.True(catRes.IsSuccess);
+        Assert.Equal(CategoryTemplateKind.BuildYourOwn, catRes.Value.TemplateKind);
+
+        var prodRes = await svc.CreateProductAsync(
+            admin,
+            catRes.Value.Id,
+            "Combo Calabreza + Refri",
+            50.00m,
+            "Serve bem",
+            "SKU-CB-01",
+            ProductSaleMode.Unit,
+            true,
+            1,
+            false,
+            true,
+            ProductPricingStrategy.FixedPlusAddons,
+            "promo",
+            20,
+            null,
+            true,
+            CancellationToken.None,
+            promotionalPriceAmount: 35.00m,
+            trackInventory: true,
+            stockQuantity: 2,
+            autoPauseOnZeroStock: true,
+            servesPeopleCount: 2,
+            dietaryTagsCsv: "artesanal,sem-lactose",
+            availabilityScheduleJson: schedWedAfternoonOnly);
+        Assert.True(prodRes.IsSuccess);
+        var prod = prodRes.Value;
+        Assert.Equal(35.00m, prod.PromotionalPrice?.Amount);
+        Assert.Equal(2, prod.ServesPeopleCount);
+        Assert.Equal("artesanal,sem-lactose", prod.DietaryTagsCsv);
+
+        var quoteInside = await svc.QuoteProductItemAsync(prod.Id, null, []);
+        Assert.True(quoteInside.IsSuccess);
+        Assert.Equal(35.00m, quoteInside.Value.UnitPrice.Amount);
+
+        var decRes = await svc.ValidateAndDecrementCatalogStockAsync([(prod.Id, null, 2)]);
+        Assert.True(decRes.IsSuccess);
+        Assert.Equal(0, prodRepo.Items.First(x => x.Id == prod.Id).StockQuantity);
+        Assert.Equal(CatalogItemStatus.Paused, prodRepo.Items.First(x => x.Id == prod.Id).Status);
+
+        var quotePaused = await svc.QuoteProductItemAsync(prod.Id, null, []);
+        Assert.True(quotePaused.IsFailure);
+
+        // Reactivate & verify schedule window rejection outside 19:00-22:00
+        var schedRes = await svc.UpdateProductAsync(
+            admin,
+            prod.Id,
+            catRes.Value.Id,
+            prod.Name,
+            50.00m,
+            prod.Description,
+            prod.Sku,
+            prod.IsFeatured,
+            prod.DisplayOrder,
+            prod.SaleMode,
+            prod.IsNew,
+            prod.IsRecommended,
+            prod.PricingStrategy,
+            prod.TagsCsv,
+            prod.PreparationMinutes,
+            prod.CustomTemplateKey,
+            prod.AllowsNotes,
+            CancellationToken.None,
+            promotionalPriceAmount: 35.00m,
+            trackInventory: false,
+            stockQuantity: 5,
+            autoPauseOnZeroStock: false,
+            servesPeopleCount: 2,
+            dietaryTagsCsv: "artesanal",
+            availabilityScheduleJson: schedOutWindow,
+            isActive: true);
+        Assert.True(schedRes.IsSuccess);
+
+        var quoteOutsideSched = await svc.QuoteProductItemAsync(prod.Id, null, []);
+        Assert.True(quoteOutsideSched.IsFailure);
+        Assert.Equal("Catalog.ProductOutsideSchedule", quoteOutsideSched.Error.Code);
+
+        // ModifierOption Photo + SKU
+        var grpRes = await svc.CreateModifierGroupDetailedAsync(admin, "Extras", ModifierGroupType.Addon, 0, 3, false, [
+            new ModifierOptionInput("Bacon Extra", 6.50m, 2, 1, "Fatias crocantes", ImageUrl: "/uploads/bacon.png", Sku: "EXT-BACON")
+        ]);
+        Assert.True(grpRes.IsSuccess);
+        var opt = grpRes.Value.Options.First();
+        Assert.Equal("/uploads/bacon.png", opt.ImageUrl);
+        Assert.Equal("EXT-BACON", opt.Sku);
+    }
 }

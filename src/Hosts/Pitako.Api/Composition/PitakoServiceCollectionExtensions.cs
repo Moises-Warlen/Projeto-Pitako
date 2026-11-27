@@ -513,10 +513,24 @@ public static class PitakoServiceCollectionExtensions
 
             if (db is CatalogDbContext)
             {
+                await EnsureSqliteColumnAsync(conn, "categories", "template_kind", "INTEGER NOT NULL DEFAULT 1", ct);
+                await EnsureSqliteColumnAsync(conn, "categories", "availability_schedule_json", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "promotional_price_amount", "REAL NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "promotional_price_currency", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "track_inventory", "INTEGER NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "stock_quantity", "INTEGER NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "auto_pause_on_zero_stock", "INTEGER NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "serves_people_count", "INTEGER NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "dietary_tags_csv", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "products", "availability_schedule_json", "TEXT NULL", ct);
                 await EnsureSqliteColumnAsync(conn, "product_variations", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
                 await EnsureSqliteColumnAsync(conn, "product_variations", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+                await EnsureSqliteColumnAsync(conn, "product_variations", "track_inventory", "INTEGER NOT NULL DEFAULT 0", ct);
+                await EnsureSqliteColumnAsync(conn, "product_variations", "stock_quantity", "INTEGER NOT NULL DEFAULT 0", ct);
                 await EnsureSqliteColumnAsync(conn, "modifier_options", "cost_price_amount", "REAL NOT NULL DEFAULT 0", ct);
                 await EnsureSqliteColumnAsync(conn, "modifier_options", "cost_price_currency", "TEXT NOT NULL DEFAULT 'BRL'", ct);
+                await EnsureSqliteColumnAsync(conn, "modifier_options", "image_url", "TEXT NULL", ct);
+                await EnsureSqliteColumnAsync(conn, "modifier_options", "sku", "TEXT NULL", ct);
             }
             else if (db is AcaiBuilderDbContext)
             {

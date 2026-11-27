@@ -1067,13 +1067,15 @@ public static class PitakoV1Endpoints
             var opHoursJson = identity?.PublishedOperatingHoursJson ?? identity?.DraftOperatingHoursJson;
             var operatingStatus = StoreOperatingHoursHelper.Evaluate(opHoursJson, identity?.IsTemporarilyPaused ?? false, identity?.PauseReason, utcNow);
 
+            var categoryMap = categories.ToDictionary(c => c.Id);
             var productMap = products.ToDictionary(p => p.Id);
             var activeProducts = products.Where(p => p.Status == CatalogItemStatus.Active).ToList();
 
             var productDtos = activeProducts.Select(p =>
             {
-                decimal bestPrice = p.BasePrice.Amount;
-                string? appliedPromoName = null;
+                var directEffective = p.GetDirectEffectiveBasePrice().Amount;
+                decimal bestPrice = directEffective;
+                string? appliedPromoName = directEffective < p.BasePrice.Amount ? "Oferta do item" : null;
                 foreach (var promo in activePromos)
                 {
                     if (!promo.AppliesTo(p)) continue;
@@ -1086,6 +1088,12 @@ public static class PitakoV1Endpoints
                 }
                 var primaryImg = p.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl ?? p.Images.OrderBy(i => i.DisplayOrder).FirstOrDefault()?.ImageUrl;
                 var salesCount = salesCounts.GetValueOrDefault(p.Id, 0);
+                var prodSched = p.IsScheduledAvailableAt(utcNow);
+                var catSched = !categoryMap.TryGetValue(p.CategoryId, out var catEntity) || catEntity.IsAvailableAt(utcNow);
+                var isInStock = !p.TrackInventory || p.StockQuantity > 0;
+                var discountPct = p.BasePrice.Amount > 0m && bestPrice < p.BasePrice.Amount
+                    ? (int)Math.Round((p.BasePrice.Amount - bestPrice) / p.BasePrice.Amount * 100m, MidpointRounding.AwayFromZero)
+                    : 0;
 
                 return new
                 {
@@ -1095,8 +1103,10 @@ public static class PitakoV1Endpoints
                     p.Description,
                     p.Sku,
                     price = p.BasePrice.Amount,
+                    promotionalPrice = p.PromotionalPrice?.Amount,
                     effectivePrice = bestPrice,
                     discountAmount = decimal.Round(p.BasePrice.Amount - bestPrice, 2),
+                    discountPercent = discountPct,
                     appliedPromotionName = appliedPromoName,
                     saleMode = p.SaleMode.ToString(),
                     pricingStrategy = p.PricingStrategy.ToString(),
@@ -1106,6 +1116,13 @@ public static class PitakoV1Endpoints
                     p.IsRecommended,
                     p.AllowsNotes,
                     p.PreparationMinutes,
+                    p.TrackInventory,
+                    p.StockQuantity,
+                    p.AutoPauseOnZeroStock,
+                    isInStock,
+                    isScheduledAvailable = prodSched && catSched,
+                    p.ServesPeopleCount,
+                    dietaryTags = string.IsNullOrWhiteSpace(p.DietaryTagsCsv) ? Array.Empty<string>() : p.DietaryTagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                     tags = string.IsNullOrWhiteSpace(p.TagsCsv) ? Array.Empty<string>() : p.TagsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                     p.CustomTemplateKey,
                     p.DisplayOrder,
@@ -1122,7 +1139,10 @@ public static class PitakoV1Endpoints
                         v.MeasureUnit,
                         v.MaxFlavors,
                         v.Sku,
-                        v.DisplayOrder
+                        v.DisplayOrder,
+                        v.TrackInventory,
+                        v.StockQuantity,
+                        isInStock = !v.TrackInventory || v.StockQuantity > 0
                     }),
                     modifierGroupIds = p.ModifierLinks.OrderBy(l => l.DisplayOrder).Select(l => l.ModifierGroupId),
                     variationRules = p.VariationRules.Select(r => new
@@ -1165,6 +1185,10 @@ public static class PitakoV1Endpoints
                         c.DisplayOrder,
                         c.SegmentTemplateCode,
                         c.RuleNotes,
+                        templateKind = (int)c.TemplateKind,
+                        templateKindName = c.TemplateKind.ToString(),
+                        c.AvailabilityScheduleJson,
+                        isScheduledAvailable = c.IsAvailableAt(utcNow),
                         status = c.Status.ToString()
                     }),
                 products = productDtos,
@@ -1196,6 +1220,8 @@ public static class PitakoV1Endpoints
                             o.DisplayOrder,
                             o.IsAvailable,
                             o.ReplacesLabel,
+                            o.ImageUrl,
+                            o.Sku,
                             incompatibleOptionIds = string.IsNullOrWhiteSpace(o.IncompatibleOptionIdsCsv)
                                 ? Array.Empty<string>()
                                 : o.IncompatibleOptionIdsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -1283,6 +1309,7 @@ public static class PitakoV1Endpoints
             IStoreVisualIdentityRepository identityRepo,
             ITenantContextSetter setter,
             ShoppingCartService cartSvc,
+            CatalogManagementService catalogSvc,
             ICouponRepository couponRepo,
             IOrderRepository orderRepo,
             OrderManagementService orderSvc,
@@ -1366,6 +1393,15 @@ public static class PitakoV1Endpoints
             if (transientActorRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(transientActorRes.Error);
 
+            var catalogStockItems = activeCart.Items
+                .Where(i => i.ItemKind == CartItemKind.CatalogProduct && i.ProductId.HasValue)
+                .Select(i => (i.ProductId!.Value, i.VariationId, i.Quantity))
+                .ToList();
+
+            var stockPreCheck = await catalogSvc.CheckCatalogStockAvailabilityAsync(catalogStockItems, ct);
+            if (stockPreCheck.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(stockPreCheck.Error);
+
             var checkoutRes = await orderSvc.CheckoutCartAsync(
                 transientActorRes.Value,
                 new CheckoutCartRequest(
@@ -1389,6 +1425,8 @@ public static class PitakoV1Endpoints
 
             if (checkoutRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(checkoutRes.Error);
+
+            await catalogSvc.ValidateAndDecrementCatalogStockAsync(catalogStockItems, ct);
 
             if (req.ClearCartAfterCheckout)
                 await cartSvc.ClearCartAsync(sessionKey, ct);
@@ -1442,6 +1480,8 @@ public static class PitakoV1Endpoints
                     c.DisplayOrder,
                     c.SegmentTemplateCode,
                     c.RuleNotes,
+                    templateKind = (int)c.TemplateKind,
+                    c.AvailabilityScheduleJson,
                     status = c.Status.ToString()
                 }),
                 products = products.Select(p => new
@@ -1452,6 +1492,13 @@ public static class PitakoV1Endpoints
                     p.Description,
                     p.Sku,
                     basePrice = p.BasePrice.Amount,
+                    promotionalPrice = p.PromotionalPrice?.Amount,
+                    p.TrackInventory,
+                    p.StockQuantity,
+                    p.AutoPauseOnZeroStock,
+                    p.ServesPeopleCount,
+                    p.DietaryTagsCsv,
+                    p.AvailabilityScheduleJson,
                     status = p.Status.ToString(),
                     saleMode = p.SaleMode.ToString(),
                     pricingStrategy = (int)p.PricingStrategy,
@@ -1477,7 +1524,9 @@ public static class PitakoV1Endpoints
                         v.MaxFlavors,
                         v.Sku,
                         v.DisplayOrder,
-                        v.IsActive
+                        v.IsActive,
+                        v.TrackInventory,
+                        v.StockQuantity
                     }),
                     modifierGroupIds = p.ModifierLinks.OrderBy(l => l.DisplayOrder).Select(l => l.ModifierGroupId),
                     variationRules = p.VariationRules.Select(r => new
@@ -1521,7 +1570,9 @@ public static class PitakoV1Endpoints
                         o.ConsumptionUnitCode,
                         o.LossPercent,
                         o.ReplacesLabel,
-                        o.IncompatibleOptionIdsCsv
+                        o.IncompatibleOptionIdsCsv,
+                        o.ImageUrl,
+                        o.Sku
                     })
                 })
             });
@@ -1538,7 +1589,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateCategoryAsync(user!, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.SegmentTemplateCode, req.RuleNotes, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateCategoryAsync(user!, req.Name, req.Description, req.ImageUrl, req.DisplayOrder, req.SegmentTemplateCode, req.RuleNotes, ct, req.TemplateKind, req.AvailabilityScheduleJson), StatusCodes.Status201Created);
         });
 
         catalog.MapPost("/products", async (
@@ -1552,7 +1603,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.CreateProductAsync(user!, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.SaleMode, req.IsFeatured, req.DisplayOrder, req.IsNew, req.IsRecommended, req.PricingStrategy, req.TagsCsv, req.PreparationMinutes, req.CustomTemplateKey, req.AllowsNotes, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateProductAsync(user!, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.SaleMode, req.IsFeatured, req.DisplayOrder, req.IsNew, req.IsRecommended, req.PricingStrategy, req.TagsCsv, req.PreparationMinutes, req.CustomTemplateKey, req.AllowsNotes, ct, req.PromotionalPrice, req.TrackInventory, req.StockQuantity, req.AutoPauseOnZeroStock, req.ServesPeopleCount, req.DietaryTagsCsv, req.AvailabilityScheduleJson), StatusCodes.Status201Created);
         });
 
         catalog.MapPost("/products/{id:guid}/pause", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -2118,8 +2169,8 @@ internal static class MasterSegmentCatalogStore
 public sealed record CreateStoreUserReq(string FullName, string Email, string Password, EstablishmentRole Role);
 public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, string? Notes = null, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null);
 public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null, string? Neighborhood = null, string? ZipCode = null, double? DestinationLatitude = null, double? DestinationLongitude = null, decimal? PrecomputedDistanceKm = null, string? PaymentMethod = null, bool LgpdConsentAccepted = true, bool ClearCartAfterCheckout = true, string? CouponCode = null);
-public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, string? SegmentTemplateCode = null, string? RuleNotes = null);
-public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
+public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, string? SegmentTemplateCode = null, string? RuleNotes = null, CategoryTemplateKind TemplateKind = CategoryTemplateKind.Standard, string? AvailabilityScheduleJson = null);
+public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true, decimal? PromotionalPrice = null, bool TrackInventory = false, int StockQuantity = 0, bool AutoPauseOnZeroStock = false, int? ServesPeopleCount = null, string? DietaryTagsCsv = null, string? AvailabilityScheduleJson = null);
 public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0, string? Description = null, decimal CostPrice = 0m, bool AllowFreeToppings = true, bool AllowPaidAddons = true, int? MaxPaidAddonsPerCup = null, AcaiFreeCountingMode CountingMode = AcaiFreeCountingMode.ByPortion, int DisplayOrder = 0);
 public sealed record CreateAcaiFlavorReq(string Name, decimal ExtraPrice = 0m);
 public sealed record CreateAcaiFreeReq(string Name, int MaxPortionsPerCup = 1, string? Description = null, decimal CostPrice = 0m, Guid? AddonCategoryId = null, string? CategoryName = null, int DisplayOrder = 0);

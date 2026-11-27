@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Edit3, Pause, Play, Plus, Sliders, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Edit3, Pause, Play, Plus, Sliders, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 
 export interface AdminModifierOptionDto {
   id: string;
@@ -19,6 +19,8 @@ export interface AdminModifierOptionDto {
   lossPercent: number;
   replacesLabel?: string | null;
   incompatibleOptionIdsCsv?: string | null;
+  imageUrl?: string | null;
+  sku?: string | null;
 }
 
 export interface AdminModifierGroupDto {
@@ -101,6 +103,47 @@ export function AdminModifiersTab({
   const [optLossPct, setOptLossPct] = useState("0");
   const [optReplaces, setOptReplaces] = useState("");
   const [optIncompatibleCsv, setOptIncompatibleCsv] = useState("");
+  const [optImageUrl, setOptImageUrl] = useState("");
+  const [optSku, setOptSku] = useState("");
+  const [uploadingOptImg, setUploadingOptImg] = useState(false);
+
+  async function handleOptionPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingOptImg(true);
+    try {
+      const compressed = await compressImageFileToDataUrl(file, 360, 0.75);
+      const up = await apiFetch<{ url: string }>(
+        "/api/v1/catalog/upload-image",
+        { method: "POST", body: JSON.stringify({ base64DataUrl: compressed, fileName: file.name }) },
+        token
+      );
+      if (up.ok && up.data?.url) {
+        setOptImageUrl(up.data.url);
+        onNotify("Foto do complemento carregada!");
+      } else {
+        onNotify(up.errorMessage || "Erro ao enviar foto do complemento.");
+      }
+    } catch {
+      onNotify("Não foi possível ler o arquivo de imagem.");
+    }
+    setUploadingOptImg(false);
+  }
+
+  function applySelectionModePreset(mode: "radio" | "checkbox" | "quantity") {
+    if (mode === "radio") {
+      setGMin("1");
+      setGMax("1");
+      setGCounting("1");
+      setGRequired(true);
+    } else if (mode === "checkbox") {
+      if (Number(gMax) <= 1) setGMax("5");
+      setGCounting("1");
+    } else {
+      if (Number(gMax) <= 1) setGMax("5");
+      setGCounting("2");
+    }
+  }
 
   async function saveGroup(e: React.FormEvent) {
     e.preventDefault();
@@ -208,7 +251,9 @@ export function AdminModifiersTab({
       consumptionUnitCode: optSupplyId ? optConsumeUnit || "g" : null,
       lossPercent: optSupplyId ? Number(optLossPct) || 0 : 0,
       replacesLabel: optReplaces || null,
-      incompatibleOptionIdsCsv: optIncompatibleCsv || null
+      incompatibleOptionIdsCsv: optIncompatibleCsv || null,
+      imageUrl: optImageUrl.trim() || null,
+      sku: optSku.trim() || null
     };
 
     const res = editingOptId
@@ -227,6 +272,8 @@ export function AdminModifiersTab({
       setOptPrice("0");
       setOptReplaces("");
       setOptIncompatibleCsv("");
+      setOptImageUrl("");
+      setOptSku("");
       onNotify("Adicional / ingrediente salvo!");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao salvar opção.");
@@ -245,7 +292,9 @@ export function AdminModifiersTab({
       consumptionUnitCode: opt.consumptionUnitCode,
       lossPercent: opt.lossPercent,
       replacesLabel: opt.replacesLabel,
-      incompatibleOptionIdsCsv: opt.incompatibleOptionIdsCsv
+      incompatibleOptionIdsCsv: opt.incompatibleOptionIdsCsv,
+      imageUrl: opt.imageUrl || null,
+      sku: opt.sku || null
     };
     await apiFetch(
       `/api/v1/catalog/modifier-groups/${groupId}/options/${opt.id}`,
@@ -272,13 +321,16 @@ export function AdminModifiersTab({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold">#{g.displayOrder}</span>
                   <h3 className="text-base font-extrabold text-slate-900">{g.name}</h3>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${g.isRequired || g.minSelections >= 1 ? "bg-rose-100 text-rose-800" : "bg-slate-200 text-slate-700"}`}>
+                    {g.isRequired || g.minSelections >= 1 ? "Obrigatório" : "Opcional"}
+                  </span>
                   {g.categoryTag && (
                     <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase text-purple-800">{g.categoryTag}</span>
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {GROUP_KIND_LABELS[g.selectionKind] || "Personalização"} · Mín {g.minSelections} / Máx {g.maxSelections} · Grátis: {g.freeAllowance}
-                  {g.isRequired ? " · Obrigatório" : ""}
+                  {GROUP_KIND_LABELS[g.selectionKind] || "Personalização"} ·{" "}
+                  {g.maxSelections === 1 ? "Escolha Única (Radio)" : g.countingMode === 1 ? "Múltipla Simples (Checkbox)" : "Múltipla c/ Qtd (- 0 +)"} · Mín {g.minSelections} / Máx {g.maxSelections} · Grátis: {g.freeAllowance}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-1">
@@ -319,9 +371,21 @@ export function AdminModifiersTab({
                   const profit = o.additionalPrice - cost;
                   return (
                     <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                      {resolveMediaUrl(o.imageUrl) && (
+                        <img
+                          src={resolveMediaUrl(o.imageUrl)!}
+                          alt={o.name}
+                          className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 bg-white object-cover"
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-bold text-slate-900">{o.name}</span>
+                          {o.sku && (
+                            <span className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">
+                              {o.sku}
+                            </span>
+                          )}
                           <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700 border border-slate-200">
                             {o.additionalPrice > 0 ? `Venda +R$ ${o.additionalPrice.toFixed(2)}` : "Grátis (R$ 0,00)"}
                           </span>
@@ -376,6 +440,8 @@ export function AdminModifiersTab({
                             setOptLossPct(String(o.lossPercent || 0));
                             setOptReplaces(o.replacesLabel || "");
                             setOptIncompatibleCsv(o.incompatibleOptionIdsCsv || "");
+                            setOptImageUrl(o.imageUrl || "");
+                            setOptSku(o.sku || "");
                           }}
                           className="rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-200"
                         >
@@ -423,14 +489,46 @@ export function AdminModifiersTab({
               ))}
             </select>
           </label>
+          <div className="space-y-1.5">
+            <span className="block font-semibold text-slate-700">Modo de Seleção (iFood)</span>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => applySelectionModePreset("radio")}
+                className={`rounded-lg border px-2 py-1.5 text-[11px] font-bold ${
+                  Number(gMax) === 1 ? "border-indigo-600 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                Única (Radio)
+              </button>
+              <button
+                type="button"
+                onClick={() => applySelectionModePreset("checkbox")}
+                className={`rounded-lg border px-2 py-1.5 text-[11px] font-bold ${
+                  Number(gMax) > 1 && gCounting === "1" ? "border-indigo-600 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                Múltipla (Check)
+              </button>
+              <button
+                type="button"
+                onClick={() => applySelectionModePreset("quantity")}
+                className={`rounded-lg border px-2 py-1.5 text-[11px] font-bold ${
+                  Number(gMax) > 1 && gCounting === "2" ? "border-indigo-600 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                Qtd (- 0 +)
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <label>Mín<input type="number" value={gMin} onChange={(e) => setGMin(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
             <label>Máx<input type="number" value={gMax} onChange={(e) => setGMax(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
             <label>Grátis<input type="number" value={gFree} onChange={(e) => setGFree(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5" /></label>
           </div>
           <select value={gCounting} onChange={(e) => setGCounting(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2">
-            <option value="2">Contagem por porções totais</option>
-            <option value="1">Contagem por opções distintas</option>
+            <option value="2">Contagem por porções totais (- 0 +)</option>
+            <option value="1">Contagem por opções distintas (Checkbox/Radio)</option>
           </select>
           <label className="flex items-center gap-2 font-semibold">
             <input type="checkbox" checked={gRequired} onChange={(e) => setGRequired(e.target.checked)} /> Seleção Obrigatória
@@ -462,7 +560,20 @@ export function AdminModifiersTab({
             </select>
           </label>
           <input value={optName} onChange={(e) => setOptName(e.target.value)} required placeholder="Nome (ex: Morango Fresco, Nutella, Leite Ninho)" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          <input value={optDescription} onChange={(e) => setOptDescription(e.target.value)} placeholder="Descrição / Porção (ex: Porção 45g fatiada)" className="w-full rounded-xl border border-slate-300 px-3 py-2" />
+          <div className="grid grid-cols-3 gap-2">
+            <input value={optDescription} onChange={(e) => setOptDescription(e.target.value)} placeholder="Descrição / Porção" className="col-span-2 rounded-xl border border-slate-300 px-3 py-2" />
+            <input value={optSku} onChange={(e) => setOptSku(e.target.value)} placeholder="SKU PDV" className="rounded-xl border border-slate-300 px-2.5 py-2 font-mono uppercase" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+            {resolveMediaUrl(optImageUrl) && (
+              <img src={resolveMediaUrl(optImageUrl)!} alt="Preview opção" className="h-9 w-9 rounded-lg border border-slate-200 object-cover" />
+            )}
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-bold text-slate-700 hover:bg-slate-100">
+              <Upload className="h-3 w-3" /> {uploadingOptImg ? "Enviando..." : "Foto (PC)"}
+              <input type="file" accept="image/*" onChange={handleOptionPhotoUpload} className="hidden" />
+            </label>
+            <input value={optImageUrl} onChange={(e) => setOptImageUrl(e.target.value)} placeholder="Ou URL da foto (opcional)" className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px]" />
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <label>Custo (R$)<input type="number" step="0.01" value={optCostPrice} onChange={(e) => setOptCostPrice(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5 font-mono text-rose-700" /></label>
             <label>Venda (R$)<input type="number" step="0.01" value={optPrice} onChange={(e) => setOptPrice(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1.5 font-mono font-bold text-emerald-700" /></label>

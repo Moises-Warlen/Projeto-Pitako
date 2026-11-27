@@ -63,9 +63,17 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("segment_template_code");
 
+                    b.Property<string>("AvailabilityScheduleJson")
+                        .HasColumnType("text")
+                        .HasColumnName("availability_schedule_json");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<int>("TemplateKind")
+                        .HasColumnType("integer")
+                        .HasColumnName("template_kind");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -272,6 +280,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("display_order");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("image_url");
+
                     b.Property<string>("IncompatibleOptionIdsCsv")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -305,6 +318,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("character varying(140)")
                         .HasColumnName("replaces_label");
 
+                    b.Property<string>("Sku")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sku");
+
                     b.Property<Guid?>("SupplyItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("supply_item_id");
@@ -332,6 +350,14 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("allows_notes");
 
+                    b.Property<bool>("AutoPauseOnZeroStock")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_pause_on_zero_stock");
+
+                    b.Property<string>("AvailabilityScheduleJson")
+                        .HasColumnType("text")
+                        .HasColumnName("availability_schedule_json");
+
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
@@ -349,6 +375,11 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("description");
+
+                    b.Property<string>("DietaryTagsCsv")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("dietary_tags_csv");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
@@ -384,6 +415,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("sale_mode");
 
+                    b.Property<int?>("ServesPeopleCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("serves_people_count");
+
                     b.Property<string>("Sku")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -393,6 +428,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<int>("StockQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("stock_quantity");
+
                     b.Property<string>("TagsCsv")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
@@ -401,6 +440,10 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<bool>("TrackInventory")
+                        .HasColumnType("boolean")
+                        .HasColumnName("track_inventory");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -530,9 +573,17 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("sku");
 
+                    b.Property<int>("StockQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("stock_quantity");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<bool>("TrackInventory")
+                        .HasColumnType("boolean")
+                        .HasColumnName("track_inventory");
 
                     b.HasKey("Id");
 
@@ -811,8 +862,33 @@ namespace Pitako.Modules.Catalog.Infrastructure.Migrations
                                 .HasForeignKey("ProductId");
                         });
 
+                    b.OwnsOne("Pitako.SharedKernel.ValueObjects.Money", "PromotionalPrice", b1 =>
+                        {
+                            b1.Property<Guid>("ProductId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("promotional_price_amount");
+
+                            b1.Property<string>("Currency")
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("promotional_price_currency");
+
+                            b1.HasKey("ProductId");
+
+                            b1.ToTable("products", "catalog");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductId");
+                        });
+
                     b.Navigation("BasePrice")
                         .IsRequired();
+
+                    b.Navigation("PromotionalPrice");
                 });
 
             modelBuilder.Entity("Pitako.Modules.Catalog.Domain.ProductImage", b =>

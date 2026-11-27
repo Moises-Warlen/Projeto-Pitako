@@ -28,7 +28,9 @@ public sealed record ModifierOptionInput(
     decimal LossPercent = 0m,
     string? ReplacesLabel = null,
     string? IncompatibleOptionIdsCsv = null,
-    decimal CostPrice = 0m);
+    decimal CostPrice = 0m,
+    string? ImageUrl = null,
+    string? Sku = null);
 
 /// <summary>
 /// Caso de uso de gestão do catálogo por estabelecimento com isolamento multi-tenant,
@@ -85,13 +87,15 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         int displayOrder,
         string? segmentTemplateCode,
         string? ruleNotes = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CategoryTemplateKind templateKind = CategoryTemplateKind.Standard,
+        string? availabilityScheduleJson = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Create);
         if (guard.IsFailure)
             return Result.Failure<Category>(guard.Error);
 
-        var result = Category.Create(guard.Value, name, description, imageUrl, displayOrder, segmentTemplateCode, ruleNotes);
+        var result = Category.Create(guard.Value, name, description, imageUrl, displayOrder, segmentTemplateCode, ruleNotes, templateKind, availabilityScheduleJson);
         if (result.IsFailure)
             return result;
 
@@ -110,7 +114,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         bool isActive = true,
         string? segmentTemplateCode = null,
         string? ruleNotes = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CategoryTemplateKind? templateKind = null,
+        string? availabilityScheduleJson = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -121,7 +127,7 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             return Result.Failure<Category>(Error.NotFound("Category.NotFound", "Categoria não encontrada."));
 
         TenantGuard.EnsureOwnership(_tenantContext, category);
-        var upd = category.Update(name, description, imageUrl, displayOrder, segmentTemplateCode, ruleNotes);
+        var upd = category.Update(name, description, imageUrl, displayOrder, segmentTemplateCode, ruleNotes, templateKind, availabilityScheduleJson);
         if (upd.IsFailure)
             return Result.Failure<Category>(upd.Error);
 
@@ -296,7 +302,14 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         int? preparationMinutes = null,
         string? customTemplateKey = null,
         bool allowsNotes = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        decimal? promotionalPriceAmount = null,
+        bool trackInventory = false,
+        int stockQuantity = 0,
+        bool autoPauseOnZeroStock = false,
+        int? servesPeopleCount = null,
+        string? dietaryTagsCsv = null,
+        string? availabilityScheduleJson = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Create);
         if (guard.IsFailure)
@@ -311,6 +324,15 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         var priceResult = Money.Create(basePriceAmount);
         if (priceResult.IsFailure)
             return Result.Failure<Product>(priceResult.Error);
+
+        Money? promoMoney = null;
+        if (promotionalPriceAmount.HasValue && promotionalPriceAmount.Value > 0m)
+        {
+            var promoRes = Money.Create(promotionalPriceAmount.Value);
+            if (promoRes.IsFailure)
+                return Result.Failure<Product>(promoRes.Error);
+            promoMoney = promoRes.Value;
+        }
 
         var productResult = Product.Create(
             guard.Value,
@@ -331,6 +353,17 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             allowsNotes);
         if (productResult.IsFailure)
             return productResult;
+
+        var extRes = productResult.Value.ConfigureExtendedAttributes(
+            promoMoney,
+            trackInventory,
+            stockQuantity,
+            autoPauseOnZeroStock,
+            servesPeopleCount,
+            dietaryTagsCsv,
+            availabilityScheduleJson);
+        if (extRes.IsFailure)
+            return Result.Failure<Product>(extRes.Error);
 
         await _productRepo.AddAsync(productResult.Value, cancellationToken);
         await _productRepo.SaveChangesAsync(cancellationToken);
@@ -355,7 +388,15 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         int? preparationMinutes = null,
         string? customTemplateKey = null,
         bool allowsNotes = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        decimal? promotionalPriceAmount = null,
+        bool? trackInventory = null,
+        int? stockQuantity = null,
+        bool? autoPauseOnZeroStock = null,
+        int? servesPeopleCount = null,
+        string? dietaryTagsCsv = null,
+        string? availabilityScheduleJson = null,
+        bool? isActive = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -376,6 +417,15 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (priceResult.IsFailure)
             return Result.Failure<Product>(priceResult.Error);
 
+        Money? promoMoney = null;
+        if (promotionalPriceAmount.HasValue && promotionalPriceAmount.Value > 0m)
+        {
+            var promoRes = Money.Create(promotionalPriceAmount.Value);
+            if (promoRes.IsFailure)
+                return Result.Failure<Product>(promoRes.Error);
+            promoMoney = promoRes.Value;
+        }
+
         var upd = product.UpdateDetails(
             categoryId,
             name,
@@ -395,6 +445,30 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
 
         if (upd.IsFailure)
             return Result.Failure<Product>(upd.Error);
+
+        var extRes = product.ConfigureExtendedAttributes(
+            promoMoney,
+            trackInventory ?? product.TrackInventory,
+            stockQuantity ?? product.StockQuantity,
+            autoPauseOnZeroStock ?? product.AutoPauseOnZeroStock,
+            servesPeopleCount ?? product.ServesPeopleCount,
+            dietaryTagsCsv ?? product.DietaryTagsCsv,
+            availabilityScheduleJson ?? product.AvailabilityScheduleJson);
+        if (extRes.IsFailure)
+            return Result.Failure<Product>(extRes.Error);
+
+        if (isActive.HasValue)
+        {
+            if (isActive.Value)
+            {
+                var react = product.Reactivate();
+                if (react.IsFailure) return Result.Failure<Product>(react.Error);
+            }
+            else
+            {
+                product.Pause();
+            }
+        }
 
         await _productRepo.SaveChangesAsync(cancellationToken);
         return Result.Success(product);
@@ -457,7 +531,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         string? measureUnit = null,
         int maxFlavors = 1,
         CancellationToken cancellationToken = default,
-        decimal costPriceAmount = 0m)
+        decimal costPriceAmount = 0m,
+        bool trackInventory = false,
+        int stockQuantity = 0)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -477,7 +553,7 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (cost.IsFailure)
             return Result.Failure<ProductVariation>(cost.Error);
 
-        var variation = product.AddVariation(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value);
+        var variation = product.AddVariation(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value, trackInventory, stockQuantity);
         if (variation.IsFailure)
             return variation;
 
@@ -499,7 +575,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         int maxFlavors = 1,
         bool isActive = true,
         CancellationToken cancellationToken = default,
-        decimal costPriceAmount = 0m)
+        decimal costPriceAmount = 0m,
+        bool? trackInventory = null,
+        int? stockQuantity = null)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
         if (guard.IsFailure)
@@ -522,7 +600,7 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         if (cost.IsFailure)
             return Result.Failure<ProductVariation>(cost.Error);
 
-        var res = variation.UpdateDetails(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value);
+        var res = variation.UpdateDetails(variationName, price.Value, sku, displayOrder, description, measureAmount, measureUnit, maxFlavors, cost.Value, trackInventory, stockQuantity);
         if (res.IsFailure)
             return Result.Failure<ProductVariation>(res.Error);
 
@@ -695,7 +773,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
                 opt.LossPercent,
                 opt.ReplacesLabel,
                 opt.IncompatibleOptionIdsCsv,
-                cost.Value);
+                cost.Value,
+                opt.ImageUrl,
+                opt.Sku);
             if (added.IsFailure)
                 return Result.Failure<ModifierGroup>(added.Error);
         }
@@ -797,7 +877,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             input.LossPercent,
             input.ReplacesLabel,
             input.IncompatibleOptionIdsCsv,
-            cost.Value);
+            cost.Value,
+            input.ImageUrl,
+            input.Sku);
         if (optRes.IsFailure)
             return optRes;
 
@@ -846,7 +928,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             input.LossPercent,
             input.ReplacesLabel,
             input.IncompatibleOptionIdsCsv,
-            cost.Value);
+            cost.Value,
+            input.ImageUrl,
+            input.Sku);
         if (res.IsFailure)
             return Result.Failure<ModifierOption>(res.Error);
 
@@ -1258,8 +1342,9 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
         var utcNow = _clock.UtcNow;
         var promotions = await _promotionRepo.ListActiveCandidatesAsync(cancellationToken);
 
-        var bestPrice = product.BasePrice;
-        string? appliedPromo = null;
+        var directPromo = product.GetDirectEffectiveBasePrice();
+        var bestPrice = directPromo;
+        string? appliedPromo = directPromo.Amount < product.BasePrice.Amount ? "Promoção do item" : null;
 
         foreach (var promo in promotions.Where(p => p.IsActiveAt(utcNow) && p.AppliesTo(product)))
         {
@@ -1271,12 +1356,15 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             }
         }
 
+        var inStock = !product.TrackInventory || product.StockQuantity > 0;
+        var canReceive = product.CanReceiveOrders() && product.IsScheduledAvailableAt(utcNow) && inStock;
+
         return Result.Success(new EffectiveProductPrice(
             product.Id,
             product.BasePrice,
             bestPrice,
             appliedPromo,
-            product.CanReceiveOrders()));
+            canReceive));
     }
 
     public async Task<Result<CatalogProductQuote>> QuoteComboAsync(Guid comboId, CancellationToken cancellationToken = default)
@@ -1326,10 +1414,20 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             return Result.Failure<CatalogProductQuote>(Error.NotFound("Product.NotFound", "Produto não encontrado."));
 
         TenantGuard.EnsureOwnership(_tenantContext, product);
+        var quoteUtcNow = _clock.UtcNow;
         if (!product.CanReceiveOrders())
             return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.ProductUnavailable", $"Produto '{product.Name}' encontra-se indisponível para pedidos."));
+        if (!product.IsScheduledAvailableAt(quoteUtcNow))
+            return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.ProductOutsideSchedule", $"Produto '{product.Name}' está fora do horário programado de exibição."));
 
-        Money basePrice = product.BasePrice;
+        var prodCategory = await _categoryRepo.FindByIdAsync(product.CategoryId, cancellationToken);
+        if (prodCategory is not null && !prodCategory.IsAvailableAt(quoteUtcNow))
+            return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.CategoryOutsideSchedule", $"Categoria '{prodCategory.Name}' está fora do horário programado."));
+
+        if (product.TrackInventory && product.StockQuantity <= 0)
+            return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.OutOfStock", $"Produto '{product.Name}' está esgotado."));
+
+        Money basePrice = product.GetDirectEffectiveBasePrice();
         string? variationName = null;
         ProductVariation? chosenVariation = null;
         if (variationId.HasValue && variationId.Value != Guid.Empty)
@@ -1337,6 +1435,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             chosenVariation = product.Variations.FirstOrDefault(v => v.Id == variationId.Value && v.IsActive);
             if (chosenVariation is null)
                 return Result.Failure<CatalogProductQuote>(Error.Validation("Catalog.VariationUnavailable", "Variação selecionada indisponível."));
+            if (chosenVariation.TrackInventory && chosenVariation.StockQuantity <= 0)
+                return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.OutOfStock", $"Tamanho '{chosenVariation.Name}' esgotado."));
 
             basePrice = chosenVariation.Price;
             variationName = chosenVariation.Name;
@@ -1347,6 +1447,8 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             if (activeVariations.Count == 1)
             {
                 chosenVariation = activeVariations[0];
+                if (chosenVariation.TrackInventory && chosenVariation.StockQuantity <= 0)
+                    return Result.Failure<CatalogProductQuote>(Error.Conflict("Catalog.OutOfStock", $"Tamanho '{chosenVariation.Name}' esgotado."));
                 basePrice = chosenVariation.Price;
                 variationName = chosenVariation.Name;
             }
@@ -1571,6 +1673,65 @@ public sealed class CatalogManagementService : IUniversalCatalogQuoteService
             canonicalJson,
             customIngredients,
             decimal.Round(totalCustomIngredientsCost, 2, MidpointRounding.AwayFromZero)));
+    }
+
+    public Task<Result> CheckCatalogStockAvailabilityAsync(
+        IEnumerable<(Guid ProductId, Guid? VariationId, int Quantity)> items,
+        CancellationToken cancellationToken = default) =>
+        ProcessCatalogStockAsync(items, decrementAndSave: false, cancellationToken);
+
+    public Task<Result> ValidateAndDecrementCatalogStockAsync(
+        IEnumerable<(Guid ProductId, Guid? VariationId, int Quantity)> items,
+        CancellationToken cancellationToken = default) =>
+        ProcessCatalogStockAsync(items, decrementAndSave: true, cancellationToken);
+
+    private async Task<Result> ProcessCatalogStockAsync(
+        IEnumerable<(Guid ProductId, Guid? VariationId, int Quantity)> items,
+        bool decrementAndSave,
+        CancellationToken cancellationToken)
+    {
+        TenantGuard.EnsureResolved(_tenantContext);
+        var aggregated = items
+            .Where(x => x.ProductId != Guid.Empty && x.Quantity > 0)
+            .GroupBy(x => (x.ProductId, x.VariationId))
+            .Select(g => (g.Key.ProductId, g.Key.VariationId, Quantity: g.Sum(x => x.Quantity)))
+            .ToList();
+
+        if (aggregated.Count == 0)
+            return Result.Success();
+
+        var products = await _productRepo.ListByIdsAsync(aggregated.Select(a => a.ProductId).Distinct(), cancellationToken);
+        var map = products.ToDictionary(p => p.Id);
+
+        foreach (var item in aggregated)
+        {
+            if (!map.TryGetValue(item.ProductId, out var prod))
+                continue;
+            TenantGuard.EnsureOwnership(_tenantContext, prod);
+
+            if (decrementAndSave)
+            {
+                var decRes = prod.DecrementStock(item.Quantity, item.VariationId);
+                if (decRes.IsFailure)
+                    return decRes;
+                continue;
+            }
+
+            if (item.VariationId.HasValue && item.VariationId.Value != Guid.Empty)
+            {
+                var variation = prod.Variations.FirstOrDefault(v => v.Id == item.VariationId.Value);
+                if (variation is not null && variation.TrackInventory && variation.StockQuantity < item.Quantity)
+                    return Result.Failure(Error.Conflict("Product.OutOfStock", $"Tamanho '{variation.Name}' sem estoque suficiente (disponível: {variation.StockQuantity})."));
+            }
+
+            if (prod.TrackInventory && prod.StockQuantity < item.Quantity)
+                return Result.Failure(Error.Conflict("Product.OutOfStock", $"Produto '{prod.Name}' sem estoque suficiente (disponível: {prod.StockQuantity})."));
+        }
+
+        if (decrementAndSave)
+            await _productRepo.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
     }
 
     private Result<Guid> ValidateTenantActor(User actor, PermissionAction action)

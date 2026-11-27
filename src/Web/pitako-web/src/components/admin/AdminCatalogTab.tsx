@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowDown, ArrowUp, Edit3, FileText, Flame, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Star, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Clock, Edit3, FileText, Flame, GripVertical, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Star, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 import { ProductMediaFrame } from "../storefront/ProductMediaFrame";
@@ -16,6 +16,8 @@ export interface AdminCategoryDto {
   displayOrder: number;
   segmentTemplateCode?: string | null;
   ruleNotes?: string | null;
+  templateKind?: number;
+  availabilityScheduleJson?: string | null;
   status: string;
 }
 
@@ -31,6 +33,8 @@ export interface AdminVariationDto {
   sku?: string | null;
   displayOrder: number;
   isActive: boolean;
+  trackInventory?: boolean;
+  stockQuantity?: number;
 }
 
 export interface AdminVariationRuleDto {
@@ -51,6 +55,13 @@ export interface AdminProductDto {
   description?: string | null;
   sku?: string | null;
   basePrice: number;
+  promotionalPrice?: number | null;
+  trackInventory?: boolean;
+  stockQuantity?: number;
+  autoPauseOnZeroStock?: boolean;
+  servesPeopleCount?: number | null;
+  dietaryTagsCsv?: string | null;
+  availabilityScheduleJson?: string | null;
   status: string;
   saleMode: string;
   pricingStrategy: number;
@@ -120,6 +131,7 @@ export function AdminCatalogTab({
   const [selectedCatFilter, setSelectedCatFilter] = useState<string>("all");
   const [catToDelete, setCatToDelete] = useState<AdminCategoryDto | null>(null);
   const [moveTargetCatId, setMoveTargetCatId] = useState<string>("");
+  const [draggingCatId, setDraggingCatId] = useState<string | null>(null);
 
   // Categoria form
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -236,6 +248,31 @@ export function AdminCatalogTab({
       onNotify(editingCatId ? "Categoria atualizada!" : "Categoria criada!");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao salvar categoria.");
+  }
+
+  async function dropCategoryOn(targetCatId: string) {
+    if (!draggingCatId || draggingCatId === targetCatId) {
+      setDraggingCatId(null);
+      return;
+    }
+    const orderedCats = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
+    const fromIdx = orderedCats.findIndex((c) => c.id === draggingCatId);
+    const toIdx = orderedCats.findIndex((c) => c.id === targetCatId);
+    setDraggingCatId(null);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    const copy = [...orderedCats];
+    const [moved] = copy.splice(fromIdx, 1);
+    copy.splice(toIdx, 0, moved);
+    const payload: Record<string, number> = {};
+    copy.forEach((c, i) => {
+      payload[c.id] = i + 1;
+    });
+    const res = await apiFetch("/api/v1/catalog/categories/reorder", { method: "POST", body: JSON.stringify(payload) }, token);
+    if (res.ok) {
+      onNotify("Categorias reordenadas por arraste!");
+      await onReload();
+    }
   }
 
   async function moveCategory(idx: number, dir: -1 | 1) {
@@ -552,15 +589,43 @@ export function AdminCatalogTab({
                 .sort((a, b) => a.displayOrder - b.displayOrder)
                 .map((c, idx) => {
                 const countInCat = products.filter((p) => p.categoryId === c.id).length;
+                const tplLabel = c.templateKind === 2 ? "Montável / Pizza" : c.templateKind === 3 ? "Combo / Promo" : "Padrão";
+                const tplBadgeClass =
+                  c.templateKind === 2
+                    ? "bg-indigo-100 text-indigo-800"
+                    : c.templateKind === 3
+                      ? "bg-rose-100 text-rose-800"
+                      : "bg-slate-200 text-slate-700";
                 return (
-                <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 text-xs">
-                  <div>
-                    <p className="font-bold text-slate-900">
-                      <span className="mr-2 rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px]">Ordem {c.displayOrder}</span>
-                      {c.name}
-                      <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">{countInCat} itens</span>
-                    </p>
-                    {c.description && <p className="text-slate-500">{c.description}</p>}
+                <div
+                  key={c.id}
+                  draggable
+                  onDragStart={() => setDraggingCatId(c.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => void dropCategoryOn(c.id)}
+                  onDragEnd={() => setDraggingCatId(null)}
+                  className={`flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs transition ${
+                    draggingCatId === c.id ? "border-indigo-400 bg-indigo-50 opacity-70" : "border-slate-100 bg-slate-50 hover:border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span title="Arraste para reordenar" className="mt-0.5 cursor-grab text-slate-400 hover:text-slate-700">
+                      <GripVertical className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="flex flex-wrap items-center gap-1.5 font-bold text-slate-900">
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px]">Ordem {c.displayOrder}</span>
+                        <span>{c.name}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tplBadgeClass}`}>{tplLabel}</span>
+                        <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">{countInCat} itens</span>
+                        {c.availabilityScheduleJson && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                            <Clock className="h-2.5 w-2.5" /> Programada
+                          </span>
+                        )}
+                      </p>
+                      {c.description && <p className="text-slate-500">{c.description}</p>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button type="button" title="Subir categoria" onClick={() => moveCategory(idx, -1)} className="rounded p-1 hover:bg-slate-200">
@@ -744,8 +809,27 @@ export function AdminCatalogTab({
                             <div className="flex flex-wrap gap-1">
                               {p.isFeatured && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Mais Vendido</span>}
                               {p.isNew && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">Lançamento</span>}
-                              {p.tagsCsv?.toLowerCase().includes("promo") && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>}
-                              {!p.isFeatured && !p.isNew && !p.tagsCsv?.toLowerCase().includes("promo") && (
+                              {p.promotionalPrice && p.promotionalPrice < p.basePrice ? (
+                                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                                  De R$ {p.basePrice.toFixed(2)} → R$ {p.promotionalPrice.toFixed(2)} (-{Math.round(((p.basePrice - p.promotionalPrice) / p.basePrice) * 100)}%)
+                                </span>
+                              ) : p.tagsCsv?.toLowerCase().includes("promo") ? (
+                                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>
+                              ) : null}
+                              {p.trackInventory && (
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${(p.stockQuantity ?? 0) > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-600 text-white"}`}>
+                                  {(p.stockQuantity ?? 0) > 0 ? `Estoque: ${p.stockQuantity}` : "Esgotado"}
+                                </span>
+                              )}
+                              {p.servesPeopleCount && (
+                                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                                  Serve {p.servesPeopleCount}p
+                                </span>
+                              )}
+                              {p.availabilityScheduleJson && (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">⏰ Horário</span>
+                              )}
+                              {!p.isFeatured && !p.isNew && !p.tagsCsv?.toLowerCase().includes("promo") && !p.promotionalPrice && !p.trackInventory && (
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">Padrão</span>
                               )}
                             </div>
@@ -820,7 +904,31 @@ export function AdminCatalogTab({
                           </span>
                           {p.isFeatured && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Mais Vendido</span>}
                           {p.isNew && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">Lançamento</span>}
-                          {p.tagsCsv?.toLowerCase().includes("promo") && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>}
+                          {p.promotionalPrice && p.promotionalPrice < p.basePrice ? (
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">
+                              De R$ {p.basePrice.toFixed(2)} por R$ {p.promotionalPrice.toFixed(2)} (-{Math.round(((p.basePrice - p.promotionalPrice) / p.basePrice) * 100)}%)
+                            </span>
+                          ) : p.tagsCsv?.toLowerCase().includes("promo") ? (
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">Promoção</span>
+                          ) : null}
+                          {p.trackInventory && (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${(p.stockQuantity ?? 0) > 0 ? "bg-teal-100 text-teal-800" : "bg-rose-600 text-white"}`}>
+                              {(p.stockQuantity ?? 0) > 0 ? `Estoque: ${p.stockQuantity} un` : "Esgotado"}
+                            </span>
+                          )}
+                          {p.servesPeopleCount && (
+                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                              Serve {p.servesPeopleCount} {p.servesPeopleCount === 1 ? "pessoa" : "pessoas"}
+                            </span>
+                          )}
+                          {p.dietaryTagsCsv && p.dietaryTagsCsv.split(",").filter(Boolean).map((tag) => (
+                            <span key={tag} className="rounded-full bg-lime-100 px-2 py-0.5 text-[10px] font-bold uppercase text-lime-800">
+                              {tag}
+                            </span>
+                          ))}
+                          {p.availabilityScheduleJson && (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">⏰ Programado</span>
+                          )}
                           {matchedSheet && (
                             matchedSheet.isLossAlert ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold text-rose-800">

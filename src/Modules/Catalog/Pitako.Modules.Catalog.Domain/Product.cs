@@ -73,7 +73,9 @@ public sealed class ProductVariation : Entity<Guid>
         decimal? measureAmount = null,
         string? measureUnit = null,
         int maxFlavors = 1,
-        Money? costPrice = null) : base(id)
+        Money? costPrice = null,
+        bool trackInventory = false,
+        int stockQuantity = 0) : base(id)
     {
         TenantId = tenantId;
         ProductId = productId;
@@ -86,6 +88,8 @@ public sealed class ProductVariation : Entity<Guid>
         MeasureAmount = measureAmount;
         MeasureUnit = measureUnit;
         MaxFlavors = maxFlavors < 1 ? 1 : maxFlavors;
+        TrackInventory = trackInventory;
+        StockQuantity = Math.Max(0, stockQuantity);
         IsActive = true;
     }
 
@@ -101,6 +105,8 @@ public sealed class ProductVariation : Entity<Guid>
     public decimal? MeasureAmount { get; private set; }
     public string? MeasureUnit { get; private set; }
     public int MaxFlavors { get; private set; }
+    public bool TrackInventory { get; private set; }
+    public int StockQuantity { get; private set; }
 
     public Result UpdateDetails(
         string name,
@@ -111,7 +117,9 @@ public sealed class ProductVariation : Entity<Guid>
         decimal? measureAmount = null,
         string? measureUnit = null,
         int maxFlavors = 1,
-        Money? costPrice = null)
+        Money? costPrice = null,
+        bool? trackInventory = null,
+        int? stockQuantity = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(Error.Validation("Product.VariationNameRequired", "Nome da variação é obrigatório."));
@@ -126,6 +134,20 @@ public sealed class ProductVariation : Entity<Guid>
         MeasureAmount = measureAmount;
         MeasureUnit = string.IsNullOrWhiteSpace(measureUnit) ? null : measureUnit.Trim().ToLowerInvariant();
         MaxFlavors = maxFlavors < 1 ? 1 : maxFlavors;
+        if (trackInventory.HasValue) TrackInventory = trackInventory.Value;
+        if (stockQuantity.HasValue) StockQuantity = Math.Max(0, stockQuantity.Value);
+        return Result.Success();
+    }
+
+    public Result DecrementStock(int qty, bool autoPause)
+    {
+        if (!TrackInventory || qty <= 0)
+            return Result.Success();
+        if (StockQuantity < qty)
+            return Result.Failure(Error.Conflict("ProductVariation.OutOfStock", $"Estoque insuficiente para '{Name}'."));
+        StockQuantity -= qty;
+        if (autoPause && StockQuantity <= 0)
+            IsActive = false;
         return Result.Success();
     }
 
@@ -277,6 +299,13 @@ public sealed class Product : TenantScopedAggregateRoot
     public int? PreparationMinutes { get; private set; }
     public string? CustomTemplateKey { get; private set; }
     public bool AllowsNotes { get; private set; }
+    public Money? PromotionalPrice { get; private set; }
+    public bool TrackInventory { get; private set; }
+    public int StockQuantity { get; private set; }
+    public bool AutoPauseOnZeroStock { get; private set; }
+    public int? ServesPeopleCount { get; private set; }
+    public string? DietaryTagsCsv { get; private set; }
+    public string? AvailabilityScheduleJson { get; private set; }
 
     public IReadOnlyCollection<ProductImage> Images => _images.AsReadOnly();
     public IReadOnlyCollection<ProductVariation> Variations => _variations.AsReadOnly();
@@ -375,6 +404,70 @@ public sealed class Product : TenantScopedAggregateRoot
         return Result.Success();
     }
 
+    public Result ConfigureExtendedAttributes(
+        Money? promotionalPrice,
+        bool trackInventory,
+        int stockQuantity,
+        bool autoPauseOnZeroStock,
+        int? servesPeopleCount,
+        string? dietaryTagsCsv,
+        string? availabilityScheduleJson)
+    {
+        if (promotionalPrice is not null && promotionalPrice.Amount >= BasePrice.Amount)
+            promotionalPrice = null;
+
+        if (stockQuantity < 0)
+            return Result.Failure(Error.Validation("Product.InvalidStock", "Quantidade em estoque não pode ser negativa."));
+
+        if (servesPeopleCount.HasValue && servesPeopleCount.Value < 1)
+            servesPeopleCount = null;
+
+        PromotionalPrice = promotionalPrice;
+        TrackInventory = trackInventory;
+        StockQuantity = stockQuantity;
+        AutoPauseOnZeroStock = autoPauseOnZeroStock;
+        ServesPeopleCount = servesPeopleCount;
+        DietaryTagsCsv = string.IsNullOrWhiteSpace(dietaryTagsCsv) ? null : dietaryTagsCsv.Trim().ToLowerInvariant();
+        AvailabilityScheduleJson = string.IsNullOrWhiteSpace(availabilityScheduleJson) ? null : availabilityScheduleJson.Trim();
+        return Result.Success();
+    }
+
+    public Money GetDirectEffectiveBasePrice() =>
+        PromotionalPrice is not null && PromotionalPrice.Amount > 0m && PromotionalPrice.Amount < BasePrice.Amount
+            ? PromotionalPrice
+            : BasePrice;
+
+    public bool IsScheduledAvailableAt(DateTimeOffset utcNow) => CatalogScheduleEvaluator.IsAvailableAt(AvailabilityScheduleJson, utcNow);
+
+    public Result DecrementStock(int quantity, Guid? variationId = null)
+    {
+        if (quantity <= 0)
+            return Result.Success();
+
+        if (variationId.HasValue && variationId.Value != Guid.Empty)
+        {
+            var variation = _variations.FirstOrDefault(v => v.Id == variationId.Value);
+            if (variation is not null && variation.TrackInventory)
+            {
+                var vRes = variation.DecrementStock(quantity, AutoPauseOnZeroStock);
+                if (vRes.IsFailure)
+                    return vRes;
+            }
+        }
+
+        if (TrackInventory)
+        {
+            if (StockQuantity < quantity)
+                return Result.Failure(Error.Conflict("Product.OutOfStock", $"Produto '{Name}' sem estoque suficiente (disponível: {StockQuantity})."));
+
+            StockQuantity -= quantity;
+            if (AutoPauseOnZeroStock && StockQuantity <= 0)
+                Status = CatalogItemStatus.Paused;
+        }
+
+        return Result.Success();
+    }
+
     public Result<ProductImage> AddImage(string imageUrl, int displayOrder = 0, bool isPrimary = false)
     {
         if (string.IsNullOrWhiteSpace(imageUrl))
@@ -426,7 +519,9 @@ public sealed class Product : TenantScopedAggregateRoot
         decimal? measureAmount = null,
         string? measureUnit = null,
         int maxFlavors = 1,
-        Money? costPrice = null)
+        Money? costPrice = null,
+        bool trackInventory = false,
+        int stockQuantity = 0)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result.Failure<ProductVariation>(Error.Validation("Product.VariationNameRequired", "Nome da variação é obrigatório."));
@@ -445,7 +540,9 @@ public sealed class Product : TenantScopedAggregateRoot
             measureAmount,
             string.IsNullOrWhiteSpace(measureUnit) ? null : measureUnit.Trim().ToLowerInvariant(),
             maxFlavors,
-            costPrice);
+            costPrice,
+            trackInventory,
+            stockQuantity);
 
         _variations.Add(variation);
         return Result.Success(variation);
