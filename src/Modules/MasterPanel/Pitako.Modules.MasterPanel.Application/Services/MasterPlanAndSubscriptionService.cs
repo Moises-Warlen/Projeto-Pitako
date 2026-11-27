@@ -64,6 +64,11 @@ public sealed class MasterPlanAndSubscriptionService
         if (await _planRepo.FindByCodeAsync(normalizedCode, cancellationToken) is not null)
             return Result.Failure<CommercialPlan>(Error.Conflict("Plan.CodeAlreadyExists", $"Já existe um plano com o código '{normalizedCode}'."));
 
+        var existingPlans = await _planRepo.ListAllAsync(false, cancellationToken);
+        var trimmedPlanName = command.Name.Trim();
+        if (existingPlans.Any(p => p.Name.Trim().Equals(trimmedPlanName, StringComparison.OrdinalIgnoreCase)))
+            return Result.Failure<CommercialPlan>(Error.Conflict("Plan.NameAlreadyExists", $"Já existe um plano com o nome '{trimmedPlanName}'."));
+
         var planResult = CommercialPlan.Create(
             normalizedCode,
             command.Name,
@@ -143,6 +148,17 @@ public sealed class MasterPlanAndSubscriptionService
             return Result.Failure<(MasterCustomerAccount, Subscription)>(customerResult.Error);
 
         var customer = customerResult.Value;
+        var existingCustomers = await _customerRepo.ListAllAsync(cancellationToken);
+        var docDigits = new string(customer.DocumentNumber.Where(char.IsDigit).ToArray());
+        var emailLower = customer.BillingEmail.Trim().ToLowerInvariant();
+        if (existingCustomers.Any(c =>
+            (!string.IsNullOrEmpty(docDigits) && new string(c.DocumentNumber.Where(char.IsDigit).ToArray()) == docDigits) ||
+            c.BillingEmail.Trim().Equals(emailLower, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Result.Failure<(MasterCustomerAccount, Subscription)>(
+                Error.Conflict("Customer.AlreadyExists", "Já existe um cliente/dono cadastrado com este CPF/CNPJ ou e-mail."));
+        }
+
         var subscription = Subscription.Create(customer.Id, plan, _clock.UtcNow, startWithTrial);
 
         await _customerRepo.AddAsync(customer, cancellationToken);

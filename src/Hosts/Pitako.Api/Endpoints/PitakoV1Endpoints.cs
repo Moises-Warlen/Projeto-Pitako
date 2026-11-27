@@ -606,6 +606,17 @@ public static class PitakoV1Endpoints
             if (updRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(updRes.Error);
 
+            var allCustomers = await customerRepo.ListAllAsync(ct);
+            var docDigits = new string(customer.DocumentNumber.Where(char.IsDigit).ToArray());
+            var emailLower = customer.BillingEmail.Trim().ToLowerInvariant();
+            if (allCustomers.Any(c => c.Id != customer.Id &&
+                ((!string.IsNullOrEmpty(docDigits) && new string(c.DocumentNumber.Where(char.IsDigit).ToArray()) == docDigits) ||
+                 c.BillingEmail.Trim().Equals(emailLower, StringComparison.OrdinalIgnoreCase))))
+            {
+                return ApiSecurityGuard.ProblemFromError(
+                    Error.Conflict("Customer.AlreadyExists", "Já existe outro cliente/dono cadastrado com este CPF/CNPJ ou e-mail."));
+            }
+
             if (req.PlanId.HasValue && req.PlanId.Value != Guid.Empty)
             {
                 var sub = await subRepo.FindLatestByCustomerIdAsync(customer.Id, ct);
@@ -697,6 +708,10 @@ public static class PitakoV1Endpoints
             var res = tenant.UpdateMasterConfiguration(req.LegalName, req.TradeName, req.Slug, req.Cnpj, req.SegmentCode, req.Status);
             if (res.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            var allTenants = await tenantRepo.ListAllAsync(ct);
+            if (allTenants.Any(t => t.Id != tenant.Id && t.Cnpj.Digits == tenant.Cnpj.Digits))
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict("Tenant.CnpjAlreadyExists", "Já existe outra loja cadastrada com este CNPJ."));
 
             await tenantRepo.SaveChangesAsync(ct);
             return Results.Ok(new { tenant.Id, tenant.TradeName, tenant.Slug, tenant.SegmentCode, status = tenant.Status.ToString() });
@@ -818,7 +833,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req, settingRepo, ops, ct);
+            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req, settingRepo, ops, createOnly: true, ct);
         });
 
         master.MapPut("/segments/{code}", async (
@@ -834,7 +849,7 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req with { Code = code }, settingRepo, ops, ct);
+            return await MasterSegmentCatalogStore.UpsertSegmentAsync(user!, req with { Code = code }, settingRepo, ops, createOnly: false, ct);
         });
 
         master.MapDelete("/segments/{code}", async (
@@ -2170,7 +2185,8 @@ internal static class MasterSegmentCatalogStore
         UpsertSegmentReq req,
         IGlobalSettingRepository settingRepo,
         MasterOperationsAndDashboardService ops,
-        CancellationToken ct)
+        bool createOnly = false,
+        CancellationToken ct = default)
     {
         var check = BusinessSegmentCatalog.Resolve(req.Code);
         if (check.IsFailure)
@@ -2179,6 +2195,18 @@ internal static class MasterSegmentCatalogStore
             return ApiSecurityGuard.ProblemFromError(Error.Validation("Segment.DisplayNameRequired", "Nome da modalidade é obrigatório."));
 
         var normalizedCode = BusinessSegmentCatalog.Normalize(req.Code);
+        var trimmedName = req.DisplayName.Trim();
+        if (createOnly)
+        {
+            var effective = await GetEffectiveSegmentsAsync(settingRepo, ct);
+            if (effective.Any(s =>
+                s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase) ||
+                s.DisplayName.Trim().Equals(trimmedName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return ApiSecurityGuard.ProblemFromError(
+                    Error.Conflict("Segment.AlreadyExists", $"A modalidade '{trimmedName}' já está cadastrada."));
+            }
+        }
         var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
         var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
             ? []

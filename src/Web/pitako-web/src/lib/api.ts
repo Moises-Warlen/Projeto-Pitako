@@ -76,8 +76,10 @@ export async function apiFetch<T>(
   options: RequestInit = {},
   token?: string
 ): Promise<{ ok: boolean; status: number; data?: T; errorMessage?: string }> {
+  const isLocalBackend = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API_BASE_URL);
+  const timeoutMs = isLocalBackend ? 15_000 : 65_000;
   const controller = !options.signal ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
   try {
     const headers = new Headers(options.headers || {});
@@ -117,7 +119,9 @@ export async function apiFetch<T>(
       return {
         ok: false,
         status: 0,
-        errorMessage: `Tempo limite esgotado ao conectar em ${API_BASE_URL}. Verifique se Pitako.Api está em execução.`
+        errorMessage: isLocalBackend
+          ? `Tempo limite esgotado ao conectar em ${API_BASE_URL}. Verifique se Pitako.Api está em execução.`
+          : `Tempo limite esgotado ao aguardar ${API_BASE_URL} (o servidor na nuvem pode estar acordando da hibernação). Aguarde alguns segundos e tente novamente.`
       };
     }
     return {

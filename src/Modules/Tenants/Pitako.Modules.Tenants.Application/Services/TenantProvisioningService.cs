@@ -92,6 +92,10 @@ public sealed class TenantProvisioningService
         if (await _tenantRepo.FindBySlugAsync(tenant.Slug, cancellationToken) is not null)
             return Result.Failure<ProvisionedEstablishmentResult>(Error.Conflict("Tenants.SlugAlreadyInUse", "Já existe um estabelecimento com este slug."));
 
+        var existingTenants = await _tenantRepo.ListAllAsync(cancellationToken);
+        if (existingTenants.Any(t => t.Cnpj.Digits == tenant.Cnpj.Digits))
+            return Result.Failure<ProvisionedEstablishmentResult>(Error.Conflict("Tenants.CnpjAlreadyInUse", "Já existe uma loja cadastrada com este CNPJ."));
+
         var segmentProfile = BusinessSegmentCatalog.Resolve(tenant.SegmentCode).Value;
 
         // Define escopo de contexto para persistir as entidades isoladas do novo estabelecimento.

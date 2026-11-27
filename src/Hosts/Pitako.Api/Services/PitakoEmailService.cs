@@ -148,7 +148,7 @@ public sealed class PitakoEmailService(
                 {
                     EnableSsl = cfg.UseSsl,
                     DeliveryMethod = SmtpDeliveryMethod.Network,
-                    Timeout = 10_000
+                    Timeout = 5_000
                 };
 
                 if (!string.IsNullOrWhiteSpace(cfg.Username))
@@ -157,7 +157,9 @@ public sealed class PitakoEmailService(
                     client.Credentials = new NetworkCredential(cfg.Username, cfg.Password);
                 }
 
-                await client.SendMailAsync(message, ct);
+                using var smtpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                smtpCts.CancelAfter(TimeSpan.FromSeconds(5));
+                await client.SendMailAsync(message, smtpCts.Token);
                 status = "SentSmtp";
             }
             catch (Exception ex)

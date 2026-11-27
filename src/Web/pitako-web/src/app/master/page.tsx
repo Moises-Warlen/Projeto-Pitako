@@ -109,6 +109,7 @@ export default function MasterPanelPage() {
   });
   const [indicators, setIndicators] = useState<MasterIndicatorsDto | null>(null);
   const [sweepingBilling, setSweepingBilling] = useState(false);
+  const [submittingForm, setSubmittingForm] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [quickToast, setQuickToast] = useState<FloatingToast | null>(null);
   const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
@@ -210,7 +211,7 @@ export default function MasterPanelPage() {
   const [storeLegalName, setStoreLegalName] = useState("");
   const [storeTradeName, setStoreTradeName] = useState("");
   const [storeSlug, setStoreSlug] = useState("");
-  const [storeCnpj, setStoreCnpj] = useState("11222333000181");
+  const [storeCnpj, setStoreCnpj] = useState("");
   const [storeSegment, setStoreSegment] = useState("acaiteria");
   const [storeStatus, setStoreStatus] = useState("2");
   const [storeAdminName, setStoreAdminName] = useState("");
@@ -229,7 +230,7 @@ export default function MasterPanelPage() {
   // 3. Clientes / Donos (Criar / Editar)
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState("");
-  const [customerDoc, setCustomerDoc] = useState("11222333000181");
+  const [customerDoc, setCustomerDoc] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("11999998888");
   const [customerPlanId, setCustomerPlanId] = useState("");
@@ -330,16 +331,27 @@ export default function MasterPanelPage() {
     setStoreLegalName("");
     setStoreTradeName("");
     setStoreSlug("");
-    setStoreCnpj("11222333000181");
+    setStoreCnpj("");
     setStoreStatus("2");
     setStoreAdminName("");
     setStoreAdminEmail("");
   }
 
+  async function withSubmitLock(task: () => Promise<void>) {
+    if (submittingForm) return;
+    setSubmittingForm(true);
+    try {
+      await task();
+    } finally {
+      setSubmittingForm(false);
+    }
+  }
+
   async function handleSubmitStore(e: React.FormEvent) {
     e.preventDefault();
-    const session = loadSession();
-    if (!session) return;
+    await withSubmitLock(async () => {
+      const session = loadSession();
+      if (!session) return;
 
     const cleanSlug = storeSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
@@ -465,6 +477,7 @@ export default function MasterPanelPage() {
     await refreshAll();
     router.refresh();
     notifyAction(`Loja '${cleanSlug}' e login '${storeAdminEmail}' criados! Link do Portal do Cliente: /portal/${cleanSlug}`);
+    });
   }
 
   async function handleDeleteStore(est: EstablishmentRow) {
@@ -506,6 +519,7 @@ export default function MasterPanelPage() {
 
   async function handleSubmitSegment(e: React.FormEvent) {
     e.preventDefault();
+    await withSubmitLock(async () => {
     const session = loadSession();
     if (!session) return;
 
@@ -539,6 +553,7 @@ export default function MasterPanelPage() {
     } else {
       notifyAction(res.errorMessage || "Erro ao salvar modalidade.", "error");
     }
+    });
   }
 
   async function handleDeleteSegment(seg: SegmentOption) {
@@ -571,14 +586,15 @@ export default function MasterPanelPage() {
   function resetCustomerForm() {
     setEditingCustomerId(null);
     setCustomerName("");
-    setCustomerDoc("11222333000181");
+    setCustomerDoc("");
     setCustomerEmail("");
-    setCustomerPhone("11999998888");
+    setCustomerPhone("");
     setCustomerStatus("1");
   }
 
   async function handleSubmitCustomer(e: React.FormEvent) {
     e.preventDefault();
+    await withSubmitLock(async () => {
     const session = loadSession();
     if (!session) return;
 
@@ -645,6 +661,7 @@ export default function MasterPanelPage() {
     } else {
       notifyAction(res.errorMessage || "Erro ao cadastrar cliente.", "error");
     }
+    });
   }
 
   async function handleDeleteCustomer(c: CustomerRow) {
@@ -688,6 +705,7 @@ export default function MasterPanelPage() {
 
   async function handleSubmitPlan(e: React.FormEvent) {
     e.preventDefault();
+    await withSubmitLock(async () => {
     const session = loadSession();
     if (!session) return;
 
@@ -717,6 +735,7 @@ export default function MasterPanelPage() {
     } else {
       notifyAction(res.errorMessage || "Erro ao salvar plano.", "error");
     }
+    });
   }
 
   async function handleDeletePlan(p: PlanItem) {
@@ -799,7 +818,13 @@ export default function MasterPanelPage() {
         </div>
       )}
       {feedback && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm text-amber-100">
+        <div
+          className={`mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-sm font-medium ${
+            quickToast?.kind === "error"
+              ? "border-rose-500/60 bg-rose-950/60 text-rose-100"
+              : "border-emerald-500/60 bg-emerald-950/60 text-emerald-100"
+          }`}
+        >
           <span>{feedback}</span>
           {portalCreatedSlug && (
             <div className="flex flex-wrap gap-2">
@@ -971,8 +996,8 @@ export default function MasterPanelPage() {
                 <input type="text" value={storeAdminPassword} onChange={(e) => setStoreAdminPassword(e.target.value)} required={!editingStoreId} placeholder="Senha forte (ex: Loja@12345)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               </div>
 
-              <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
-                {editingStoreId ? "Salvar Alterações da Loja" : "Criar Loja e Liberar Acesso"}
+              <button type="submit" disabled={submittingForm} className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {submittingForm ? "Processando..." : editingStoreId ? "Salvar Alterações da Loja" : "Criar Loja e Liberar Acesso"}
               </button>
             </form>
           </section>
@@ -1016,8 +1041,8 @@ export default function MasterPanelPage() {
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segWeight} onChange={(e) => setSegWeight(e.target.checked)} /> Usa Balança por Quilo</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segTables} onChange={(e) => setSegTables(e.target.checked)} /> Usa Salão / Mesas</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segFractional} onChange={(e) => setSegFractional(e.target.checked)} /> Permite Fracionado (Meia-a-Meia)</label>
-              <button type="submit" className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700">
-                {editingSegCode ? "Salvar Modalidade" : "Criar Modalidade"}
+              <button type="submit" disabled={submittingForm} className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {submittingForm ? "Processando..." : editingSegCode ? "Salvar Modalidade" : "Criar Modalidade"}
               </button>
             </form>
           </section>
@@ -1071,8 +1096,8 @@ export default function MasterPanelPage() {
                   ))}
                 </select>
               </div>
-              <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
-                {editingCustomerId ? "Salvar Cliente" : "Cadastrar Cliente"}
+              <button type="submit" disabled={submittingForm} className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {submittingForm ? "Processando..." : editingCustomerId ? "Salvar Cliente" : "Cadastrar Cliente"}
               </button>
             </form>
           </section>
@@ -1130,8 +1155,8 @@ export default function MasterPanelPage() {
                   </label>
                 ))}
               </div>
-              <button type="submit" className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700">
-                {editingPlanId ? "Salvar Alterações do Plano" : "Salvar Plano"}
+              <button type="submit" disabled={submittingForm} className="w-full rounded-lg bg-red-600 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {submittingForm ? "Processando..." : editingPlanId ? "Salvar Alterações do Plano" : "Salvar Plano"}
               </button>
             </form>
           </section>
@@ -1170,6 +1195,7 @@ export default function MasterPanelPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                await withSubmitLock(async () => {
                 const session = loadSession();
                 if (!session) return;
                 const res = await apiFetch(
@@ -1196,6 +1222,7 @@ export default function MasterPanelPage() {
                 } else {
                   notifyAction(res.errorMessage || "Erro ao salvar SMTP.", "error");
                 }
+                });
               }}
               className="space-y-3 text-xs"
             >
@@ -1209,8 +1236,8 @@ export default function MasterPanelPage() {
               <input value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} placeholder="E-mail remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} placeholder="Nome remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
               <input value={smtpWebBase} onChange={(e) => setSmtpWebBase(e.target.value)} placeholder="URL base do painel (ex: https://app.seudominio.com)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
-              <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
-                Salvar SMTP
+              <button type="submit" disabled={submittingForm} className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {submittingForm ? "Processando..." : "Salvar SMTP"}
               </button>
             </form>
           </section>
