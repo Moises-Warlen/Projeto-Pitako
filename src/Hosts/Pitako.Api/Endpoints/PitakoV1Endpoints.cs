@@ -65,6 +65,10 @@ namespace Pitako.Api.Endpoints;
 
 public static class PitakoV1Endpoints
 {
+    private static readonly SemaphoreSlim PlanCreateGate = new(1, 1);
+    private static readonly SemaphoreSlim CustomerCreateGate = new(1, 1);
+    private static readonly SemaphoreSlim StoreCreateGate = new(1, 1);
+
     public static IEndpointRouteBuilder MapPitakoV1Endpoints(this IEndpointRouteBuilder app)
     {
         MapHealthAndOpenApi(app);
@@ -340,20 +344,28 @@ public static class PitakoV1Endpoints
                 req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxSessions ?? 5).Value,
                 req.IsUnlimited ? QuotaLimit.Unlimited() : QuotaLimit.Limited(req.MaxMonthlyOrders ?? 2000).Value);
 
-            var res = await planSvc.CreatePlanAsync(
-                user!,
-                new CreatePlanCommand(
-                    req.Code,
-                    req.Name,
-                    req.Description ?? req.Name,
-                    req.PriceAmount,
-                    "BRL",
-                    BillingCycle.Monthly,
-                    req.TrialDays,
-                    quotas,
-                    req.EnabledModules ?? SystemModules.EstablishmentModules),
-                ct);
-            return ToHttp(res, StatusCodes.Status201Created);
+            await PlanCreateGate.WaitAsync(ct);
+            try
+            {
+                var res = await planSvc.CreatePlanAsync(
+                    user!,
+                    new CreatePlanCommand(
+                        req.Code,
+                        req.Name,
+                        req.Description ?? req.Name,
+                        req.PriceAmount,
+                        "BRL",
+                        BillingCycle.Monthly,
+                        req.TrialDays,
+                        quotas,
+                        req.EnabledModules ?? SystemModules.EstablishmentModules),
+                    ct);
+                return ToHttp(res, StatusCodes.Status201Created);
+            }
+            finally
+            {
+                PlanCreateGate.Release();
+            }
         });
 
         master.MapPut("/plans/{id:guid}", async (
@@ -448,36 +460,44 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            var res = await planSvc.CreateCustomerSubscriptionAsync(
-                user!,
-                req.CustomerName,
-                req.DocumentNumber,
-                req.BillingEmail,
-                req.Phone,
-                req.PlanId,
-                req.StartWithTrial,
-                ct);
-
-            if (res.IsFailure)
-                return ApiSecurityGuard.ProblemFromError(res.Error);
-
-            var plan = await planRepo.FindByIdAsync(req.PlanId, ct);
-            var smtpCfg = await emailSvc.GetSettingsAsync(ct);
-            var webBase = emailSvc.ResolveWebBaseUrl(smtpCfg, http.Request);
-            await emailSvc.SendAsync(
-                req.BillingEmail,
-                "Boas-vindas — Seu cadastro na plataforma foi criado!",
-                $"Olá {req.CustomerName}!\n\nSeja bem-vindo(a)! Seu cadastro foi criado com sucesso no plano {plan?.Name ?? "Selecionado"}.\n\nAssim que sua loja for ativada, acesse seu painel em: {webBase}/login\nQualquer dúvida, use a opção \"Esqueci minha senha\" na tela de login informando este e-mail cadastrado ({req.BillingEmail}).",
-                kind: "WelcomeCustomer",
-                ct: ct);
-
-            return Results.Created($"/api/v1/master/customers/{res.Value.Customer.Id}", new
+            await CustomerCreateGate.WaitAsync(ct);
+            try
             {
-                customerId = res.Value.Customer.Id,
-                subscriptionId = res.Value.Subscription.Id,
-                status = res.Value.Subscription.Status,
-                welcomeEmailSent = true
-            });
+                var res = await planSvc.CreateCustomerSubscriptionAsync(
+                    user!,
+                    req.CustomerName,
+                    req.DocumentNumber,
+                    req.BillingEmail,
+                    req.Phone,
+                    req.PlanId,
+                    req.StartWithTrial,
+                    ct);
+
+                if (res.IsFailure)
+                    return ApiSecurityGuard.ProblemFromError(res.Error);
+
+                var plan = await planRepo.FindByIdAsync(req.PlanId, ct);
+                var smtpCfg = await emailSvc.GetSettingsAsync(ct);
+                var webBase = emailSvc.ResolveWebBaseUrl(smtpCfg, http.Request);
+                await emailSvc.SendAsync(
+                    req.BillingEmail,
+                    "Boas-vindas — Seu cadastro na plataforma foi criado!",
+                    $"Olá {req.CustomerName}!\n\nSeja bem-vindo(a)! Seu cadastro foi criado com sucesso no plano {plan?.Name ?? "Selecionado"}.\n\nAssim que sua loja for ativada, acesse seu painel em: {webBase}/login\nQualquer dúvida, use a opção \"Esqueci minha senha\" na tela de login informando este e-mail cadastrado ({req.BillingEmail}).",
+                    kind: "WelcomeCustomer",
+                    ct: ct);
+
+                return Results.Created($"/api/v1/master/customers/{res.Value.Customer.Id}", new
+                {
+                    customerId = res.Value.Customer.Id,
+                    subscriptionId = res.Value.Subscription.Id,
+                    status = res.Value.Subscription.Status,
+                    welcomeEmailSent = true
+                });
+            }
+            finally
+            {
+                CustomerCreateGate.Release();
+            }
         });
 
         master.MapGet("/email-settings", async (ApiSecurityGuard guard, PitakoEmailService emailSvc, HttpContext http, CancellationToken ct) =>
@@ -607,14 +627,16 @@ public static class PitakoV1Endpoints
                 return ApiSecurityGuard.ProblemFromError(updRes.Error);
 
             var allCustomers = await customerRepo.ListAllAsync(ct);
+            var nameTrimmed = customer.Name.Trim();
             var docDigits = new string(customer.DocumentNumber.Where(char.IsDigit).ToArray());
             var emailLower = customer.BillingEmail.Trim().ToLowerInvariant();
             if (allCustomers.Any(c => c.Id != customer.Id &&
-                ((!string.IsNullOrEmpty(docDigits) && new string(c.DocumentNumber.Where(char.IsDigit).ToArray()) == docDigits) ||
+                (c.Name.Trim().Equals(nameTrimmed, StringComparison.OrdinalIgnoreCase) ||
+                 (!string.IsNullOrEmpty(docDigits) && new string(c.DocumentNumber.Where(char.IsDigit).ToArray()) == docDigits) ||
                  c.BillingEmail.Trim().Equals(emailLower, StringComparison.OrdinalIgnoreCase))))
             {
                 return ApiSecurityGuard.ProblemFromError(
-                    Error.Conflict("Customer.AlreadyExists", "Já existe outro cliente/dono cadastrado com este CPF/CNPJ ou e-mail."));
+                    Error.Conflict("Customer.AlreadyExists", "Já existe outro cliente/dono cadastrado com este nome, CPF/CNPJ ou e-mail."));
             }
 
             if (req.PlanId.HasValue && req.PlanId.Value != Guid.Empty)
@@ -710,8 +732,11 @@ public static class PitakoV1Endpoints
                 return ApiSecurityGuard.ProblemFromError(res.Error);
 
             var allTenants = await tenantRepo.ListAllAsync(ct);
-            if (allTenants.Any(t => t.Id != tenant.Id && t.Cnpj.Digits == tenant.Cnpj.Digits))
-                return ApiSecurityGuard.ProblemFromError(Error.Conflict("Tenant.CnpjAlreadyExists", "Já existe outra loja cadastrada com este CNPJ."));
+            var trimmedTrade = tenant.TradeName.Trim();
+            if (allTenants.Any(t => t.Id != tenant.Id &&
+                (t.Cnpj.Digits == tenant.Cnpj.Digits ||
+                 t.TradeName.Trim().Equals(trimmedTrade, StringComparison.OrdinalIgnoreCase))))
+                return ApiSecurityGuard.ProblemFromError(Error.Conflict("Tenant.DuplicateStore", "Já existe outra loja cadastrada com este nome ou CNPJ."));
 
             await tenantRepo.SaveChangesAsync(ct);
             return Results.Ok(new { tenant.Id, tenant.TradeName, tenant.Slug, tenant.SegmentCode, status = tenant.Status.ToString() });
@@ -967,17 +992,25 @@ public static class PitakoV1Endpoints
             if (err is not null)
                 return err;
 
-            var res = await provSvc.CreateEstablishmentAsync(user!, req, ct);
-            if (res.IsFailure)
-                return ApiSecurityGuard.ProblemFromError(res.Error);
-
-            using (var provScope = scopeFactory.CreateScope())
+            await StoreCreateGate.WaitAsync(ct);
+            try
             {
-                var starter = provScope.ServiceProvider.GetRequiredService<StoreStarterProvisioner>();
-                await starter.ProvisionCompleteNewStoreAsync(res.Value.Tenant, ct);
-            }
+                var res = await provSvc.CreateEstablishmentAsync(user!, req, ct);
+                if (res.IsFailure)
+                    return ApiSecurityGuard.ProblemFromError(res.Error);
 
-            return Results.Json(res.Value, statusCode: StatusCodes.Status201Created);
+                using (var provScope = scopeFactory.CreateScope())
+                {
+                    var starter = provScope.ServiceProvider.GetRequiredService<StoreStarterProvisioner>();
+                    await starter.ProvisionCompleteNewStoreAsync(res.Value.Tenant, ct);
+                }
+
+                return Results.Json(res.Value, statusCode: StatusCodes.Status201Created);
+            }
+            finally
+            {
+                StoreCreateGate.Release();
+            }
         });
 
         store.MapGet("/branding", async (
@@ -2150,6 +2183,7 @@ internal static class MasterSegmentCatalogStore
 {
     private const string CustomKey = "master.custom_segments";
     private const string HiddenKey = "master.hidden_segments";
+    private static readonly SemaphoreSlim SegmentGate = new(1, 1);
 
     public static async Task<IReadOnlyList<BusinessSegmentProfile>> GetEffectiveSegmentsAsync(
         IGlobalSettingRepository settingRepo,
@@ -2196,42 +2230,58 @@ internal static class MasterSegmentCatalogStore
 
         var normalizedCode = BusinessSegmentCatalog.Normalize(req.Code);
         var trimmedName = req.DisplayName.Trim();
-        if (createOnly)
+        await SegmentGate.WaitAsync(ct);
+        try
         {
             var effective = await GetEffectiveSegmentsAsync(settingRepo, ct);
-            if (effective.Any(s =>
-                s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase) ||
+            if (createOnly)
+            {
+                if (effective.Any(s =>
+                    s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase) ||
+                    s.DisplayName.Trim().Equals(trimmedName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return ApiSecurityGuard.ProblemFromError(
+                        Error.Conflict("Segment.AlreadyExists", $"A modalidade '{trimmedName}' já está cadastrada."));
+                }
+            }
+            else if (effective.Any(s =>
+                !s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase) &&
                 s.DisplayName.Trim().Equals(trimmedName, StringComparison.OrdinalIgnoreCase)))
             {
                 return ApiSecurityGuard.ProblemFromError(
-                    Error.Conflict("Segment.AlreadyExists", $"A modalidade '{trimmedName}' já está cadastrada."));
+                    Error.Conflict("Segment.AlreadyExists", $"Já existe outra modalidade com o nome '{trimmedName}'."));
             }
+
+            var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
+            var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
+                ? []
+                : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
+
+            customList.RemoveAll(s => s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase));
+            var saved = new BusinessSegmentProfile(
+                normalizedCode,
+                trimmedName,
+                req.SupportsAcaiBuilder,
+                req.SupportsWeightScale,
+                req.SupportsTableService,
+                req.SupportsFractionalItems);
+            customList.Add(saved);
+
+            var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
+            if (hiddenSetting is not null && !string.IsNullOrWhiteSpace(hiddenSetting.Value))
+            {
+                var hidden = JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? [];
+                if (hidden.Remove(normalizedCode))
+                    await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
+            }
+
+            await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
+            return Results.Ok(saved);
         }
-        var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
-        var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
-            ? []
-            : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
-
-        customList.RemoveAll(s => s.Code.Equals(normalizedCode, StringComparison.OrdinalIgnoreCase));
-        var saved = new BusinessSegmentProfile(
-            normalizedCode,
-            req.DisplayName.Trim(),
-            req.SupportsAcaiBuilder,
-            req.SupportsWeightScale,
-            req.SupportsTableService,
-            req.SupportsFractionalItems);
-        customList.Add(saved);
-
-        var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
-        if (hiddenSetting is not null && !string.IsNullOrWhiteSpace(hiddenSetting.Value))
+        finally
         {
-            var hidden = JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? [];
-            if (hidden.Remove(normalizedCode))
-                await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
+            SegmentGate.Release();
         }
-
-        await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
-        return Results.Ok(saved);
     }
 
     public static async Task<IResult> DeleteSegmentAsync(
@@ -2242,24 +2292,32 @@ internal static class MasterSegmentCatalogStore
         CancellationToken ct)
     {
         var normalized = BusinessSegmentCatalog.Normalize(code);
-        var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
-        var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
-            ? []
-            : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
-        customList.RemoveAll(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase));
-        await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
-
-        if (BusinessSegmentCatalog.AllBuiltIn.Any(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+        await SegmentGate.WaitAsync(ct);
+        try
         {
-            var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
-            var hidden = string.IsNullOrWhiteSpace(hiddenSetting?.Value)
-                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : (JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-            hidden.Add(normalized);
-            await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
-        }
+            var customSetting = await settingRepo.FindByKeyAsync(CustomKey, ct);
+            var customList = string.IsNullOrWhiteSpace(customSetting?.Value)
+                ? []
+                : (JsonSerializer.Deserialize<List<BusinessSegmentProfile>>(customSetting.Value) ?? []);
+            customList.RemoveAll(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+            await ops.UpsertGlobalSettingAsync(actor, CustomKey, JsonSerializer.Serialize(customList), "Modalidades customizadas", false, ct);
 
-        return Results.Ok(new { success = true });
+            if (BusinessSegmentCatalog.AllBuiltIn.Any(s => s.Code.Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);
+                var hidden = string.IsNullOrWhiteSpace(hiddenSetting?.Value)
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    : (JsonSerializer.Deserialize<HashSet<string>>(hiddenSetting.Value) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                hidden.Add(normalized);
+                await ops.UpsertGlobalSettingAsync(actor, HiddenKey, JsonSerializer.Serialize(hidden), "Modalidades ocultas", false, ct);
+            }
+
+            return Results.Ok(new { success = true });
+        }
+        finally
+        {
+            SegmentGate.Release();
+        }
     }
 }
 public sealed record CreateStoreUserReq(string FullName, string Email, string Password, EstablishmentRole Role);

@@ -96,6 +96,10 @@ public sealed class TenantProvisioningService
         if (existingTenants.Any(t => t.Cnpj.Digits == tenant.Cnpj.Digits))
             return Result.Failure<ProvisionedEstablishmentResult>(Error.Conflict("Tenants.CnpjAlreadyInUse", "Já existe uma loja cadastrada com este CNPJ."));
 
+        var trimmedTrade = tenant.TradeName.Trim();
+        if (existingTenants.Any(t => t.TradeName.Trim().Equals(trimmedTrade, StringComparison.OrdinalIgnoreCase)))
+            return Result.Failure<ProvisionedEstablishmentResult>(Error.Conflict("Tenants.TradeNameAlreadyInUse", $"Já existe uma loja cadastrada com o nome '{trimmedTrade}'."));
+
         var segmentProfile = BusinessSegmentCatalog.Resolve(tenant.SegmentCode).Value;
 
         // Define escopo de contexto para persistir as entidades isoladas do novo estabelecimento.

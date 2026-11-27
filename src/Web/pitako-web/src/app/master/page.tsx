@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PitakoBrandShell } from "@/components/PitakoBrandShell";
@@ -110,6 +110,7 @@ export default function MasterPanelPage() {
   const [indicators, setIndicators] = useState<MasterIndicatorsDto | null>(null);
   const [sweepingBilling, setSweepingBilling] = useState(false);
   const [submittingForm, setSubmittingForm] = useState(false);
+  const submitLockRef = useRef(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [quickToast, setQuickToast] = useState<FloatingToast | null>(null);
   const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
@@ -338,11 +339,13 @@ export default function MasterPanelPage() {
   }
 
   async function withSubmitLock(task: () => Promise<void>) {
-    if (submittingForm) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setSubmittingForm(true);
     try {
       await task();
     } finally {
+      submitLockRef.current = false;
       setSubmittingForm(false);
     }
   }
@@ -354,6 +357,23 @@ export default function MasterPanelPage() {
       if (!session) return;
 
     const cleanSlug = storeSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const cleanCnpj = storeCnpj.replace(/\D/g, "");
+    const cleanTrade = storeTradeName.trim().toLowerCase();
+
+    const dupStore = overview.establishments.find(
+      (est) =>
+        est.id !== editingStoreId &&
+        (est.slug.toLowerCase() === cleanSlug ||
+          (cleanCnpj.length > 0 && est.cnpjDigits === cleanCnpj) ||
+          est.tradeName.trim().toLowerCase() === cleanTrade)
+    );
+    if (dupStore) {
+      notifyAction(
+        `A loja '${dupStore.tradeName}' já está cadastrada com este nome, slug ou CNPJ. Exclua-a antes de criar novamente.`,
+        "error"
+      );
+      return;
+    }
 
     if (editingStoreId) {
       const res = await apiFetch(
@@ -524,6 +544,20 @@ export default function MasterPanelPage() {
     if (!session) return;
 
     const cleanCode = (editingSegCode || segCode).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const cleanSegName = segName.trim().toLowerCase();
+    const dupSegment = overview.segments.find((s) =>
+      editingSegCode
+        ? s.code !== editingSegCode && s.displayName.trim().toLowerCase() === cleanSegName
+        : s.code.toLowerCase() === cleanCode || s.displayName.trim().toLowerCase() === cleanSegName
+    );
+    if (dupSegment) {
+      notifyAction(
+        `A modalidade '${dupSegment.displayName}' já existe. Exclua-a antes de criar novamente.`,
+        "error"
+      );
+      return;
+    }
+
     const method = editingSegCode ? "PUT" : "POST";
     const url = editingSegCode ? `/api/v1/master/segments/${encodeURIComponent(cleanCode)}` : "/api/v1/master/segments";
 
@@ -601,6 +635,24 @@ export default function MasterPanelPage() {
     const effectivePlanId = plans.some((p) => p.id === customerPlanId)
       ? customerPlanId
       : (plans.find((p) => p.isActive)?.id ?? plans[0]?.id ?? "");
+
+    const cleanCustName = customerName.trim().toLowerCase();
+    const cleanCustDoc = customerDoc.replace(/\D/g, "");
+    const cleanCustEmail = customerEmail.trim().toLowerCase();
+    const dupCustomer = overview.customers.find(
+      (c) =>
+        c.id !== editingCustomerId &&
+        (c.customerName.trim().toLowerCase() === cleanCustName ||
+          (cleanCustDoc.length > 0 && c.document.replace(/\D/g, "") === cleanCustDoc) ||
+          c.billingEmail.trim().toLowerCase() === cleanCustEmail)
+    );
+    if (dupCustomer) {
+      notifyAction(
+        `O cliente/dono '${dupCustomer.customerName}' já está cadastrado com este nome, CPF/CNPJ ou e-mail. Exclua-o antes de criar novamente.`,
+        "error"
+      );
+      return;
+    }
 
     if (editingCustomerId) {
       const res = await apiFetch(
@@ -708,6 +760,21 @@ export default function MasterPanelPage() {
     await withSubmitLock(async () => {
     const session = loadSession();
     if (!session) return;
+
+    const cleanPlanCode = planCode.trim().toLowerCase();
+    const cleanPlanName = planName.trim().toLowerCase();
+    const dupPlan = plans.find((p) =>
+      editingPlanId
+        ? p.id !== editingPlanId && p.name.trim().toLowerCase() === cleanPlanName
+        : p.code.toLowerCase() === cleanPlanCode || p.name.trim().toLowerCase() === cleanPlanName
+    );
+    if (dupPlan) {
+      notifyAction(
+        `O plano '${dupPlan.name}' já existe. Exclua-o antes de criar novamente.`,
+        "error"
+      );
+      return;
+    }
 
     const payload = {
       code: planCode,
