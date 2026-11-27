@@ -33,6 +33,11 @@ export interface AdminCouponDto {
   discountType: number;
   discountValue: number;
   minimumOrderAmount: number;
+  validFromUtc?: string;
+  validUntilUtc?: string;
+  maxTotalUses?: number | null;
+  maxUsesPerCustomer?: number | null;
+  firstOrderOnly?: boolean;
   currentUses: number;
   isActive: boolean;
 }

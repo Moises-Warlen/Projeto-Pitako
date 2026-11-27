@@ -97,6 +97,12 @@ export default function StoreMarketplacesPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
 
+  useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 2600);
+    return () => clearTimeout(t);
+  }, [msg]);
+
   // Connect Account form
   const [provider, setProvider] = useState<number>(1);
   const [accountLabel, setAccountLabel] = useState("Conta Principal iFood");

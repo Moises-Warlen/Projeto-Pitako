@@ -139,7 +139,15 @@ export default function DiningHallPage() {
 
   useEffect(() => {
     void reloadAll();
+    const id = setInterval(() => void reloadAll(), 3000);
+    return () => clearInterval(id);
   }, [reloadAll]);
+
+  useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [msg]);
 
   const activeTab = openTabs.find((t) => t.id === selectedTabId) ?? null;
 

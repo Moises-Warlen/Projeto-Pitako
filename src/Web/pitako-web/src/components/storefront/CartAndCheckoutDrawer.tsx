@@ -30,7 +30,7 @@ interface CartAndCheckoutDrawerProps {
   onUpdateQty: (itemId: string, nextQty: number) => Promise<void>;
   onRemoveItem: (itemId: string) => Promise<void>;
   onClearCart: () => Promise<void>;
-  onApplyCoupon: (code: string) => Promise<string | null>;
+  onApplyCoupon: (code: string, customerPhone?: string, customerName?: string) => Promise<string | null>;
   onRemoveCoupon: () => Promise<void>;
   onQuoteFreight: (payload: {
     fulfillmentMode: 1 | 2;
@@ -95,8 +95,9 @@ export function CartAndCheckoutDrawer({
     if (!couponInput.trim()) return;
     setBusy(true);
     setCouponFeedback(null);
-    const err = await onApplyCoupon(couponInput.trim());
+    const err = await onApplyCoupon(couponInput.trim(), customerPhone.trim() || undefined, customerName.trim() || undefined);
     setCouponFeedback(err ?? "Cupom aplicado com sucesso!");
+    setTimeout(() => setCouponFeedback(null), 2800);
     setBusy(false);
   }
 

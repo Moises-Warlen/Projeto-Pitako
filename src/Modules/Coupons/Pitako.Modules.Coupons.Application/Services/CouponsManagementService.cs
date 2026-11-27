@@ -41,6 +41,7 @@ public sealed class CouponsManagementService : ICouponValidationService
         bool canCombineWithPromotions = false,
         IEnumerable<(CouponTargetType TargetType, Guid TargetId)>? eligibilityRules = null,
         string? description = null,
+        bool firstOrderOnly = false,
         CancellationToken cancellationToken = default)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Create);
@@ -87,6 +88,7 @@ public sealed class CouponsManagementService : ICouponValidationService
             foreach (var (targetType, targetId) in eligibilityRules)
                 couponRes.Value.AddEligibilityRule(targetType, targetId);
         }
+        couponRes.Value.SetFirstOrderOnly(firstOrderOnly);
 
         await _couponRepo.AddAsync(couponRes.Value, cancellationToken);
         await _couponRepo.SaveChangesAsync(cancellationToken);
@@ -139,6 +141,7 @@ public sealed class CouponsManagementService : ICouponValidationService
         bool canCombineWithPromotions = false,
         string? description = null,
         bool isActive = true,
+        bool firstOrderOnly = false,
         CancellationToken cancellationToken = default)
     {
         var guard = ValidateTenantActor(actor, PermissionAction.Edit);
@@ -167,6 +170,7 @@ public sealed class CouponsManagementService : ICouponValidationService
         if (upd.IsFailure)
             return Result.Failure<Coupon>(upd.Error);
 
+        coupon.SetFirstOrderOnly(firstOrderOnly);
         if (isActive) coupon.Activate();
         else coupon.Deactivate();
 

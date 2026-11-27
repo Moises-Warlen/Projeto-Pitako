@@ -68,6 +68,12 @@ export default function QrTableSelfServicePage({ params }: { params: { slug: str
     void loadTableData();
   }, [loadTableData]);
 
+  useEffect(() => {
+    if (!feedback) return;
+    const t = setTimeout(() => setFeedback(null), 2600);
+    return () => clearTimeout(t);
+  }, [feedback]);
+
   async function callWaiter(callType: number, label: string) {
     const targetToken = summary?.sessionToken || params.token;
     const res = await apiFetch(`/api/v1/public/qr/${params.slug}/${targetToken}/waiter-call`, {

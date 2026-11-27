@@ -25,6 +25,7 @@ import { formatBrl, ProductMediaFrame } from "@/components/storefront/ProductMed
 import { CustomerChatDrawer } from "@/components/storefront/CustomerChatDrawer";
 import { OperatingHoursModal, OrderTrackingModal } from "@/components/storefront/StorefrontModals";
 import { apiFetch } from "@/lib/api";
+import { playCustomerOrderUpdateSound, primeAlertAudio } from "@/lib/soundAlerts";
 import {
   MenuCombo,
   MenuProduct,
@@ -135,8 +136,72 @@ export default function PublicStorefrontPage() {
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg((prev) => (prev === msg ? null : prev)), 3600);
+    setTimeout(() => setToastMsg((prev) => (prev === msg ? null : prev)), 2500);
   }, []);
+
+  useEffect(() => {
+    primeAlertAudio();
+  }, []);
+
+  useEffect(() => {
+    if (!slug || typeof window === "undefined") return;
+    if (!trackedOrder) {
+      const savedOrderNum = window.localStorage.getItem(`pitako_last_order_${slug}`);
+      const savedPhone = window.localStorage.getItem(`pitako_last_order_phone_${slug}`) || "";
+      if (savedOrderNum) {
+        void apiFetch<OrderTrackingResponse>(
+          `/api/v1/public/store/${slug}/orders/${encodeURIComponent(savedOrderNum)}?phone=${encodeURIComponent(savedPhone)}`
+        ).then((res) => {
+          if (res.ok && res.data && res.data.statusCode < 6) {
+            setTrackedOrder(res.data);
+          }
+        });
+      }
+      return;
+    }
+
+    if (trackedOrder.statusCode >= 6) return;
+
+    const timer = setInterval(async () => {
+      const savedPhone = window.localStorage.getItem(`pitako_last_order_phone_${slug}`) || "";
+      const res = await apiFetch<OrderTrackingResponse>(
+        `/api/v1/public/store/${slug}/orders/${encodeURIComponent(trackedOrder.orderNumber)}?phone=${encodeURIComponent(savedPhone)}`
+      );
+      if (!res.ok || !res.data) return;
+      const latest = res.data;
+      if (
+        latest.statusCode !== trackedOrder.statusCode ||
+        latest.isPaymentConfirmed !== trackedOrder.isPaymentConfirmed
+      ) {
+        playCustomerOrderUpdateSound();
+        const ptStatus =
+          latest.statusCode === 2
+            ? "Pedido Aceito"
+            : latest.statusCode === 3
+              ? "Em Preparo"
+              : latest.statusCode === 4
+                ? "Pronto"
+                : latest.statusCode === 5
+                  ? "Saiu para Entrega"
+                  : latest.statusCode === 6
+                    ? "Concluído"
+                    : latest.statusCode === 7
+                      ? "Cancelado"
+                      : latest.status;
+        const alertText =
+          latest.statusCode !== trackedOrder.statusCode
+            ? `Atualização do pedido ${latest.orderNumber}: ${ptStatus}!`
+            : `Pagamento do pedido ${latest.orderNumber} confirmado!`;
+        showToast(alertText);
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification(storeInfo?.tradeName || "Atualização do Pedido", { body: alertText });
+        }
+      }
+      setTrackedOrder(latest);
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [slug, trackedOrder, storeInfo?.tradeName, showToast]);
 
   const query = searchTerm.trim().toLowerCase();
 
@@ -291,11 +356,16 @@ export default function PublicStorefrontPage() {
     if (res.ok && res.data) setCart(res.data);
   }
 
-  async function handleApplyCoupon(code: string) {
+  async function handleApplyCoupon(code: string, customerPhone?: string, customerName?: string) {
     if (!sessionKey) return "Sessão indisponível.";
+    const savedPhone = typeof window !== "undefined" ? window.localStorage.getItem(`pitako_last_order_phone_${slug}`) || undefined : undefined;
     const res = await apiFetch<SmartCartResponse>(`/api/v1/public/store/${slug}/cart/${sessionKey}/coupon`, {
       method: "POST",
-      body: JSON.stringify({ couponCode: code })
+      body: JSON.stringify({
+        couponCode: code,
+        customerPhone: customerPhone || savedPhone,
+        customerName
+      })
     });
     if (res.ok && res.data) {
       setCart(res.data);
@@ -374,6 +444,13 @@ export default function PublicStorefrontPage() {
       `/api/v1/public/store/${slug}/orders/${encodeURIComponent(res.data.orderNumber)}?phone=${encodeURIComponent(payload.customerPhone)}`
     );
     if (track.ok && track.data) setTrackedOrder(track.data);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`pitako_last_order_${slug}`, res.data.orderNumber);
+      window.localStorage.setItem(`pitako_last_order_phone_${slug}`, payload.customerPhone);
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        void Notification.requestPermission().catch(() => {});
+      }
+    }
     setDrawerOpen(false);
     setTrackingOpen(true);
     return null;

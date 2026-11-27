@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PitakoBrandShell } from "@/components/PitakoBrandShell";
 import { apiFetch, saveSession } from "@/lib/api";
@@ -19,6 +20,40 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotResult, setForgotResult] = useState<{ text: string; link?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!statusMsg) return;
+    const t = setTimeout(() => setStatusMsg(null), 2800);
+    return () => clearTimeout(t);
+  }, [statusMsg]);
+
+  async function handleForgotSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+    setForgotLoading(true);
+    setForgotResult(null);
+    const res = await apiFetch<{ accepted: boolean; message: string; resetLinkOutbox?: string | null }>(
+      "/api/v1/auth/password-recovery",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          storeSlug: mode === "store" ? storeSlug.trim() || null : null,
+          webBaseUrl: typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"
+        })
+      }
+    );
+    setForgotLoading(false);
+    if (res.ok && res.data) {
+      setForgotResult({ text: res.data.message, link: res.data.resetLinkOutbox });
+    } else {
+      setForgotResult({ text: res.errorMessage || "Não foi possível enviar a recuperação de senha." });
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -143,7 +178,58 @@ export default function LoginPage() {
           >
             {loading ? "Validando sessão..." : "Entrar"}
           </button>
+
+          <div className="pt-1 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setForgotOpen((prev) => !prev);
+                setForgotEmail(email);
+                setForgotResult(null);
+              }}
+              className="text-xs font-medium text-zinc-400 underline hover:text-white"
+            >
+              Esqueci minha senha
+            </button>
+          </div>
         </form>
+
+        {forgotOpen && (
+          <form onSubmit={handleForgotSubmit} className="mt-5 space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <p className="text-xs font-bold text-white">Recuperar senha por e-mail cadastrado</p>
+            <p className="text-[11px] text-zinc-400">
+              Informe seu e-mail cadastrado para receber o link de redefinição da senha no seu e-mail.
+            </p>
+            <input
+              type="email"
+              required
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              placeholder="seu@email.com.br"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white"
+            />
+            {forgotResult && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/50 p-2.5 text-[11px] text-emerald-200">
+                <p>{forgotResult.text}</p>
+                {forgotResult.link && (
+                  <Link
+                    href={forgotResult.link.replace(/^https?:\/\/[^/]+/, "")}
+                    className="mt-1.5 inline-block font-bold text-amber-300 underline"
+                  >
+                    Abrir tela de nova senha
+                  </Link>
+                )}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={forgotLoading}
+              className="w-full rounded-lg bg-zinc-800 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {forgotLoading ? "Enviando e-mail..." : "Enviar recuperação para meu e-mail"}
+            </button>
+          </form>
+        )}
       </div>
     </PitakoBrandShell>
   );

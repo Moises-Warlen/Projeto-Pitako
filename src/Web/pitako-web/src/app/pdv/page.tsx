@@ -135,6 +135,12 @@ export default function PdvPage() {
 
   const [msg, setMsg] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
 
+  useEffect(() => {
+    if (!msg || !authenticated) return;
+    const t = setTimeout(() => setMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [msg, authenticated]);
+
   const netKg = useMemo(() => Math.max(0, (grossGrams - tareGrams) / 1000), [grossGrams, tareGrams]);
   const weighedTotal = useMemo(() => Number((netKg * pricePerKg).toFixed(2)), [netKg, pricePerKg]);
 

@@ -55,6 +55,12 @@ export default function SelfServiceTotemPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (!errorMsg) return;
+    const t = setTimeout(() => setErrorMsg(null), 2600);
+    return () => clearTimeout(t);
+  }, [errorMsg]);
+
   const loadStoreCatalog = useCallback(async (targetSlug: string) => {
     const [storeRes, menuRes] = await Promise.all([
       apiFetch<{

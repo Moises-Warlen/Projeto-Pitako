@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Pitako.Api.Bootstrap;
 using Pitako.Api.Security;
+using Pitako.Api.Services;
 using Pitako.Modules.AcaiBuilder.Application.Abstractions;
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Infrastructure.Persistence;
@@ -235,6 +236,7 @@ public static class PitakoServiceCollectionExtensions
         services.AddScoped<AuthenticationService>();
         services.AddScoped<PasswordRecoveryService>();
         services.AddScoped<UserAuthorizationService>();
+        services.AddScoped<PitakoEmailService>();
 
         // MasterPanel & Tenants
         services.AddScoped<ICommercialPlanRepository, EfCommercialPlanRepository>();

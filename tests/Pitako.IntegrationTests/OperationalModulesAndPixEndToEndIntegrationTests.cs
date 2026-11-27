@@ -546,5 +546,133 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         });
         Assert.Equal(HttpStatusCode.OK, qrPixPay.StatusCode);
         Assert.True((await qrPixPay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("alreadyPaid").GetBoolean());
+
+        // 9. Onboarding Welcome Email + Forgot Password Flow + Waiter Call / RequestBill + Live Alerts + Product Delete + FirstOrderOnly Coupon + CustomerOrderCount
+        using var outboxReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/master/email-outbox");
+        outboxReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        var outboxRes = await client.SendAsync(outboxReq);
+        Assert.Equal(HttpStatusCode.OK, outboxRes.StatusCode);
+        var outboxItems = (await outboxRes.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray().ToList();
+        Assert.Contains(outboxItems, e => e.GetProperty("toEmail").GetString() == "dono2@pitako.com.br");
+        Assert.Contains(outboxItems, e =>
+            e.GetProperty("toEmail").GetString() == "gerente@explosaofilial.com.br" &&
+            e.GetProperty("bodyText").GetString()!.Contains("/login?loja=explosao-filial"));
+
+        var forgotRes = await client.PostAsJsonAsync("/api/v1/auth/password-recovery", new
+        {
+            email = "gerente@explosaofilial.com.br"
+        });
+        Assert.Equal(HttpStatusCode.OK, forgotRes.StatusCode);
+        var resetLinkOutbox = (await forgotRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("resetLinkOutbox").GetString()!;
+        Assert.Contains("token=", resetLinkOutbox);
+        var rawResetToken = Uri.UnescapeDataString(resetLinkOutbox.Split("token=", 2)[1]);
+
+        var completeResetRes = await client.PostAsJsonAsync("/api/v1/auth/password-reset/complete", new
+        {
+            token = rawResetToken,
+            newPassword = "NovaSenha@2026!"
+        });
+        Assert.Equal(HttpStatusCode.OK, completeResetRes.StatusCode);
+
+        var reloginRes = await client.PostAsJsonAsync("/api/v1/auth/login-store", new
+        {
+            storeSlug = "explosao-filial",
+            email = "gerente@explosaofilial.com.br",
+            password = "NovaSenha@2026!"
+        });
+        Assert.Equal(HttpStatusCode.OK, reloginRes.StatusCode);
+        token2 = (await reloginRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString()!;
+
+        // Chamar Garçom (1) e Pedir Conta (2) na mesa mesmo após quitação anterior -> deve reativar e notificar o painel!
+        var waiterCall1 = await client.PostAsJsonAsync($"/api/v1/public/qr/acai-demo/{qrToken}/waiter-call", new { callType = 1, notes = "Chamar Garçom E2E" });
+        Assert.Equal(HttpStatusCode.Created, waiterCall1.StatusCode);
+        var waiterCall2 = await client.PostAsJsonAsync($"/api/v1/public/qr/acai-demo/{qrToken}/waiter-call", new { callType = 2, notes = "Pedir Conta E2E" });
+        Assert.Equal(HttpStatusCode.Created, waiterCall2.StatusCode);
+
+        using var liveAlertsReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/store/live-alerts");
+        liveAlertsReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        var liveAlertsRes = await client.SendAsync(liveAlertsReq);
+        Assert.Equal(HttpStatusCode.OK, liveAlertsRes.StatusCode);
+        var liveAlertsJson = await liveAlertsRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(liveAlertsJson.GetProperty("pendingWaiterCalls").GetArrayLength() >= 2);
+
+        // Delete Product -> deve sumir da listagem /api/v1/catalog/products
+        using var delProdReq = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/catalog/products/{prod2Id}");
+        delProdReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(delProdReq)).StatusCode);
+
+        using var listAfterDelReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog/products");
+        listAfterDelReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token2);
+        var remainingProds = (await (await client.SendAsync(listAfterDelReq)).Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("products").EnumerateArray().ToList();
+        Assert.DoesNotContain(remainingProds, p => p.GetProperty("id").GetGuid() == prod2Id);
+
+        // FirstOrderOnly Coupon + customerOrderCount em /orders/all
+        using var firstCouponReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/coupons");
+        firstCouponReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        firstCouponReq.Content = JsonContent.Create(new
+        {
+            code = "BEMVINDO1",
+            discountType = 2,
+            discountValue = 5.00m,
+            validFromUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            validUntilUtc = DateTimeOffset.UtcNow.AddDays(3),
+            minimumOrderAmount = 10.00m,
+            maxTotalUses = 100,
+            maxUsesPerCustomer = 1,
+            firstOrderOnly = true
+        });
+        Assert.Equal(HttpStatusCode.Created, (await client.SendAsync(firstCouponReq)).StatusCode);
+
+        var cartOkFirst = await client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/sess-new-first/items", new
+        {
+            kind = "catalog",
+            productId = firstProductId,
+            quantity = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, cartOkFirst.StatusCode);
+
+        var applyFirstOk = await client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/sess-new-first/coupon", new
+        {
+            couponCode = "BEMVINDO1",
+            customerPhone = "16988887777",
+            customerName = "Cliente Realmente Novo"
+        });
+        Assert.Equal(HttpStatusCode.OK, applyFirstOk.StatusCode);
+
+        var placeFirstOrder = await client.PostAsJsonAsync("/api/v1/public/store/acai-demo/checkout", new
+        {
+            customerName = "Cliente Realmente Novo",
+            customerPhone = "16988887777",
+            fulfillmentMode = 2,
+            cartSessionKey = "sess-new-first",
+            paymentMethod = "PIX"
+        });
+        Assert.Equal(HttpStatusCode.Created, placeFirstOrder.StatusCode);
+
+        // 2ª tentativa com mesmo cliente para cupom 1º Pedido deve falhar!
+        var cart2 = await client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/sess-repeat/items", new
+        {
+            kind = "catalog",
+            productId = firstProductId,
+            quantity = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, cart2.StatusCode);
+        var applyRepeatBlocked = await client.PostAsJsonAsync("/api/v1/public/store/acai-demo/cart/sess-repeat/coupon", new
+        {
+            couponCode = "BEMVINDO1",
+            customerPhone = "16988887777",
+            customerName = "Cliente Realmente Novo"
+        });
+        Assert.Equal(HttpStatusCode.Conflict, applyRepeatBlocked.StatusCode);
+
+        using var ordersCountReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/orders/all");
+        ordersCountReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        var ordersCountRes = await client.SendAsync(ordersCountReq);
+        Assert.Equal(HttpStatusCode.OK, ordersCountRes.StatusCode);
+        var allOrd = (await ordersCountRes.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray().ToList();
+        Assert.Contains(allOrd, o =>
+            o.GetProperty("customerName").GetString() == "Cliente Realmente Novo" &&
+            o.GetProperty("customerOrderCount").GetInt32() >= 1);
     }
 }

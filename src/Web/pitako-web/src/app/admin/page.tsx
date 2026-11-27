@@ -61,6 +61,12 @@ export default function AdminStorePage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
 
+  useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [msg]);
+
   const [categories, setCategories] = useState<AdminCategoryDto[]>([]);
   const [products, setProducts] = useState<AdminProductDto[]>([]);
   const [modifierGroups, setModifierGroups] = useState<AdminModifierGroupDto[]>([]);

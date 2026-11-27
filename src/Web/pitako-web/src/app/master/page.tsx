@@ -83,8 +83,32 @@ export default function MasterPanelPage() {
     segments: []
   });
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [quickModal, setQuickModal] = useState<string | null>(null);
   const [portalCreatedSlug, setPortalCreatedSlug] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"stores" | "segments" | "customers" | "plans">("stores");
+  const [activeTab, setActiveTab] = useState<"stores" | "segments" | "customers" | "plans" | "emails">("stores");
+
+  // 5. E-mail & SMTP
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpSsl, setSmtpSsl] = useState(true);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("noreply@pitako.com.br");
+  const [smtpFromName, setSmtpFromName] = useState("Plataforma PITAKO");
+  const [smtpWebBase, setSmtpWebBase] = useState("http://localhost:3000");
+  const [emailOutbox, setEmailOutbox] = useState<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>([]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const t = setTimeout(() => setFeedback(null), 2000);
+    return () => clearTimeout(t);
+  }, [feedback]);
+
+  useEffect(() => {
+    if (!quickModal) return;
+    const t = setTimeout(() => setQuickModal(null), 2000);
+    return () => clearTimeout(t);
+  }, [quickModal]);
 
   function copyPortalLink(slug: string) {
     const url = typeof window !== "undefined" ? `${window.location.origin}/portal/${slug}` : `/portal/${slug}`;
@@ -145,10 +169,25 @@ export default function MasterPanelPage() {
       return;
     }
 
-    const [plansRes, custRes] = await Promise.all([
+    const [plansRes, custRes, smtpRes, outboxRes] = await Promise.all([
       apiFetch<PlanItem[]>("/api/v1/master/plans", {}, session.accessToken),
-      apiFetch<MasterOverviewResponse>("/api/v1/master/customers", {}, session.accessToken)
+      apiFetch<MasterOverviewResponse>("/api/v1/master/customers", {}, session.accessToken),
+      apiFetch<{ host: string; port: number; useSsl: boolean; username: string; fromEmail: string; fromName: string; publicWebBaseUrl: string }>("/api/v1/master/email-settings", {}, session.accessToken),
+      apiFetch<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>("/api/v1/master/email-outbox", {}, session.accessToken)
     ]);
+
+    if (smtpRes.ok && smtpRes.data) {
+      setSmtpHost(smtpRes.data.host || "");
+      setSmtpPort(String(smtpRes.data.port || 587));
+      setSmtpSsl(Boolean(smtpRes.data.useSsl));
+      setSmtpUser(smtpRes.data.username || "");
+      setSmtpFromEmail(smtpRes.data.fromEmail || "noreply@pitako.com.br");
+      setSmtpFromName(smtpRes.data.fromName || "Plataforma PITAKO");
+      setSmtpWebBase(smtpRes.data.publicWebBaseUrl || "http://localhost:3000");
+    }
+    if (outboxRes.ok && Array.isArray(outboxRes.data)) {
+      setEmailOutbox(outboxRes.data);
+    }
 
     if (plansRes.ok && plansRes.data) {
       const latestPlans = plansRes.data;
@@ -496,6 +535,7 @@ export default function MasterPanelPage() {
     if (res.ok && res.data) {
       setStoreCustomerId(res.data.customerId);
       setFeedback("Cliente cadastrado com sucesso!");
+      setQuickModal("Cliente cadastrado com sucesso! E-mail de boas-vindas enviado.");
       resetCustomerForm();
       refreshAll();
     } else {
@@ -618,7 +658,8 @@ export default function MasterPanelPage() {
           { key: "stores", label: `1. Lojas (${overview.establishments.length})` },
           { key: "segments", label: `2. Modalidades (${overview.segments.length})` },
           { key: "customers", label: `3. Clientes / Donos (${overview.customers.length})` },
-          { key: "plans", label: `4. Planos & Módulos (${plans.length})` }
+          { key: "plans", label: `4. Planos & Módulos (${plans.length})` },
+          { key: "emails", label: `5. E-mail & Envios (${emailOutbox.length})` }
         ].map((t) => (
           <button
             key={t.key}
@@ -926,6 +967,91 @@ export default function MasterPanelPage() {
               </button>
             </form>
           </section>
+        </div>
+      )}
+      {activeTab === "emails" && (
+        <div className="grid gap-8 lg:grid-cols-3">
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
+            <h2 className="mb-4 text-lg font-semibold text-white">Caixa de Saída (Boas-vindas, Acessos & Recuperação de Senha)</h2>
+            <div className="space-y-3">
+              {emailOutbox.length === 0 ? (
+                <p className="text-xs text-zinc-400">Nenhum e-mail registrado ainda.</p>
+              ) : (
+                emailOutbox.map((mail) => (
+                  <div key={mail.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-white">{mail.subject}</span>
+                      <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                        {mail.deliveryStatus}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-zinc-400">
+                      Para: <strong className="text-zinc-200">{mail.toEmail}</strong> · {new Date(mail.sentAtUtc).toLocaleString("pt-BR")}
+                    </p>
+                    <pre className="mt-2 whitespace-pre-wrap rounded bg-zinc-900 p-2.5 font-sans text-[11px] text-zinc-300">
+                      {mail.bodyText}
+                    </pre>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+            <h2 className="mb-3 text-lg font-semibold text-white">Configurar Servidor SMTP Real</h2>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const session = loadSession();
+                if (!session) return;
+                const res = await apiFetch(
+                  "/api/v1/master/email-settings",
+                  {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      host: smtpHost,
+                      port: Number(smtpPort) || 587,
+                      useSsl: smtpSsl,
+                      username: smtpUser,
+                      password: smtpPass,
+                      fromEmail: smtpFromEmail,
+                      fromName: smtpFromName,
+                      publicWebBaseUrl: smtpWebBase
+                    })
+                  },
+                  session.accessToken
+                );
+                if (res.ok) {
+                  setFeedback("Configuração SMTP salva!");
+                  setQuickModal("Configuração SMTP salva!");
+                  refreshAll();
+                } else {
+                  setFeedback(res.errorMessage || "Erro ao salvar SMTP.");
+                }
+              }}
+              className="space-y-3 text-xs"
+            >
+              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="SMTP Host (ex: smtp.gmail.com)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="Porta (587)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                <label className="flex items-center gap-2 text-zinc-200"><input type="checkbox" checked={smtpSsl} onChange={(e) => setSmtpSsl(e.target.checked)} /> SSL/TLS</label>
+              </div>
+              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="Usuário SMTP" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="Senha / App Password (opcional manter)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} placeholder="E-mail remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} placeholder="Nome remetente" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <input value={smtpWebBase} onChange={(e) => setSmtpWebBase(e.target.value)} placeholder="URL base do painel (ex: https://app.seudominio.com)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <button type="submit" className="w-full rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700">
+                Salvar SMTP
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {quickModal && (
+        <div role="status" className="fixed bottom-5 right-5 z-50 rounded-2xl border border-emerald-500/60 bg-emerald-950/95 px-5 py-3.5 text-sm font-bold text-emerald-100 shadow-2xl">
+          {quickModal}
         </div>
       )}
     </PitakoBrandShell>

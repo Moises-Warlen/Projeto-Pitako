@@ -11,6 +11,8 @@ import {
 import { apiFetch, loadSession } from "@/lib/api";
 
 interface FullOrderDto extends PedidoOrderItem {
+  customerOrderCount?: number;
+  customerPreviousOrdersCount?: number;
   itemsSubtotal: number;
   itemsDiscount: number;
   completedAtUtc?: string | null;
@@ -123,7 +125,15 @@ export default function OrdersKanbanPage() {
 
   useEffect(() => {
     void loadBoardData();
+    const id = setInterval(() => void loadBoardData(), 5000);
+    return () => clearInterval(id);
   }, [loadBoardData]);
+
+  useEffect(() => {
+    if (!msg || !token) return;
+    const t = setTimeout(() => setMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [msg, token]);
 
   const filteredOrders = useMemo(() => {
     const now = Date.now();
@@ -382,7 +392,22 @@ export default function OrdersKanbanPage() {
                           </span>
                         </div>
 
-                        <div className="mt-1 font-semibold text-slate-900">{o.customerName}</div>
+                        <div className="mt-1 flex flex-wrap items-center justify-between gap-1">
+                          <span className="font-semibold text-slate-900">{o.customerName}</span>
+                          {typeof o.customerOrderCount === "number" && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                o.customerOrderCount <= 1
+                                  ? "bg-indigo-100 text-indigo-800"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {o.customerOrderCount <= 1
+                                ? "1º Pedido"
+                                : `${o.customerOrderCount} pedidos na loja`}
+                            </span>
+                          )}
+                        </div>
                         {o.customerPhone && (
                           <div className="text-[11px] text-slate-500">{o.customerPhone}</div>
                         )}

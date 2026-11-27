@@ -148,11 +148,33 @@ export function AdminCouponsPanel({
   const [discountType, setDiscountType] = useState("2");
   const [discountValue, setDiscountValue] = useState("10");
   const [minOrder, setMinOrder] = useState("30");
+  const [durationPreset, setDurationPreset] = useState("7d");
+  const [customUntil, setCustomUntil] = useState(() => new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 16));
+  const [maxTotalUses, setMaxTotalUses] = useState("100");
+  const [maxPerCustomer, setMaxPerCustomer] = useState("1");
+  const [firstOrderOnly, setFirstOrderOnly] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     const now = new Date();
-    const nextYear = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 365);
+    let untilMs = now.getTime() + 7 * 86400_000;
+    if (durationPreset === "24h") untilMs = now.getTime() + 86400_000;
+    else if (durationPreset === "3d") untilMs = now.getTime() + 3 * 86400_000;
+    else if (durationPreset === "15d") untilMs = now.getTime() + 15 * 86400_000;
+    else if (durationPreset === "30d") untilMs = now.getTime() + 30 * 86400_000;
+    else if (durationPreset === "365d") untilMs = now.getTime() + 365 * 86400_000;
+    else if (durationPreset === "custom" && customUntil) {
+      const parsed = new Date(customUntil).getTime();
+      if (!Number.isNaN(parsed) && parsed > now.getTime()) untilMs = parsed;
+    }
+
+    const totalLimit = maxTotalUses.trim() && Number(maxTotalUses) > 0 ? Number(maxTotalUses) : null;
+    const perCustLimit = firstOrderOnly
+      ? 1
+      : maxPerCustomer.trim() && Number(maxPerCustomer) > 0
+        ? Number(maxPerCustomer)
+        : null;
+
     const res = await apiFetch(
       "/api/v1/coupons",
       {
@@ -162,9 +184,11 @@ export function AdminCouponsPanel({
           discountType: Number(discountType),
           discountValue: Number(discountValue),
           validFromUtc: now.toISOString(),
-          validUntilUtc: nextYear.toISOString(),
+          validUntilUtc: new Date(untilMs).toISOString(),
           minimumOrderAmount: Number(minOrder),
-          maxTotalUses: 500,
+          maxTotalUses: totalLimit,
+          maxUsesPerCustomer: perCustLimit,
+          firstOrderOnly,
           canCombineWithPromotions: false
         })
       },
@@ -172,7 +196,8 @@ export function AdminCouponsPanel({
     );
     if (res.ok) {
       setCode("");
-      onNotify("Cupom criado com sucesso!");
+      setFirstOrderOnly(false);
+      onNotify("Cupom criado com regras de duração e limite de uso!");
       await onReload();
     } else onNotify(res.errorMessage || "Erro ao criar cupom.");
   }
@@ -236,6 +261,63 @@ export function AdminCouponsPanel({
               />
             </div>
           </div>
+          <div>
+            <label className="font-bold text-slate-700">Tempo de Duração</label>
+            <select
+              value={durationPreset}
+              onChange={(e) => setDurationPreset(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-bold"
+            >
+              <option value="24h">24 horas</option>
+              <option value="3d">3 dias</option>
+              <option value="7d">7 dias</option>
+              <option value="15d">15 dias</option>
+              <option value="30d">30 dias</option>
+              <option value="365d">1 ano</option>
+              <option value="custom">Data/Hora personalizada</option>
+            </select>
+            {durationPreset === "custom" && (
+              <input
+                type="datetime-local"
+                value={customUntil}
+                onChange={(e) => setCustomUntil(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs"
+              />
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="font-bold text-slate-700">Limite Total de Usos</label>
+              <input
+                type="number"
+                min={0}
+                value={maxTotalUses}
+                onChange={(e) => setMaxTotalUses(e.target.value)}
+                placeholder="0 = Ilimitado"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-slate-700">Usos por Cliente</label>
+              <input
+                type="number"
+                min={0}
+                value={firstOrderOnly ? "1" : maxPerCustomer}
+                disabled={firstOrderOnly}
+                onChange={(e) => setMaxPerCustomer(e.target.value)}
+                placeholder="Ex: 1"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono disabled:opacity-60"
+              />
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2 font-bold text-indigo-900">
+            <input
+              type="checkbox"
+              checked={firstOrderOnly}
+              onChange={(e) => setFirstOrderOnly(e.target.checked)}
+            />
+            Cupom exclusivo para o 1º Pedido do cliente
+          </label>
           <button
             type="submit"
             style={{ backgroundColor: "var(--store-primary)" }}
@@ -261,14 +343,21 @@ export function AdminCouponsPanel({
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs"
               >
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-extrabold text-slate-900">{c.code}</span>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${c.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
                       {c.isActive ? "ATIVO" : "INATIVO"}
                     </span>
+                    {c.firstOrderOnly && (
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                        1º PEDIDO
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-slate-600">
-                    {c.discountType === 1 ? `${c.discountValue}%` : c.discountType === 3 ? "Frete Grátis" : `R$ ${c.discountValue.toFixed(2)}`} • Mínimo R$ {c.minimumOrderAmount.toFixed(2)} • Usos: {c.currentUses}
+                    {c.discountType === 1 ? `${c.discountValue}%` : c.discountType === 3 ? "Frete Grátis" : `R$ ${c.discountValue.toFixed(2)}`} • Mín. R$ {c.minimumOrderAmount.toFixed(2)} • Usos: {c.currentUses}{c.maxTotalUses ? `/${c.maxTotalUses}` : ""}
+                    {c.maxUsesPerCustomer ? ` · Máx ${c.maxUsesPerCustomer}x/cliente` : ""}
+                    {c.validUntilUtc ? ` · Até ${new Date(c.validUntilUtc).toLocaleDateString("pt-BR")}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">

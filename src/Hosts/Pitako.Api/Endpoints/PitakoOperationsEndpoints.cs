@@ -24,6 +24,7 @@ using Pitako.Modules.PdvCashier.Application.Services;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Abstractions;
 using Pitako.Modules.Tenants.Domain;
+using Pitako.Modules.WhatsAppSupport.Application.Abstractions;
 using Pitako.MultiTenancy;
 using Pitako.SharedKernel.Results;
 using Pitako.SharedKernel.Time;
@@ -492,38 +493,78 @@ public static class PitakoOperationsEndpoints
             var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Orders, ct);
             if (err is not null) return err;
 
-            var list = await orderRepo.ListRecentAllAsync(250, ct);
-            return Results.Ok(list.Select(o => new
+            var list = await orderRepo.ListRecentAllAsync(500, ct);
+            static string CustomerOrderGroupKey(Order ord)
             {
-                o.Id,
-                o.OrderNumber,
-                channel = o.Channel.ToString(),
-                fulfillmentMode = o.FulfillmentMode.ToString(),
-                fulfillmentModeCode = (int)o.FulfillmentMode,
-                status = o.Status.ToString(),
-                statusCode = (int)o.Status,
-                o.CustomerName,
-                o.CustomerPhone,
-                o.DeliveryAddressSummary,
-                o.PaymentMethod,
-                o.IsPaymentConfirmed,
-                itemsSubtotal = o.ItemsSubtotal.Amount,
-                itemsDiscount = o.ItemsDiscount.Amount,
-                netDeliveryFee = o.NetDeliveryFee.Amount,
-                totalAmount = o.TotalAmount.Amount,
-                o.PlacedAtUtc,
-                o.CompletedAtUtc,
-                o.CancelledAtUtc,
-                items = o.Items.Select(i => new { i.Id, i.ItemTitle, i.CustomizationSummaryText, i.Quantity, lineSubtotal = i.LineSubtotal.Amount, i.CustomerNotes })
+                var digits = new string((ord.CustomerPhone ?? string.Empty).Where(char.IsDigit).ToArray());
+                if (digits.Length >= 8) return $"p:{digits}";
+                return $"n:{(ord.CustomerName ?? "cliente").Trim().ToLowerInvariant()}";
+            }
+
+            var countsByCustomer = list
+                .Where(o => o.Status != OrderStatus.Cancelled)
+                .GroupBy(CustomerOrderGroupKey)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            return Results.Ok(list.Take(250).Select(o =>
+            {
+                var key = CustomerOrderGroupKey(o);
+                var totalCustomerOrders = countsByCustomer.TryGetValue(key, out var cnt) ? cnt : 1;
+                return new
+                {
+                    o.Id,
+                    o.OrderNumber,
+                    channel = o.Channel.ToString(),
+                    fulfillmentMode = o.FulfillmentMode.ToString(),
+                    fulfillmentModeCode = (int)o.FulfillmentMode,
+                    status = o.Status.ToString(),
+                    statusCode = (int)o.Status,
+                    o.CustomerName,
+                    o.CustomerPhone,
+                    customerOrderCount = totalCustomerOrders,
+                    customerPreviousOrdersCount = Math.Max(0, totalCustomerOrders - 1),
+                    o.DeliveryAddressSummary,
+                    o.PaymentMethod,
+                    o.IsPaymentConfirmed,
+                    itemsSubtotal = o.ItemsSubtotal.Amount,
+                    itemsDiscount = o.ItemsDiscount.Amount,
+                    netDeliveryFee = o.NetDeliveryFee.Amount,
+                    totalAmount = o.TotalAmount.Amount,
+                    o.PlacedAtUtc,
+                    o.CompletedAtUtc,
+                    o.CancelledAtUtc,
+                    items = o.Items.Select(i => new { i.Id, i.ItemTitle, i.CustomizationSummaryText, i.Quantity, lineSubtotal = i.LineSubtotal.Amount, i.CustomerNotes })
+                };
             }));
         });
 
-        v1.MapPost("/orders/{id:guid}/confirm-payment", async (Guid id, ConfirmOrderPaymentReq? req, ApiSecurityGuard guard, OrderManagementService svc, HttpContext http, CancellationToken ct) =>
+        v1.MapPost("/orders/{id:guid}/confirm-payment", async (
+            Guid id,
+            ConfirmOrderPaymentReq? req,
+            ApiSecurityGuard guard,
+            OrderManagementService svc,
+            ITenantRepository tenantRepo,
+            IWhatsAppChannelConfigRepository channelRepo,
+            IWhatsAppConversationRepository convRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Orders, ct);
             if (err is not null) return err;
             var res = await svc.ConfirmPaymentAsync(user!, id, req?.Notes, ct);
             if (res.IsFailure) return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            await PitakoStoreSuiteEndpoints.TryNotifyCustomerOrderUpdateAsync(
+                user!.TenantId!.Value,
+                res.Value,
+                $"Pagamento confirmado para seu pedido #{res.Value.OrderNumber}! Já estamos cuidando dele para você.",
+                tenantRepo,
+                channelRepo,
+                convRepo,
+                clock.UtcNow,
+                ct);
+
             return Results.Ok(new { res.Value.Id, res.Value.OrderNumber, res.Value.IsPaymentConfirmed });
         });
 

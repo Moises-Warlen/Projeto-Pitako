@@ -15,7 +15,8 @@ public enum CouponDiscountType
 public enum CouponTargetType
 {
     Product = 1,
-    Category = 2
+    Category = 2,
+    FirstOrderOnly = 99
 }
 
 public sealed record CouponBasketLine(
@@ -401,15 +402,27 @@ public sealed class Coupon : TenantScopedAggregateRoot
         return true;
     }
 
+    public bool IsFirstOrderOnly => _eligibilityRules.Any(r => r.TargetType == CouponTargetType.FirstOrderOnly);
+
+    public void SetFirstOrderOnly(bool firstOrderOnly)
+    {
+        _eligibilityRules.RemoveAll(r => r.TargetType == CouponTargetType.FirstOrderOnly);
+        if (firstOrderOnly)
+            _eligibilityRules.Add(new CouponEligibilityRule(Guid.NewGuid(), TenantId, Id, CouponTargetType.FirstOrderOnly, Id));
+    }
+
     private bool IsLineEligible(CouponBasketLine line)
     {
         if (!CanCombineWithPromotions && line.HasNonCombinablePromotion)
             return false;
 
-        if (_eligibilityRules.Count == 0)
+        var targetRules = _eligibilityRules
+            .Where(r => r.TargetType is CouponTargetType.Product or CouponTargetType.Category)
+            .ToList();
+        if (targetRules.Count == 0)
             return true;
 
-        return _eligibilityRules.Any(r =>
+        return targetRules.Any(r =>
             (r.TargetType == CouponTargetType.Product && line.ProductId.HasValue && r.TargetId == line.ProductId.Value) ||
             (r.TargetType == CouponTargetType.Category && line.CategoryId.HasValue && r.TargetId == line.CategoryId.Value));
     }

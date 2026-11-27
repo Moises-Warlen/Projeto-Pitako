@@ -5,15 +5,20 @@ using Pitako.Api.Security;
 using Pitako.Modules.Catalog.Application.Abstractions;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
+using Pitako.Modules.DiningHall.Application.Abstractions;
 using Pitako.Modules.DiningHall.Application.Services;
 using Pitako.Modules.Inventory.Application.Abstractions;
 using Pitako.Modules.Inventory.Application.Services;
 using Pitako.Modules.Inventory.Domain;
 using Pitako.Modules.MasterPanel.Application.Abstractions;
 using Pitako.Modules.MasterPanel.Domain;
+using Pitako.Modules.Orders.Application.Abstractions;
+using Pitako.Modules.Orders.Domain;
 using Pitako.Modules.Security.Domain;
 using Pitako.Modules.Tenants.Application.Abstractions;
 using Pitako.Modules.Tenants.Application.Services;
+using Pitako.Modules.WhatsAppSupport.Application.Abstractions;
+using Pitako.Modules.WhatsAppSupport.Domain;
 using Pitako.MultiTenancy;
 using Pitako.SharedKernel.Results;
 using Pitako.SharedKernel.Time;
@@ -491,6 +496,118 @@ public static partial class PitakoStoreSuiteEndpoints
             await settingRepo.SaveChangesAsync(ct);
             return Results.Ok(new { cleared = true, clearedAtUtc = clock.UtcNow });
         });
+
+        v1.MapGet("/store/live-alerts", async (
+            ApiSecurityGuard guard,
+            IOrderRepository orderRepo,
+            IWhatsAppConversationRepository convRepo,
+            IWaiterCallRepository waiterRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, ct: ct);
+            if (err is not null) return err;
+
+            var recentOrders = await orderRepo.ListRecentAllAsync(100, ct);
+            var activeOrders = recentOrders
+                .Where(o => o.Status is OrderStatus.Received or OrderStatus.Accepted or OrderStatus.InPreparation)
+                .ToList();
+            var newestOrder = recentOrders.OrderByDescending(o => o.PlacedAtUtc).FirstOrDefault();
+
+            var convs = await convRepo.ListInboxAsync(ct);
+            var inboundMessages = convs
+                .SelectMany(c => c.Messages.Where(m => m.Direction == WhatsAppMessageDirection.Inbound)
+                    .Select(m => new { Conv = c, Msg = m }))
+                .OrderByDescending(x => x.Msg.SentAtUtc)
+                .ToList();
+            var newestInbound = inboundMessages.FirstOrDefault();
+            var waitingHumanCount = convs.Count(c =>
+                c.Status == WhatsAppConversationStatus.WaitingHuman ||
+                c.Messages.OrderByDescending(m => m.SentAtUtc).FirstOrDefault()?.Direction == WhatsAppMessageDirection.Inbound);
+
+            var pendingWaiterCalls = await waiterRepo.ListPendingAsync(ct);
+
+            return Results.Ok(new
+            {
+                pendingOrdersCount = activeOrders.Count,
+                receivedOrdersCount = recentOrders.Count(o => o.Status == OrderStatus.Received),
+                totalOrdersCount = recentOrders.Count,
+                latestOrderId = newestOrder?.Id,
+                latestOrderNumber = newestOrder?.OrderNumber,
+                latestOrderCustomer = newestOrder?.CustomerName,
+                latestOrderPlacedAtUtc = newestOrder?.PlacedAtUtc,
+                totalInboundChatMessages = inboundMessages.Count,
+                unreadChatCount = waitingHumanCount,
+                latestInboundMessageId = newestInbound?.Msg.Id,
+                latestInboundCustomer = newestInbound?.Conv.CustomerName,
+                latestInboundSnippet = newestInbound?.Msg.ContentText,
+                latestInboundAtUtc = newestInbound?.Msg.SentAtUtc,
+                pendingWaiterCalls = pendingWaiterCalls.Select(w => new
+                {
+                    w.Id,
+                    w.DiningTableId,
+                    w.TableCode,
+                    callType = w.CallType.ToString(),
+                    status = w.Status.ToString(),
+                    w.CustomerNotes,
+                    w.RequestedAtUtc
+                })
+            });
+        });
+    }
+
+    internal static async Task TryNotifyCustomerOrderUpdateAsync(
+        Guid tenantId,
+        Order order,
+        string customMessage,
+        ITenantRepository tenantRepo,
+        IWhatsAppChannelConfigRepository channelRepo,
+        IWhatsAppConversationRepository convRepo,
+        DateTimeOffset utcNow,
+        CancellationToken ct)
+    {
+        var phoneDigits = NormalizeDigits(order.CustomerPhone);
+        if (string.IsNullOrWhiteSpace(phoneDigits))
+            return;
+
+        var channels = await channelRepo.ListAllAsync(ct);
+        var channel = channels.FirstOrDefault();
+        if (channel is null)
+        {
+            var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+            var chRes = WhatsAppChannelConfig.Create(
+                tenantId,
+                tenant?.TradeName ?? "Loja",
+                tenant?.ContactPhone ?? phoneDigits,
+                $"phone-{tenant?.Slug ?? tenantId.ToString("N")}",
+                $"waba-{tenant?.Slug ?? tenantId.ToString("N")}",
+                "sandbox-token",
+                "sandbox-secret",
+                "pitako-verify",
+                WhatsAppAutoReplyMode.HybridBotThenAi,
+                tenant is null ? "/loja" : $"/loja/{tenant.Slug}");
+            if (chRes.IsFailure) return;
+            channel = chRes.Value;
+            await channelRepo.AddAsync(channel, ct);
+            await channelRepo.SaveChangesAsync(ct);
+        }
+
+        var conv = await convRepo.FindByCustomerPhoneAsync(channel.Id, phoneDigits, ct);
+        if (conv is null)
+        {
+            var created = WhatsAppConversation.Start(
+                tenantId,
+                channel.Id,
+                phoneDigits,
+                string.IsNullOrWhiteSpace(order.CustomerName) ? "Cliente" : order.CustomerName.Trim(),
+                utcNow);
+            if (created.IsFailure) return;
+            conv = created.Value;
+            await convRepo.AddAsync(conv, ct);
+        }
+
+        conv.RecordOutbound(WhatsAppMessageDirection.OutboundTraditionalBot, null, customMessage, true, null, true, utcNow);
+        await convRepo.SaveChangesAsync(ct);
     }
 
     private static async Task<Result<(string MediaId, string ContentType)>> StoreUploadedImageAsync(

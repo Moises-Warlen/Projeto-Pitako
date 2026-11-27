@@ -231,6 +231,8 @@ public static class PitakoUniversalMenuEndpoints
             ITenantRepository tenantRepo,
             ITenantContextSetter setter,
             ShoppingCartService cartSvc,
+            ICouponRepository couponRepo,
+            IOrderRepository orderRepo,
             CancellationToken ct) =>
         {
             var tenant = await tenantRepo.FindBySlugAsync(slug.Trim().ToLowerInvariant(), ct);
@@ -238,7 +240,43 @@ public static class PitakoUniversalMenuEndpoints
                 return ApiSecurityGuard.ProblemFromError(Error.NotFound("Store.NotFound", "Loja não encontrada."));
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
-            var res = await cartSvc.ApplyCouponAsync(sessionKey, req.CouponCode, req.CustomerIdentifier, ct);
+
+            var effectiveCustomer = !string.IsNullOrWhiteSpace(req.CustomerIdentifier)
+                ? req.CustomerIdentifier
+                : (!string.IsNullOrWhiteSpace(req.CustomerPhone) ? req.CustomerPhone : req.CustomerName);
+
+            var normalizedCouponCode = Coupon.NormalizeCode(req.CouponCode);
+            var coupon = string.IsNullOrWhiteSpace(normalizedCouponCode)
+                ? null
+                : await couponRepo.FindByCodeAsync(normalizedCouponCode, ct);
+
+            if (coupon is not null && coupon.IsFirstOrderOnly)
+            {
+                var customerDigits = new string((req.CustomerPhone ?? req.CustomerIdentifier ?? string.Empty).Where(char.IsDigit).ToArray());
+                var customerNameNorm = (req.CustomerName ?? req.CustomerIdentifier ?? string.Empty).Trim().ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(customerDigits) || !string.IsNullOrWhiteSpace(customerNameNorm))
+                {
+                    var allOrders = await orderRepo.ListRecentAllAsync(1000, ct);
+                    var hasPrevOrder = allOrders.Any(o =>
+                        o.Status != OrderStatus.Cancelled &&
+                        ((!string.IsNullOrWhiteSpace(customerDigits) &&
+                          new string((o.CustomerPhone ?? string.Empty).Where(char.IsDigit).ToArray()) == customerDigits) ||
+                         (!string.IsNullOrWhiteSpace(customerNameNorm) &&
+                          (o.CustomerName ?? string.Empty).Trim().ToLowerInvariant() == customerNameNorm)));
+
+                    if (hasPrevOrder)
+                    {
+                        return ApiSecurityGuard.ProblemFromError(Error.Conflict(
+                            "Coupon.FirstOrderOnly",
+                            "Este cupom é exclusivo para o 1º pedido do cliente nesta loja."));
+                    }
+                }
+            }
+
+            var previewIdentifier = !string.IsNullOrWhiteSpace(effectiveCustomer)
+                ? effectiveCustomer
+                : $"cart:{sessionKey}";
+            var res = await cartSvc.ApplyCouponAsync(sessionKey, req.CouponCode, previewIdentifier, ct);
             return res.IsFailure ? ApiSecurityGuard.ProblemFromError(res.Error) : Results.Ok(ToCartDto(res.Value));
         });
 
@@ -427,11 +465,29 @@ public static class PitakoUniversalMenuEndpoints
             return ToHttp(await svc.UpdateProductAsync(user!, id, req.CategoryId, req.Name, req.BasePrice, req.Description, req.Sku, req.IsFeatured, req.DisplayOrder, req.SaleMode, req.IsNew, req.IsRecommended, req.PricingStrategy, req.TagsCsv, req.PreparationMinutes, req.CustomTemplateKey, req.AllowsNotes, ct));
         });
 
-        catalog.MapDelete("/products/{id:guid}", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
+        catalog.MapDelete("/products/{id:guid}", async (Guid id, ApiSecurityGuard guard, CatalogManagementService svc, ITechnicalSheetRepository sheetRepo, HttpContext http, CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Catalog, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.DeleteOrArchiveProductAsync(user!, id, ct));
+
+            var sheets = await sheetRepo.ListAllAsync(ct);
+            var orphanSheets = sheets.Where(s => s.ProductId == id).ToList();
+            foreach (var sh in orphanSheets)
+            {
+                sheetRepo.Remove(sh);
+            }
+            if (orphanSheets.Count > 0)
+                await sheetRepo.SaveChangesAsync(ct);
+
+            var delRes = await svc.DeleteOrArchiveProductAsync(user!, id, ct);
+            if (delRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(delRes.Error);
+
+            return Results.Ok(new
+            {
+                success = true,
+                outcome = delRes.Value.ToString()
+            });
         });
 
         catalog.MapPost("/products/{id:guid}/images", async (Guid id, AddProductImageReq req, ApiSecurityGuard guard, CatalogManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -1018,7 +1074,8 @@ public static class PitakoUniversalMenuEndpoints
                 c.MaxUsesPerCustomer,
                 currentUses = c.Redemptions.Count(r => !r.IsReversed),
                 c.CanCombineWithPromotions,
-                c.IsActive
+                c.IsActive,
+                firstOrderOnly = c.IsFirstOrderOnly
             }));
         });
 
@@ -1026,14 +1083,14 @@ public static class PitakoUniversalMenuEndpoints
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Coupons, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.CreateCouponAsync(user!, req.Code, req.DiscountType, req.DiscountValue, req.ValidFromUtc, req.ValidUntilUtc, req.MinimumOrderAmount, req.MaxDiscountAmount, req.MaxTotalUses, req.MaxUsesPerCustomer, req.CanCombineWithPromotions, null, req.Description, ct), StatusCodes.Status201Created);
+            return ToHttp(await svc.CreateCouponAsync(user!, req.Code, req.DiscountType, req.DiscountValue, req.ValidFromUtc, req.ValidUntilUtc, req.MinimumOrderAmount, req.MaxDiscountAmount, req.MaxTotalUses, req.MaxUsesPerCustomer, req.CanCombineWithPromotions, null, req.Description, req.FirstOrderOnly, ct), StatusCodes.Status201Created);
         });
 
         coupons.MapPut("/{id:guid}", async (Guid id, UpsertCouponReq req, ApiSecurityGuard guard, CouponsManagementService svc, HttpContext http, CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Coupons, ct);
             if (err is not null) return err;
-            return ToHttp(await svc.UpdateCouponAsync(user!, id, req.DiscountType, req.DiscountValue, req.ValidFromUtc, req.ValidUntilUtc, req.MinimumOrderAmount, req.MaxDiscountAmount, req.MaxTotalUses, req.MaxUsesPerCustomer, req.CanCombineWithPromotions, req.Description, req.IsActive, ct));
+            return ToHttp(await svc.UpdateCouponAsync(user!, id, req.DiscountType, req.DiscountValue, req.ValidFromUtc, req.ValidUntilUtc, req.MinimumOrderAmount, req.MaxDiscountAmount, req.MaxTotalUses, req.MaxUsesPerCustomer, req.CanCombineWithPromotions, req.Description, req.IsActive, req.FirstOrderOnly, ct));
         });
 
         coupons.MapPost("/{id:guid}/deactivate", async (Guid id, ApiSecurityGuard guard, CouponsManagementService svc, HttpContext http, CancellationToken ct) =>
@@ -1175,7 +1232,7 @@ public sealed record SetStorePauseReq(bool IsPaused, string? Reason = null);
 public sealed record PublicQuoteProductReq(Guid ProductId, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null);
 public sealed record PublicAddCartItemReq(string? Kind = "catalog", Guid? ProductId = null, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null, Guid? ComboId = null, AcaiCupBuildRequest? AcaiCup = null, int Quantity = 1, string? Notes = null, bool ForceSeparateLine = false);
 public sealed record PublicUpdateCartItemReq(int Quantity = 1, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null, string? CustomerNotes = null);
-public sealed record PublicApplyCouponReq(string CouponCode, string? CustomerIdentifier = null);
+public sealed record PublicApplyCouponReq(string CouponCode, string? CustomerIdentifier = null, string? CustomerPhone = null, string? CustomerName = null);
 public sealed record PublicDeliveryQuoteReq(FulfillmentMode FulfillmentMode, decimal OrderSubtotal, double? DestinationLatitude = null, double? DestinationLongitude = null, string? Neighborhood = null, string? ZipCode = null, decimal? PrecomputedDistanceKm = null);
 
 public sealed record UpdateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, bool IsActive = true, string? SegmentTemplateCode = null, string? RuleNotes = null);
@@ -1203,7 +1260,7 @@ public sealed record RegisterWasteReq(Guid SupplyItemId, decimal QuantityInContr
 public sealed record UpsertTechnicalSheetReq(string Name, decimal YieldQuantity, string YieldUnitCode, IReadOnlyList<IngredientInput>? Ingredients = null, IReadOnlyList<PackagingInput>? Packagings = null, Guid? ProductId = null, string? Notes = null);
 public sealed record SimulatePriceReq(decimal TaxPercent, decimal ChannelFeePercent, decimal OperationalOverheadPercent, decimal DesiredNetMarginPercent, decimal? ExplicitMarkupMultiplier = null);
 
-public sealed record UpsertCouponReq(string Code, CouponDiscountType DiscountType, decimal DiscountValue, DateTimeOffset ValidFromUtc, DateTimeOffset ValidUntilUtc, decimal MinimumOrderAmount = 0m, decimal? MaxDiscountAmount = null, int? MaxTotalUses = null, int? MaxUsesPerCustomer = null, bool CanCombineWithPromotions = false, string? Description = null, bool IsActive = true);
+public sealed record UpsertCouponReq(string Code, CouponDiscountType DiscountType, decimal DiscountValue, DateTimeOffset ValidFromUtc, DateTimeOffset ValidUntilUtc, decimal MinimumOrderAmount = 0m, decimal? MaxDiscountAmount = null, int? MaxTotalUses = null, int? MaxUsesPerCustomer = null, bool CanCombineWithPromotions = false, string? Description = null, bool IsActive = true, bool FirstOrderOnly = false);
 public sealed record UpsertDeliveryPolicyReq(double OriginLatitude, double OriginLongitude, decimal MaxRadiusKm, FreightCalculationMode CalculationMode, decimal BaseFeeAmount, decimal IncludedKm = 0m, decimal FeePerKmAmount = 0m, int BaseEstimatedMinutes = 35, decimal MinimumOrderAmount = 0m, decimal? FreeShippingThresholdAmount = null, Guid? StoreUnitId = null, bool IsDeliveryEnabled = true, bool AllowPickup = true);
 public sealed record PauseDeliveryReq(string Reason);
 public sealed record AddDeliveryZoneReq(string ZoneName, string? ZipCodePrefix, decimal FeeAmount, int EstimatedMinutes, bool IsBlocked = false);

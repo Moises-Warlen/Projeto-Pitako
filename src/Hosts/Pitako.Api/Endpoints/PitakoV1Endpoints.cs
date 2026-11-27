@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Pitako.Api.Bootstrap;
 using Pitako.Api.Security;
+using Pitako.Api.Services;
 using Pitako.Modules.AcaiBuilder.Application.Services;
 using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Abstractions;
@@ -52,6 +54,7 @@ using Pitako.Modules.Tenants.Domain;
 using Pitako.Modules.Weighing.Application.Abstractions;
 using Pitako.Modules.Weighing.Application.Services;
 using Pitako.Modules.Weighing.Domain;
+using Pitako.Modules.WhatsAppSupport.Application.Abstractions;
 using Pitako.Modules.WhatsAppSupport.Application.Services;
 using Pitako.MultiTenancy;
 using Pitako.SharedKernel.Results;
@@ -185,20 +188,90 @@ public static class PitakoV1Endpoints
             PasswordRecoveryReq req,
             PasswordRecoveryService recoverySvc,
             ITenantRepository tenantRepo,
+            SecurityDbContext secDb,
+            PitakoEmailService emailSvc,
+            HttpContext http,
             CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.StoreSlug))
+            var smtpCfg = await emailSvc.GetSettingsAsync(ct);
+            var webBase = !string.IsNullOrWhiteSpace(req.WebBaseUrl)
+                ? req.WebBaseUrl.Trim().TrimEnd('/')
+                : emailSvc.ResolveWebBaseUrl(smtpCfg, http.Request);
+            var resetBase = $"{webBase}/reset-password";
+            var ip = http.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+            var cleanEmail = (req.Email ?? string.Empty).Trim();
+            string? devLinkPreview = null;
+
+            if (!string.IsNullOrWhiteSpace(req.StoreSlug))
             {
-                var saasRes = await recoverySvc.RequestSaasPasswordResetAsync(req.Email, "/reset-password", "127.0.0.1", ct);
-                return Results.Ok(new { accepted = saasRes.Accepted, message = "Se a conta existir, instruções foram emitidas." });
+                var tenant = await tenantRepo.FindBySlugAsync(req.StoreSlug.Trim().ToLowerInvariant(), ct);
+                if (tenant is not null)
+                {
+                    var estRes = await recoverySvc.RequestEstablishmentPasswordResetAsync(tenant.Id, cleanEmail, resetBase, ip, ct);
+                    if (!string.IsNullOrWhiteSpace(estRes.GeneratedSecureLink))
+                    {
+                        devLinkPreview = estRes.GeneratedSecureLink;
+                        await emailSvc.SendAsync(
+                            cleanEmail,
+                            $"Redefinição de senha — {tenant.TradeName}",
+                            $"Olá!\n\nRecebemos uma solicitação para redefinir sua senha da loja {tenant.TradeName} ({tenant.Slug}).\n\nAcesse o link abaixo para criar uma nova senha:\n{estRes.GeneratedSecureLink}\n\nValidade: 30 minutos.",
+                            kind: "PasswordReset",
+                            ct: ct);
+                        return Results.Ok(new { accepted = true, message = "Se a conta existir, enviamos o link de redefinição para o e-mail informado.", resetLinkOutbox = devLinkPreview });
+                    }
+                }
             }
 
-            var tenant = await tenantRepo.FindBySlugAsync(req.StoreSlug.Trim().ToLowerInvariant(), ct);
-            if (tenant is null)
-                return Results.Ok(new { accepted = true, message = "Se a conta existir, instruções foram emitidas." });
+            var saasRes = await recoverySvc.RequestSaasPasswordResetAsync(cleanEmail, resetBase, ip, ct);
+            if (!string.IsNullOrWhiteSpace(saasRes.GeneratedSecureLink))
+            {
+                devLinkPreview = saasRes.GeneratedSecureLink;
+                await emailSvc.SendAsync(
+                    cleanEmail,
+                    "Redefinição de senha — Acesso Master",
+                    $"Olá!\n\nAcesse o link abaixo para redefinir sua senha:\n{saasRes.GeneratedSecureLink}\n\nValidade: 30 minutos.",
+                    kind: "PasswordReset",
+                    ct: ct);
+                return Results.Ok(new { accepted = true, message = "Enviamos o link de redefinição de senha para o e-mail cadastrado.", resetLinkOutbox = devLinkPreview });
+            }
 
-            await recoverySvc.RequestEstablishmentPasswordResetAsync(tenant.Id, req.Email, "/reset-password", "127.0.0.1", ct);
-            return Results.Ok(new { accepted = true, message = "Se a conta existir, instruções foram emitidas." });
+            var normalized = User.NormalizeEmail(cleanEmail);
+            var matchedEstUsers = await secDb.Users
+                .AsNoTracking()
+                .Where(u => u.Scope == UserScope.Establishment && u.TenantId != null && u.IsActive && u.NormalizedEmail == normalized)
+                .ToListAsync(ct);
+
+            foreach (var eu in matchedEstUsers)
+            {
+                var t = await tenantRepo.FindByIdAsync(eu.TenantId!.Value, ct);
+                var estRes = await recoverySvc.RequestEstablishmentPasswordResetAsync(eu.TenantId!.Value, cleanEmail, resetBase, ip, ct);
+                if (!string.IsNullOrWhiteSpace(estRes.GeneratedSecureLink))
+                {
+                    devLinkPreview ??= estRes.GeneratedSecureLink;
+                    await emailSvc.SendAsync(
+                        cleanEmail,
+                        $"Redefinição de senha — {t?.TradeName ?? "Sua Loja"}",
+                        $"Olá {eu.FullName}!\n\nRecebemos uma solicitação de nova senha para o painel da loja {t?.TradeName ?? ""} (slug: {t?.Slug ?? ""}).\n\nAcesse o link abaixo para definir sua nova senha:\n{estRes.GeneratedSecureLink}\n\nLogin do painel: {webBase}/login?loja={t?.Slug}\nValidade: 30 minutos.",
+                        kind: "PasswordReset",
+                        ct: ct);
+                }
+            }
+
+            return Results.Ok(new { accepted = true, message = "Se o e-mail estiver cadastrado, enviamos as instruções de redefinição.", resetLinkOutbox = devLinkPreview });
+        });
+
+        auth.MapPost("/password-reset/complete", async (
+            CompletePasswordResetReq req,
+            PasswordRecoveryService recoverySvc,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var res = await recoverySvc.CompletePasswordResetAsync(
+                req.Token,
+                req.NewPassword,
+                http.Connection.RemoteIpAddress?.ToString(),
+                ct);
+            return ToHttp(res);
         });
     }
 
@@ -366,6 +439,8 @@ public static class PitakoV1Endpoints
             CreateCustomerSubReq req,
             ApiSecurityGuard guard,
             MasterPlanAndSubscriptionService planSvc,
+            ICommercialPlanRepository planRepo,
+            PitakoEmailService emailSvc,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -383,14 +458,69 @@ public static class PitakoV1Endpoints
                 req.StartWithTrial,
                 ct);
 
-            return res.IsFailure
-                ? ApiSecurityGuard.ProblemFromError(res.Error)
-                : Results.Created($"/api/v1/master/customers/{res.Value.Customer.Id}", new
-                {
-                    customerId = res.Value.Customer.Id,
-                    subscriptionId = res.Value.Subscription.Id,
-                    status = res.Value.Subscription.Status
-                });
+            if (res.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(res.Error);
+
+            var plan = await planRepo.FindByIdAsync(req.PlanId, ct);
+            var smtpCfg = await emailSvc.GetSettingsAsync(ct);
+            var webBase = emailSvc.ResolveWebBaseUrl(smtpCfg, http.Request);
+            await emailSvc.SendAsync(
+                req.BillingEmail,
+                "Boas-vindas — Seu cadastro na plataforma foi criado!",
+                $"Olá {req.CustomerName}!\n\nSeja bem-vindo(a)! Seu cadastro foi criado com sucesso no plano {plan?.Name ?? "Selecionado"}.\n\nAssim que sua loja for ativada, acesse seu painel em: {webBase}/login\nQualquer dúvida, use a opção \"Esqueci minha senha\" na tela de login informando este e-mail cadastrado ({req.BillingEmail}).",
+                kind: "WelcomeCustomer",
+                ct: ct);
+
+            return Results.Created($"/api/v1/master/customers/{res.Value.Customer.Id}", new
+            {
+                customerId = res.Value.Customer.Id,
+                subscriptionId = res.Value.Subscription.Id,
+                status = res.Value.Subscription.Status,
+                welcomeEmailSent = true
+            });
+        });
+
+        master.MapGet("/email-settings", async (ApiSecurityGuard guard, PitakoEmailService emailSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+            var cfg = await emailSvc.GetSettingsAsync(ct);
+            return Results.Ok(new
+            {
+                cfg.Host,
+                cfg.Port,
+                cfg.UseSsl,
+                cfg.Username,
+                hasPassword = !string.IsNullOrWhiteSpace(cfg.Password),
+                cfg.FromEmail,
+                cfg.FromName,
+                cfg.PublicWebBaseUrl
+            });
+        });
+
+        master.MapPut("/email-settings", async (SaveEmailSmtpReq req, ApiSecurityGuard guard, PitakoEmailService emailSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+            var current = await emailSvc.GetSettingsAsync(ct);
+            var next = new EmailSmtpSettingsDto(
+                req.Host,
+                req.Port,
+                req.UseSsl,
+                req.Username,
+                string.IsNullOrWhiteSpace(req.Password) ? current.Password : req.Password,
+                req.FromEmail,
+                req.FromName,
+                req.PublicWebBaseUrl);
+            await emailSvc.SaveSettingsAsync(next, user!.Id, ct);
+            return Results.Ok(new { saved = true });
+        });
+
+        master.MapGet("/email-outbox", async (ApiSecurityGuard guard, PitakoEmailService emailSvc, HttpContext http, CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+            return Results.Ok(await emailSvc.ListOutboxAsync(ct));
         });
 
         master.MapGet("/customers", async (
@@ -671,6 +801,9 @@ public static class PitakoV1Endpoints
             CreateStoreUserReq req,
             ApiSecurityGuard guard,
             UserAuthorizationService userAuth,
+            ITenantRepository tenantRepo,
+            IMasterCustomerRepository customerRepo,
+            PitakoEmailService emailSvc,
             ITenantContextSetter setter,
             HttpContext http,
             CancellationToken ct) =>
@@ -692,6 +825,51 @@ public static class PitakoV1Endpoints
                     EstablishmentRole.Administrator,
                     http.Connection.RemoteIpAddress?.ToString(),
                     ct);
+
+                if (res.IsSuccess)
+                {
+                    var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+                    var smtpCfg = await emailSvc.GetSettingsAsync(ct);
+                    var webBase = emailSvc.ResolveWebBaseUrl(smtpCfg, http.Request);
+                    var slug = tenant?.Slug ?? "";
+                    var storeName = tenant?.TradeName ?? "Sua Loja";
+                    var adminUrl = $"{webBase}/login?loja={slug}";
+                    var menuUrl = $"{webBase}/loja/{slug}";
+                    var portalUrl = $"{webBase}/portal/{slug}";
+                    var msgBody =
+                        $"Olá {req.FullName}!\n\n" +
+                        $"Seja bem-vindo(a)! Seu painel administrativo e cardápio digital da loja {storeName} já estão prontos.\n\n" +
+                        $"Link de Acesso ao Painel Adm: {adminUrl}\n" +
+                        $"Portal da Loja: {portalUrl}\n" +
+                        $"Cardápio Digital dos Clientes: {menuUrl}\n\n" +
+                        $"Dados para entrar:\n" +
+                        $"- Slug da Loja: {slug}\n" +
+                        $"- E-mail: {req.Email}\n" +
+                        $"- Senha inicial: {req.Password}\n\n" +
+                        $"Caso esqueça sua senha, clique em \"Esqueci minha senha\" na tela de login informando o e-mail {req.Email}.";
+
+                    await emailSvc.SendAsync(
+                        req.Email,
+                        $"Acesso liberado ao Painel Adm — {storeName}",
+                        msgBody,
+                        kind: "StoreOnboarding",
+                        ct: ct);
+
+                    if (tenant?.CustomerAccountId.HasValue == true)
+                    {
+                        var cust = await customerRepo.FindByIdAsync(tenant.CustomerAccountId.Value, ct);
+                        if (cust is not null && !string.Equals(cust.BillingEmail, req.Email, StringComparison.OrdinalIgnoreCase))
+                        {
+                            await emailSvc.SendAsync(
+                                cust.BillingEmail,
+                                $"Acesso liberado ao Painel Adm — {storeName}",
+                                msgBody,
+                                kind: "StoreOnboardingCopy",
+                                ct: ct);
+                        }
+                    }
+                }
+
                 return ToHttp(res, StatusCodes.Status201Created);
             }
             finally
@@ -1092,6 +1270,8 @@ public static class PitakoV1Endpoints
             IStoreVisualIdentityRepository identityRepo,
             ITenantContextSetter setter,
             ShoppingCartService cartSvc,
+            ICouponRepository couponRepo,
+            IOrderRepository orderRepo,
             OrderManagementService orderSvc,
             CancellationToken ct) =>
         {
@@ -1128,6 +1308,39 @@ public static class PitakoV1Endpoints
                     var addCupRes = await cartSvc.AddCustomAcaiCupAsync(sessionKey, cup, false, ct);
                     if (addCupRes.IsFailure)
                         return ApiSecurityGuard.ProblemFromError(addCupRes.Error);
+                }
+            }
+
+            var activeCart = cartRes.Value;
+            if (!string.IsNullOrWhiteSpace(req.CouponCode) && string.IsNullOrWhiteSpace(activeCart.AppliedCouponCode))
+            {
+                var applyC = await cartSvc.ApplyCouponAsync(sessionKey, req.CouponCode, req.CustomerPhone ?? req.CustomerName, ct);
+                if (applyC.IsFailure)
+                    return ApiSecurityGuard.ProblemFromError(applyC.Error);
+                activeCart = applyC.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(activeCart.AppliedCouponCode))
+            {
+                var appliedCoupon = await couponRepo.FindByCodeAsync(activeCart.AppliedCouponCode, ct);
+                if (appliedCoupon is not null && appliedCoupon.IsFirstOrderOnly)
+                {
+                    var customerDigits = new string((req.CustomerPhone ?? string.Empty).Where(char.IsDigit).ToArray());
+                    var customerNameNorm = (req.CustomerName ?? string.Empty).Trim().ToLowerInvariant();
+                    var existingOrders = await orderRepo.ListRecentAllAsync(1000, ct);
+                    var hasPrevOrder = existingOrders.Any(o =>
+                        o.Status != OrderStatus.Cancelled &&
+                        ((!string.IsNullOrWhiteSpace(customerDigits) &&
+                          new string((o.CustomerPhone ?? string.Empty).Where(char.IsDigit).ToArray()) == customerDigits) ||
+                         (!string.IsNullOrWhiteSpace(customerNameNorm) &&
+                          (o.CustomerName ?? string.Empty).Trim().ToLowerInvariant() == customerNameNorm)));
+
+                    if (hasPrevOrder)
+                    {
+                        return ApiSecurityGuard.ProblemFromError(Error.Conflict(
+                            "Coupon.FirstOrderOnly",
+                            "O cupom aplicado é válido exclusivamente para o 1º pedido na loja."));
+                    }
                 }
             }
 
@@ -1201,7 +1414,9 @@ public static class PitakoV1Endpoints
                 return err;
 
             var categories = await categoryRepo.ListOrderedAsync(ct);
-            var products = await productRepo.ListAllOrderedAsync(ct);
+            var products = (await productRepo.ListAllOrderedAsync(ct))
+                .Where(p => p.Status != CatalogItemStatus.Archived)
+                .ToList();
             var groups = await groupRepo.ListAllAsync(ct);
             return Results.Ok(new
             {
@@ -1439,13 +1654,46 @@ public static class PitakoV1Endpoints
             return ToHttp(await svc.GetKanbanBoardAsync(user!, ct));
         });
 
-        v1.MapPost("/orders/{id:guid}/status", async (Guid id, TransitionOrderReq req, ApiSecurityGuard guard, OrderManagementService svc, HttpContext http, CancellationToken ct) =>
+        v1.MapPost("/orders/{id:guid}/status", async (
+            Guid id,
+            TransitionOrderReq req,
+            ApiSecurityGuard guard,
+            OrderManagementService svc,
+            ITenantRepository tenantRepo,
+            IWhatsAppChannelConfigRepository channelRepo,
+            IWhatsAppConversationRepository convRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
         {
             var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Orders, ct);
             if (err is not null)
                 return err;
 
-            return ToHttp(await svc.TransitionKanbanStatusAsync(user!, id, req.NextStatus, req.Reason ?? "Atualização operacional", ct));
+            var res = await svc.TransitionKanbanStatusAsync(user!, id, req.NextStatus, req.Reason ?? "Atualização operacional", ct);
+            if (res.IsSuccess)
+            {
+                var statusLabel = res.Value.Status switch
+                {
+                    OrderStatus.Accepted => "Pedido Aceito pela loja",
+                    OrderStatus.InPreparation => "Em Preparo na cozinha",
+                    OrderStatus.Ready => "Pronto para retirada/expedição",
+                    OrderStatus.Dispatched => "Saiu para Entrega",
+                    OrderStatus.Completed => "Concluído / Entregue",
+                    OrderStatus.Cancelled => $"Cancelado ({req.Reason ?? "motivo operacional"})",
+                    _ => res.Value.Status.ToString()
+                };
+                await PitakoStoreSuiteEndpoints.TryNotifyCustomerOrderUpdateAsync(
+                    user!.TenantId!.Value,
+                    res.Value,
+                    $"Atualização do seu pedido #{res.Value.OrderNumber}: {statusLabel}!",
+                    tenantRepo,
+                    channelRepo,
+                    convRepo,
+                    clock.UtcNow,
+                    ct);
+            }
+            return ToHttp(res);
         });
 
         v1.MapPost("/pdv/sessions/open", async (OpenPdvReq req, ApiSecurityGuard guard, PdvCashierService svc, HttpContext http, CancellationToken ct) =>
@@ -1542,7 +1790,7 @@ public static class PitakoV1Endpoints
 
             setter.SetTenant(tenant.Id, TenantResolutionSource.PublicStoreSlug);
             var callRes = await qrSvc.CallWaiterAsync(token, req.CallType, req.Notes, ct);
-            if (callRes.IsFailure && callRes.Error.Code == "Qr.SessionNotFound")
+            if (callRes.IsFailure && callRes.Error.Code is "QrSession.NotFound" or "QrSession.Inactive" or "QrSession.Expired" or "Tab.AlreadyClosed")
             {
                 var resumed = await qrSvc.StartOrResumeByQrTokenAsync(token, cancellationToken: ct);
                 if (resumed.IsSuccess)
@@ -1699,7 +1947,9 @@ public static class PitakoV1Endpoints
 
 public sealed record SaasLoginReq(string Email, string Password);
 public sealed record StoreLoginReq(string StoreSlug, string Email, string Password);
-public sealed record PasswordRecoveryReq(string Email, string? StoreSlug = null);
+public sealed record PasswordRecoveryReq(string Email, string? StoreSlug = null, string? WebBaseUrl = null);
+public sealed record CompletePasswordResetReq(string Token, string NewPassword);
+public sealed record SaveEmailSmtpReq(string Host, int Port, bool UseSsl, string Username, string? Password, string FromEmail, string FromName, string PublicWebBaseUrl);
 public sealed record CreateMasterPlanReq(string Code, string Name, decimal PriceAmount, string? Description = null, int TrialDays = 14, bool IsUnlimited = false, int? MaxEstablishments = null, int? MaxUnits = null, int? MaxMarketplaces = null, int? MaxUsers = null, int? MaxDevices = null, int? MaxSessions = null, int? MaxMonthlyOrders = null, IReadOnlyList<string>? EnabledModules = null, bool? IsActive = null);
 public sealed record CreateCustomerSubReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, Guid PlanId, bool StartWithTrial = false);
 public sealed record UpdateMasterCustomerReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, CustomerAccountStatus Status, Guid? PlanId = null);
@@ -1811,7 +2061,7 @@ internal static class MasterSegmentCatalogStore
 }
 public sealed record CreateStoreUserReq(string FullName, string Email, string Password, EstablishmentRole Role);
 public sealed record PublicCheckoutItemReq(Guid ProductId, int Quantity = 1, string? Notes = null, Guid? VariationId = null, IReadOnlyList<CatalogModifierSelection>? Modifiers = null);
-public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null, string? Neighborhood = null, string? ZipCode = null, double? DestinationLatitude = null, double? DestinationLongitude = null, decimal? PrecomputedDistanceKm = null, string? PaymentMethod = null, bool LgpdConsentAccepted = true, bool ClearCartAfterCheckout = true);
+public sealed record PublicCheckoutReq(string CustomerName, string? CustomerPhone, FulfillmentMode FulfillmentMode, string? DeliveryAddress = null, string? CartSessionKey = null, string? IdempotencyKey = null, IReadOnlyList<PublicCheckoutItemReq>? Items = null, IReadOnlyList<AcaiCupBuildRequest>? AcaiCups = null, string? Neighborhood = null, string? ZipCode = null, double? DestinationLatitude = null, double? DestinationLongitude = null, decimal? PrecomputedDistanceKm = null, string? PaymentMethod = null, bool LgpdConsentAccepted = true, bool ClearCartAfterCheckout = true, string? CouponCode = null);
 public sealed record CreateCategoryReq(string Name, string? Description = null, string? ImageUrl = null, int DisplayOrder = 0, string? SegmentTemplateCode = null, string? RuleNotes = null);
 public sealed record CreateProductReq(Guid CategoryId, string Name, decimal BasePrice, string? Description = null, string? Sku = null, ProductSaleMode SaleMode = ProductSaleMode.Unit, bool IsFeatured = false, int DisplayOrder = 0, bool IsNew = false, bool IsRecommended = false, ProductPricingStrategy PricingStrategy = ProductPricingStrategy.FixedPlusAddons, string? TagsCsv = null, int? PreparationMinutes = null, string? CustomTemplateKey = null, bool AllowsNotes = true);
 public sealed record CreateAcaiCupReq(string Name, int VolumeMl, decimal BasePrice, int FreeToppingsLimit, int MinFreeToppings = 0);
