@@ -50,9 +50,11 @@ public sealed class SegmentCatalogTemplateService
         if (!actor.HasPermission(SystemModules.Catalog, PermissionAction.Create))
             return Result.Failure<AppliedSegmentTemplateSummary>(Error.Forbidden("Catalog.Forbidden", "Permissão insuficiente para aplicar modelos."));
 
-        var code = (segmentCode ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(code))
+        var rawCode = (segmentCode ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(rawCode))
             return Result.Failure<AppliedSegmentTemplateSummary>(Error.Validation("Catalog.SegmentRequired", "Segmento é obrigatório."));
+
+        var code = NormalizeSegmentKey(rawCode);
 
         return code switch
         {
@@ -67,6 +69,18 @@ public sealed class SegmentCatalogTemplateService
             "restaurante" or "lanchonete" => await ApplyRestauranteLanchoneteAsync(tenantId, code, cancellationToken),
             _ => await ApplyGenericFoodAsync(tenantId, code, cancellationToken)
         };
+    }
+
+    private static string NormalizeSegmentKey(string raw)
+    {
+        var s = raw.Replace("ç", "c").Replace("á", "a").Replace("à", "a").Replace("ã", "a").Replace("â", "a")
+            .Replace("é", "e").Replace("ê", "e").Replace("í", "i").Replace("ó", "o").Replace("ô", "o").Replace("õ", "o").Replace("ú", "u");
+        if (s.Contains("acai")) return "acaiteria";
+        if (s.Contains("pizza")) return "pizzaria";
+        if (s.Contains("hamburg") || s.Contains("burger")) return "hamburgueria";
+        if (s.Contains("pastel")) return "pastelaria";
+        if (s.Contains("sorvet") || s.Contains("gelat")) return "sorveteria";
+        return s;
     }
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyAcaiteriaAsync(Guid tenantId, CancellationToken ct)

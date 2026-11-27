@@ -1,5 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using Pitako.Modules.AcaiBuilder.Application.Abstractions;
+using Pitako.Modules.AcaiBuilder.Application.Services;
+using Pitako.Modules.AcaiBuilder.Domain;
 using Pitako.Modules.Catalog.Application.Abstractions;
 using Pitako.Modules.Catalog.Application.Services;
 using Pitako.Modules.Catalog.Domain;
@@ -39,9 +42,13 @@ public sealed class StoreStarterProvisioner(
     ITenantContextSetter tenantSetter,
     StoreBrandingService brandingService,
     SegmentCatalogTemplateService segmentTemplateService,
+    CatalogManagementService catalogService,
     ICategoryRepository categoryRepo,
     IProductRepository productRepo,
     IComboRepository comboRepo,
+    IPromotionRepository promotionRepo,
+    IAcaiCupSizeRepository acaiCupRepo,
+    AcaiBuilderManagementService acaiService,
     ISupplyItemRepository supplyRepo,
     ITechnicalSheetRepository sheetRepo,
     SuppliesAndTechnicalSheetService inventoryService,
@@ -89,23 +96,34 @@ public sealed class StoreStarterProvisioner(
             EstablishmentRole.Administrator).Value;
 
         var kit = ResolveKit(tenant.SegmentCode);
+        var normalizedSeg = NormalizeSegmentKey(tenant.SegmentCode);
+        var isAcai = normalizedSeg == "acaiteria";
 
         // 1. Visual Identity & Horários publicados com logotipo SVG monograma whitelabel (zero PITAKO)
         var monogramLogo = BuildDefaultMonogramLogoDataUrl(tenant.TradeName, kit.PrimaryColor, kit.AccentColor);
         var defaultHours = JsonSerializer.Serialize(
             Enumerable.Range(0, 7).Select(d => new StoreOperatingHoursEntry(d, true, "08:00", "22:00")));
 
+        var defaultBanners = isAcai
+            ? new[]
+              {
+                  new StoreBannerSnapshot("Linha Explosão Premium", "/store-assets/acai/pistache.jpg", "#explosao-premium", 1),
+                  new StoreBannerSnapshot("Monte do Seu Jeito 300ml a 1L", "/store-assets/acai/monte-seu-jeito.jpg", "#monte-seu-acai", 2),
+                  new StoreBannerSnapshot("Açaí na Garrafa 300ml", "/store-assets/acai/garrafa-morango.jpg", "#acai-na-garrafa", 3)
+              }
+            : [new StoreBannerSnapshot($"Promoção Especial — {tenant.TradeName}", monogramLogo, "#combos", 1)];
+
         await brandingService.UpdateDraftAsync(actor, tenant.Id, new UpdateStoreBrandingDraftCommand(
             monogramLogo,
-            null,
+            isAcai ? "/store-assets/tropical-cover.svg" : null,
             kit.DefaultSlogan,
             kit.PrimaryColor,
             kit.SecondaryColor,
             kit.AccentColor,
             "showcase",
-            [new StoreBannerSnapshot($"Promoção Especial — {tenant.TradeName}", monogramLogo, "#combos", 1)],
+            defaultBanners,
             defaultHours,
-            "Peça direto no nosso cardápio digital com descontos exclusivos.",
+            isAcai ? "Açaí cremoso, frutas frescas selecionadas e entrega rápida!" : "Peça direto no nosso cardápio digital com descontos exclusivos.",
             tenant.ContactPhone ?? "16999000000",
             $"@{tenant.Slug}"), ct);
 
@@ -115,9 +133,42 @@ public sealed class StoreStarterProvisioner(
         var existingCategories = await categoryRepo.ListOrderedAsync(ct);
         if (existingCategories.Count == 0)
         {
-            await segmentTemplateService.ApplyTemplateAsync(actor, tenant.SegmentCode, ct);
+            await segmentTemplateService.ApplyTemplateAsync(actor, normalizedSeg, ct);
         }
-        await ImportSpreadsheetKitAsync(actor, tenant.SegmentCode, ct);
+        await ImportSpreadsheetKitAsync(actor, normalizedSeg, ct);
+
+        if (isAcai)
+        {
+            var allCats = await categoryRepo.ListOrderedAsync(ct);
+            var catFamilia = allCats.FirstOrDefault(c => c.Name.Equals("Explosão Família (Potes)", StringComparison.OrdinalIgnoreCase));
+            var curProds = await productRepo.ListAllOrderedAsync(ct);
+            if (catFamilia is not null && !curProds.Any(p => p.Name.Equals("Açaí Self-Service por Quilo", StringComparison.OrdinalIgnoreCase)))
+            {
+                var pKg = await catalogService.CreateProductAsync(actor, catFamilia.Id, "Açaí Self-Service por Quilo", 64.90m, "Pesagem na balança do balcão (preço por kg).", "ACAI-KG", ProductSaleMode.Weight, false, 99, ct);
+                if (pKg.IsSuccess)
+                {
+                    await catalogService.AddProductImageAsync(actor, pKg.Value.Id, "/store-assets/acai/puro-100.jpg", 0, true, ct);
+                }
+            }
+
+            if ((await promotionRepo.ListActiveCandidatesAsync(ct)).Count == 0)
+            {
+                var allProdsForPromo = await productRepo.ListAllOrderedAsync(ct);
+                var promoTargets = allProdsForPromo
+                    .Where(p => p.Name.Equals("Clássico", StringComparison.OrdinalIgnoreCase) || p.Name.Equals("Mousse de Morango", StringComparison.OrdinalIgnoreCase))
+                    .Select(p => (PromotionTargetType.Product, p.Id))
+                    .ToList();
+                if (promoTargets.Count > 0)
+                {
+                    await catalogService.CreatePromotionAsync(actor, "Ofertas Especiais Açaí", PromotionDiscountType.FixedAmount, 2.00m, clock.UtcNow.AddDays(-1), clock.UtcNow.AddYears(2), promoTargets, true, ct);
+                }
+            }
+
+            if ((await acaiCupRepo.ListAsync(true, ct)).Count == 0)
+            {
+                await PitakoDevDemoSeeder.SeedAcaiBuilderDefaultsAsync(acaiService, actor, ct);
+            }
+        }
 
         // Garantir foto visual padrão de segmento em todos os produtos gerados pelo template universal também
         var allTenantProducts = await productRepo.ListAllOrderedAsync(ct);
@@ -126,7 +177,7 @@ public sealed class StoreStarterProvisioner(
         {
             if (p.Images.Count == 0)
             {
-                p.AddImage(BuildSegmentProductArtPath(tenant.SegmentCode, p.Name), 0, true);
+                p.AddImage(BuildSegmentProductArtPath(normalizedSeg, p.Name), 0, true);
                 updatedImg = true;
             }
         }
@@ -340,7 +391,23 @@ public sealed class StoreStarterProvisioner(
 
     public static string BuildSegmentProductArtPath(string? segmentCode, string productName)
     {
-        var seg = string.IsNullOrWhiteSpace(segmentCode) ? "outros" : segmentCode.Trim().ToLowerInvariant();
+        var seg = NormalizeSegmentKey(segmentCode);
+        if (seg == "acaiteria")
+        {
+            var lk = (productName ?? "").ToLowerInvariant();
+            if (lk.Contains("garrafa") && lk.Contains("morango")) return "/store-assets/acai/garrafa-morango.jpg";
+            if (lk.Contains("garrafa") && lk.Contains("maracuj")) return "/store-assets/acai/garrafa-maracuja.jpg";
+            if (lk.Contains("garrafa") && lk.Contains("pa")) return "/store-assets/acai/garrafa-pacoca.jpg";
+            if (lk.Contains("garrafa")) return "/store-assets/acai/garrafa-tradicional.jpg";
+            if (lk.Contains("mousse") && lk.Contains("morango")) return "/store-assets/acai/mousse-morango.jpg";
+            if (lk.Contains("mousse") && lk.Contains("maracuj")) return "/store-assets/acai/mousse-maracuja.jpg";
+            if (lk.Contains("mousse") && lk.Contains("pa")) return "/store-assets/acai/mousse-pacoca.jpg";
+            if (lk.Contains("mousse")) return "/store-assets/acai/mousse-tradicional.png";
+            if (lk.Contains("pistache")) return "/store-assets/acai/pistache.jpg";
+            if (lk.Contains("nutella")) return "/store-assets/acai/nutella.jpg";
+            if (lk.Contains("oreo")) return "/store-assets/acai/oreo-supreme.jpg";
+            return "/store-assets/acai/monte-seu-jeito.jpg";
+        }
         var slugPart = string.Concat(productName.Trim().ToLowerInvariant()
             .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-'))
             .Trim('-');
@@ -363,9 +430,23 @@ public sealed class StoreStarterProvisioner(
         return $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(svg))}";
     }
 
+    public static string NormalizeSegmentKey(string? segmentCode)
+    {
+        var raw = (segmentCode ?? "outros").Trim().ToLowerInvariant()
+            .Replace("ç", "c").Replace("á", "a").Replace("à", "a").Replace("ã", "a").Replace("â", "a")
+            .Replace("é", "e").Replace("ê", "e").Replace("í", "i").Replace("ó", "o").Replace("ô", "o").Replace("õ", "o").Replace("ú", "u");
+        if (string.IsNullOrWhiteSpace(raw)) return "outros";
+        if (raw.Contains("acai")) return "acaiteria";
+        if (raw.Contains("pizza")) return "pizzaria";
+        if (raw.Contains("hamburg") || raw.Contains("burger")) return "hamburgueria";
+        if (raw.Contains("pastel")) return "pastelaria";
+        if (raw.Contains("sorvet") || raw.Contains("gelat")) return "sorveteria";
+        return raw;
+    }
+
     private static SegmentWorkbookKit ResolveKit(string? segmentCode)
     {
-        var code = (segmentCode ?? "").Trim().ToLowerInvariant();
+        var code = NormalizeSegmentKey(segmentCode);
         return code switch
         {
             "pizzaria" => PizzariaKit(),

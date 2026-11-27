@@ -307,7 +307,7 @@ public static class PitakoDevDemoSeeder
         await waService.ConfigureChannelAsync(storeAdmin, tenantRes.Value.Tenant.TradeName, "5516991098863", "wa-acai-demo", "waba-acai-demo", "wa-cloud-demo", "wa-secret-demo", "verify-acai-demo", WhatsAppAutoReplyMode.HybridBotThenAi, "/loja/acai-demo", null, ct);
     }
 
-    private static async Task SeedAcaiBuilderDefaultsAsync(
+    public static async Task SeedAcaiBuilderDefaultsAsync(
         AcaiBuilderManagementService acaiService,
         User storeAdmin,
         CancellationToken ct)
@@ -338,17 +338,31 @@ public static class PitakoDevDemoSeeder
     private static async Task UpgradeLegacyAcaiDemoIfNeededAsync(IServiceProvider sp, CancellationToken ct)
     {
         var tenantRepo = sp.GetRequiredService<ITenantRepository>();
-        var tenant = await tenantRepo.FindBySlugAsync("acai-demo", ct);
-        if (tenant is null) return;
+        var allTenants = await tenantRepo.ListAllAsync(ct);
+        var acaiTenants = allTenants
+            .Where(t => StoreStarterProvisioner.NormalizeSegmentKey(t.SegmentCode) == "acaiteria")
+            .ToList();
+        if (acaiTenants.Count == 0) return;
 
+        foreach (var tenant in acaiTenants)
+        {
+            await UpgradeSingleAcaiTenantIfNeededAsync(sp, tenant, ct);
+        }
+    }
+
+    private static async Task UpgradeSingleAcaiTenantIfNeededAsync(IServiceProvider sp, Tenant tenant, CancellationToken ct)
+    {
         var setter = sp.GetRequiredService<ITenantContextSetter>();
         setter.SetTenant(tenant.Id, TenantResolutionSource.BackgroundJob);
 
         var catRepo = sp.GetRequiredService<ICategoryRepository>();
         var existingCats = await catRepo.ListOrderedAsync(ct);
-        var userRepo = sp.GetRequiredService<IUserRepository>();
-        var storeAdmin = await userRepo.FindByEmailAsync(UserScope.Establishment, tenant.Id, "ADMIN@TROPICALEXPRESS.COM.BR", ct);
-        if (storeAdmin is null) return;
+        var storeAdmin = User.CreateEstablishmentUser(
+            tenant.Id,
+            $"Gestor {tenant.TradeName}",
+            tenant.ContactEmail ?? $"admin@{tenant.Slug}.local",
+            "AutoProvision!2026",
+            EstablishmentRole.Administrator).Value;
 
         var catalogService = sp.GetRequiredService<CatalogManagementService>();
         var prodRepo = sp.GetRequiredService<IProductRepository>();
@@ -433,30 +447,66 @@ public static class PitakoDevDemoSeeder
         await sp.GetRequiredService<StoreStarterProvisioner>().ImportSpreadsheetKitAsync(storeAdmin, "acaiteria", ct);
 
         var brandingService = sp.GetRequiredService<StoreBrandingService>();
-        var hours = System.Text.Json.JsonSerializer.Serialize(
-            Enumerable.Range(0, 7).Select(d => new StoreOperatingHoursEntry(d, true, "08:00", "23:00")));
-        await brandingService.UpdateDraftAsync(
-            storeAdmin,
-            tenant.Id,
-            new UpdateStoreBrandingDraftCommand(
-                "/store-assets/tropical-logo.svg",
-                "/store-assets/tropical-cover.svg",
-                "Mais que açaí, é puro sabor! Monte do seu jeito e receba super gelado.",
-                "#4C1D95",
-                "#FAF5FF",
-                "#F59E0B",
-                "showcase",
-                [
-                    new StoreBannerSnapshot("Linha Explosão Premium", "/store-assets/acai/pistache.jpg", "#explosao-premium", 1),
-                    new StoreBannerSnapshot("Monte do Seu Jeito 300ml a 1L", "/store-assets/acai/monte-seu-jeito.jpg", "#monte-seu-acai", 2),
-                    new StoreBannerSnapshot("Açaí na Garrafa 300ml", "/store-assets/acai/garrafa-morango.jpg", "#acai-na-garrafa", 3)
-                ],
-                hours,
-                "Açaí cremoso, frutas frescas selecionadas e entrega rápida!",
-                "16991098863",
-                "@acaitropicalexpress"),
-            ct);
-        await brandingService.PublishBrandingAsync(storeAdmin, tenant.Id, ct);
+        var defaultAcaiBanners = new[]
+        {
+            new StoreBannerSnapshot("Linha Explosão Premium", "/store-assets/acai/pistache.jpg", "#explosao-premium", 1),
+            new StoreBannerSnapshot("Monte do Seu Jeito 300ml a 1L", "/store-assets/acai/monte-seu-jeito.jpg", "#monte-seu-acai", 2),
+            new StoreBannerSnapshot("Açaí na Garrafa 300ml", "/store-assets/acai/garrafa-morango.jpg", "#acai-na-garrafa", 3)
+        };
+
+        if (tenant.Slug.Equals("acai-demo", StringComparison.OrdinalIgnoreCase))
+        {
+            var hours = System.Text.Json.JsonSerializer.Serialize(
+                Enumerable.Range(0, 7).Select(d => new StoreOperatingHoursEntry(d, true, "08:00", "23:00")));
+            await brandingService.UpdateDraftAsync(
+                storeAdmin,
+                tenant.Id,
+                new UpdateStoreBrandingDraftCommand(
+                    "/store-assets/tropical-logo.svg",
+                    "/store-assets/tropical-cover.svg",
+                    "Mais que açaí, é puro sabor! Monte do seu jeito e receba super gelado.",
+                    "#4C1D95",
+                    "#FAF5FF",
+                    "#F59E0B",
+                    "showcase",
+                    defaultAcaiBanners,
+                    hours,
+                    "Açaí cremoso, frutas frescas selecionadas e entrega rápida!",
+                    "16991098863",
+                    "@acaitropicalexpress"),
+                ct);
+            await brandingService.PublishBrandingAsync(storeAdmin, tenant.Id, ct);
+        }
+        else
+        {
+            var draftRes = await brandingService.GetDraftPreviewAsync(storeAdmin, tenant.Id, ct);
+            if (draftRes.IsSuccess)
+            {
+                var cur = draftRes.Value;
+                var curBanners = cur.Banners;
+                if (!curBanners.Any() || !curBanners.Any(b => b.ImageUrl.Contains("/store-assets/acai/", StringComparison.OrdinalIgnoreCase)))
+                {
+                    await brandingService.UpdateDraftAsync(
+                        storeAdmin,
+                        tenant.Id,
+                        new UpdateStoreBrandingDraftCommand(
+                            cur.LogoUrl,
+                            cur.CoverImageUrl,
+                            cur.Slogan,
+                            cur.PrimaryColorHex,
+                            cur.SecondaryColorHex,
+                            cur.AccentColorHex,
+                            "showcase",
+                            defaultAcaiBanners,
+                            cur.OperatingHoursJson,
+                            cur.AnnouncementText,
+                            cur.WhatsAppNumber,
+                            cur.InstagramHandle),
+                        ct);
+                    await brandingService.PublishBrandingAsync(storeAdmin, tenant.Id, ct);
+                }
+            }
+        }
 
         var promoRepo = sp.GetRequiredService<IPromotionRepository>();
         if ((await promoRepo.ListActiveCandidatesAsync(ct)).Count == 0)
@@ -475,9 +525,13 @@ public static class PitakoDevDemoSeeder
 
         var cupRepo = sp.GetRequiredService<IAcaiCupSizeRepository>();
         var cups = await cupRepo.ListAsync(true, ct);
-        if (cups.All(c => c.VolumeMl != 700))
+        var acaiService = sp.GetRequiredService<AcaiBuilderManagementService>();
+        if (cups.Count == 0)
         {
-            var acaiService = sp.GetRequiredService<AcaiBuilderManagementService>();
+            await SeedAcaiBuilderDefaultsAsync(acaiService, storeAdmin, ct);
+        }
+        else if (cups.All(c => c.VolumeMl != 700))
+        {
             await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 700 ml", 700, 26.90m, 5, 0, AcaiFreeCountingMode.ByPortion, 10, null, "CUP-700", 3, ct, "460g de açaí • até 5 acompanhamentos grátis", 12.50m, true, true);
         }
     }
