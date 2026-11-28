@@ -81,7 +81,7 @@ const PANELS = [
 export default function HomePage() {
   return (
     <PitakoBrandShell
-      title="Portal Unificado — PITAKO SaaS"
+      title="Portal Unificado · PITAKO SaaS"
       subtitle="Monólito Modular multi-tenant em .NET 8 + PostgreSQL RLS + Next.js. Identidade visual PITAKO restrita à plataforma; estabelecimentos clientes operam 100% com marca própria."
     >
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">

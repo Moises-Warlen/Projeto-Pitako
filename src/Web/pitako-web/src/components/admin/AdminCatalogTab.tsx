@@ -1292,6 +1292,9 @@ export function AdminCatalogTab({
         slogan={slogan}
         primaryColorHex={primaryColorHex}
         accentColorHex={accentColorHex}
+        storeAddress={storeAddress}
+        whatsAppNumber={whatsAppNumber}
+        instagramHandle={instagramHandle}
         categories={categories}
         products={products}
         onClose={() => setFlyerOpen(false)}

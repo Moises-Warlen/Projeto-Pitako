@@ -308,7 +308,7 @@ export default function DiningHallPage() {
             {waiterCalls.map((wc) => (
               <div key={wc.id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
                 <div>
-                  <p className="font-extrabold text-slate-900">Mesa {wc.tableCode} — {wc.callType}</p>
+                  <p className="font-extrabold text-slate-900">Mesa {wc.tableCode} · {wc.callType}</p>
                   {wc.customerNotes && <p className="text-slate-500">{wc.customerNotes}</p>}
                 </div>
                 <div className="flex gap-1">
@@ -394,7 +394,7 @@ export default function DiningHallPage() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                 <div>
                   <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-                    <UtensilsCrossed className="h-4 w-4" /> Comanda {activeTab.tabCode} — {activeTab.customerName}
+                    <UtensilsCrossed className="h-4 w-4" /> Comanda {activeTab.tabCode} · {activeTab.customerName}
                   </h2>
                   <p className="text-xs text-slate-500">
                     Subtotal: R$ {activeTab.itemsSubtotal.toFixed(2)} · Serviço ({activeTab.serviceChargePercent}%): R$ {activeTab.serviceChargeAmount.toFixed(2)} · Total:{" "}
@@ -516,7 +516,7 @@ export default function DiningHallPage() {
       {qrPreviewTable && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
-            <h3 className="text-lg font-extrabold text-slate-900">QR Code — Mesa {qrPreviewTable.tableCode}</h3>
+            <h3 className="text-lg font-extrabold text-slate-900">QR Code · Mesa {qrPreviewTable.tableCode}</h3>
             <p className="mt-1 text-xs text-slate-500">O cliente escaneia para ver a conta, pedir itens ou chamar o garçom.</p>
             <div className="my-5 flex justify-center">
               <QrCodeMatrix value={`${originUrl}/mesa/${slug}/${qrPreviewTable.qrCodeToken}`} size={200} alt={`QR Mesa ${qrPreviewTable.tableCode}`} />

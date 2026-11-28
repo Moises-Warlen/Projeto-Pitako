@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PITAKO SaaS — Plataforma Multi-Tenant",
+  title: "PITAKO SaaS · Plataforma Multi-Tenant",
   description: "Gestão SaaS para food service, PDV, cardápio whitelabel, açaíteria, balança, marketplaces, salão e financeiro."
 };
 

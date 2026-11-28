@@ -669,7 +669,7 @@ export function AdminWhatsAppBotPanel({
               <div className="space-y-2">
                 <QrCode className="mx-auto h-12 w-12 text-slate-400" />
                 <p className="text-xs font-semibold text-slate-600">
-                  Canal desconectado — clique em <strong>Conectar via QR Code</strong> ou salve o número abaixo.
+                  Canal desconectado. Clique em <strong>Conectar via QR Code</strong> ou salve o número abaixo.
                 </p>
               </div>
             )}
@@ -735,7 +735,7 @@ export function AdminWhatsAppBotPanel({
 
           <div className="mt-3">
             <label className="text-[11px] font-bold text-slate-600">
-              Chave API Google Gemini (Opcional — motor local já ativo) {data?.geminiApiKeyMasked && `• Atual: ${data.geminiApiKeyMasked}`}
+              Chave API Google Gemini (Opcional, motor local já ativo) {data?.geminiApiKeyMasked && `• Atual: ${data.geminiApiKeyMasked}`}
             </label>
             <div className="mt-1 flex gap-2">
               <input

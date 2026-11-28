@@ -657,7 +657,7 @@ public static partial class PitakoStoreSuiteEndpoints
         await convRepo.SaveChangesAsync(ct);
     }
 
-    private static async Task<Result<(string MediaId, string ContentType)>> StoreUploadedImageAsync(
+    internal static async Task<Result<(string MediaId, string ContentType)>> StoreUploadedImageAsync(
         IGlobalSettingRepository settingRepo,
         Guid tenantId,
         string base64DataUrl,

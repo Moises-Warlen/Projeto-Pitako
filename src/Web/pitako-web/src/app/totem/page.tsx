@@ -72,7 +72,7 @@ export default function SelfServiceTotemPage() {
     ]);
 
     if (storeRes.ok && storeRes.data) {
-      if (typeof document !== "undefined") document.title = `${storeRes.data.tradeName} — Totem`;
+      if (typeof document !== "undefined") document.title = `${storeRes.data.tradeName} | Totem`;
       setTheme({
         tradeName: storeRes.data.tradeName,
         formattedCnpj: storeRes.data.formattedCnpj,

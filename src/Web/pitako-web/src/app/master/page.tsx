@@ -843,7 +843,7 @@ export default function MasterPanelPage() {
 
   return (
     <PitakoBrandShell
-      title="Painel Master PITAKO — Lojas, Modalidades, Clientes e Planos"
+      title="Painel Master PITAKO · Lojas, Modalidades, Clientes e Planos"
       subtitle="Gerencie criação, edição e exclusão completa de Lojas, Modalidades, Clientes/Donos e Planos/Módulos."
     >
       {indicators && (

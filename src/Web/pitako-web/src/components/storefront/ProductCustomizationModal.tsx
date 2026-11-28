@@ -308,9 +308,15 @@ export function ProductCustomizationModal({
     <div role="dialog" aria-modal="true" aria-label={product.name} className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
         {/* Topo com imagem e badges */}
-        <div className="relative flex items-start gap-4 border-b border-slate-100 p-4 sm:p-5">
-          <ProductMediaFrame src={product.primaryImageUrl} alt={product.name} className="h-24 w-24 shrink-0 rounded-2xl" iconSize={30} />
-          <div className="min-w-0 flex-1 pr-8">
+        <div className="relative flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-start sm:p-5">
+          <ProductMediaFrame
+            src={product.primaryImageUrl}
+            alt={product.name}
+            fit="contain"
+            className="h-36 w-full shrink-0 rounded-2xl sm:h-32 sm:w-32 md:h-36 md:w-36"
+            iconSize={34}
+          />
+          <div className="min-w-0 flex-1 sm:pr-12">
             <div className="flex flex-wrap items-center gap-1.5">
               {product.isFeatured && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
@@ -372,6 +378,32 @@ export function ProductCustomizationModal({
 
         {/* Corpo rolável */}
         <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
+          {/* Informações completas de composição, rendimento e opções (apenas campos preenchidos) */}
+          {((product.ingredients && product.ingredients.length > 0) ||
+            product.yieldLabel ||
+            attachedGroups.length > 0) && (
+            <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 text-xs space-y-2">
+              {product.ingredients && product.ingredients.length > 0 && (
+                <div>
+                  <span className="font-extrabold text-slate-800">Ingredientes / Composição: </span>
+                  <span className="text-slate-600">{product.ingredients.join(", ")}</span>
+                </div>
+              )}
+              {product.yieldLabel && (
+                <div>
+                  <span className="font-extrabold text-slate-800">Peso / Rendimento: </span>
+                  <span className="text-slate-600">{product.yieldLabel}</span>
+                </div>
+              )}
+              {attachedGroups.length > 0 && (
+                <div>
+                  <span className="font-extrabold text-slate-800">Grupos de Acompanhamentos / Opções: </span>
+                  <span className="text-slate-600">{attachedGroups.map((g) => g.name).join(" · ")}</span>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Variações / Tamanhos */}
           {product.variations.length > 0 && (
             <section>
@@ -585,7 +617,7 @@ export function ProductCustomizationModal({
                     <option value="">+ Selecionar fruta para o copo...</option>
                     {group.options.map((opt) => (
                       <option key={opt.id} value={opt.id} disabled={!opt.isAvailable}>
-                        {opt.name} — + {formatBrl(opt.additionalPrice)} {!opt.isAvailable ? "(Indisponível)" : ""}
+                        {opt.name} (+ {formatBrl(opt.additionalPrice)}) {!opt.isAvailable ? "(Indisponível)" : ""}
                       </option>
                     ))}
                   </select>

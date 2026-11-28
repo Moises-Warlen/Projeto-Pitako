@@ -25,7 +25,7 @@ interface QrSummaryDto {
 
 export default function QrTableSelfServicePage({ params }: { params: { slug: string; token: string } }) {
   const [theme, setTheme] = useState<StoreBrandTheme>({
-    tradeName: `Mesa — ${params.slug}`,
+    tradeName: `Mesa · ${params.slug}`,
     primaryColorHex: "#4C1D95",
     secondaryColorHex: "#FAF5FF",
     accentColorHex: "#F59E0B"
@@ -50,7 +50,7 @@ export default function QrTableSelfServicePage({ params }: { params: { slug: str
     ]);
 
     if (storeRes.ok && storeRes.data) {
-      if (typeof document !== "undefined") document.title = `${storeRes.data.tradeName} — Autoatendimento na Mesa`;
+      if (typeof document !== "undefined") document.title = `${storeRes.data.tradeName} | Autoatendimento na Mesa`;
       setTheme({
         tradeName: storeRes.data.tradeName,
         formattedCnpj: storeRes.data.formattedCnpj,

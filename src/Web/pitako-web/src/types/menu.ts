@@ -91,6 +91,8 @@ export interface MenuProduct {
   isRecommended: boolean;
   allowsNotes: boolean;
   preparationMinutes?: number | null;
+  ingredients?: string[];
+  yieldLabel?: string | null;
   trackInventory?: boolean;
   stockQuantity?: number;
   autoPauseOnZeroStock?: boolean;

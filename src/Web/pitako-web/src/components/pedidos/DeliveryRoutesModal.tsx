@@ -465,7 +465,7 @@ export function DeliveryRoutesModal({
                   className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white px-2 py-1 text-[10px] font-bold shadow-md transition ${
                     isSelected ? "bg-amber-500 text-slate-950" : "bg-slate-600 text-white opacity-60"
                   }`}
-                  title={`${order.orderNumber} — ${order.customerName} (${order.deliveryAddressSummary})`}
+                  title={`${order.orderNumber} · ${order.customerName} (${order.deliveryAddressSummary})`}
                 >
                   #{idx + 1} · {order.orderNumber.slice(-4)}
                 </button>
@@ -612,7 +612,7 @@ export function DeliveryRoutesModal({
                       <ol className="mt-1.5 space-y-1 text-[11px] text-slate-300">
                         {route.stops.map((s) => (
                           <li key={s.sequence}>
-                            {s.sequence}. {s.orderNumber} — {s.customerName} ({s.address})
+                            {s.sequence}. {s.orderNumber} · {s.customerName} ({s.address})
                           </li>
                         ))}
                       </ol>
@@ -680,7 +680,7 @@ export function DeliveryRoutesModal({
                             return (
                               <li key={st.id} className="flex items-center justify-between gap-2 rounded bg-white/5 px-2 py-1 text-[11px]">
                                 <span className={delivered ? "text-emerald-300 line-through" : "text-slate-200"}>
-                                  {st.stopSequence}. {st.orderNumber} — {st.customerName} ({st.destinationAddress})
+                                  {st.stopSequence}. {st.orderNumber} · {st.customerName} ({st.destinationAddress})
                                 </span>
                                 {delivered ? (
                                   <span className="shrink-0 font-bold text-emerald-400">Entregue ✓</span>

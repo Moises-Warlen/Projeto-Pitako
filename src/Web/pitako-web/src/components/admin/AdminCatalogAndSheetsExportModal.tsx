@@ -239,7 +239,7 @@ export function AdminCatalogAndSheetsExportModal({
     return new Map<string, string>(entries);
   }
 
-  function openPrintWindow(title: string, bodyHtml: string) {
+  function openPrintWindow(title: string, bodyHtml: string, watermarkLogoUrl?: string) {
     const popup = window.open("", "_blank", "width=1024,height=760");
     if (!popup) {
       onNotify("Permita pop-ups no navegador para gerar o PDF.");
@@ -253,21 +253,23 @@ export function AdminCatalogAndSheetsExportModal({
   <style>
     @page { size: A4; margin: 12mm; }
     * { box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; font-size: 11px; line-height: 1.4; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; font-size: 11px; line-height: 1.4; position: relative; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 320px; max-height: 240px; object-fit: contain; opacity: 0.055; pointer-events: none; z-index: 0; }
+    .content-layer { position: relative; z-index: 1; padding: 4px 8px; }
     .header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: 12px; background: ${primaryColorHex || "#1e293b"}; color: #fff; margin-bottom: 16px; }
     .header-left { display: flex; align-items: center; gap: 12px; }
-    .logo { width: 52px; height: 52px; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,0.12); padding: 4px; }
-    .card { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; margin-bottom: 14px; break-inside: avoid; page-break-inside: avoid; background: #ffffff; }
+    .logo { max-width: 110px; max-height: 54px; width: auto; height: auto; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,0.92); padding: 4px; }
+    .card { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; margin-bottom: 14px; break-inside: avoid; page-break-inside: avoid; background: rgba(255,255,255,0.94); }
     .page-break { page-break-after: always; break-after: page; }
     .prod-top { display: flex; gap: 12px; align-items: flex-start; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 8px; }
-    .photo { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1; flex-shrink: 0; }
-    .no-photo { width: 72px; height: 72px; border-radius: 8px; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px; flex-shrink: 0; text-align: center; }
+    .photo { width: 84px; height: 84px; object-fit: contain; background: #ffffff; padding: 3px; border-radius: 8px; border: 1px solid #cbd5e1; flex-shrink: 0; }
+    .no-photo { width: 84px; height: 84px; border-radius: 8px; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px; flex-shrink: 0; text-align: center; }
     .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9px; font-weight: bold; margin-right: 4px; }
     .badge-ok { background: #dcfce7; color: #166534; }
     .badge-warn { background: #fef3c7; color: #92400e; }
     .badge-err { background: #ffe4e6; color: #9f1239; }
     .badge-cat { background: #ede9fe; color: #5b21b6; }
-    table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; background: rgba(255,255,255,0.94); }
     th, td { border: 1px solid #e2e8f0; padding: 4px 6px; text-align: left; }
     th { background: #f8fafc; font-weight: bold; color: #475569; }
     .cat-banner { background: #f1f5f9; border-left: 5px solid ${accentColorHex || "#f59e0b"}; padding: 8px 12px; margin: 16px 0 10px; font-size: 14px; font-weight: bold; break-after: avoid; }
@@ -277,11 +279,12 @@ export function AdminCatalogAndSheetsExportModal({
   </style>
 </head>
 <body>
+  ${watermarkLogoUrl ? `<img src="${escHtml(watermarkLogoUrl)}" class="watermark" alt="" />` : ""}
   <div class="print-bar">
-    <span><strong>${escHtml(title)}</strong> — Use &quot;Salvar como PDF&quot; ou sua impressora</span>
+    <span><strong>${escHtml(title)}</strong> · Use &quot;Salvar como PDF&quot; ou sua impressora</span>
     <button onclick="window.print()" style="background:#f59e0b;color:#0f172a;border:none;padding:6px 14px;border-radius:8px;font-weight:bold;cursor:pointer;">Imprimir / Salvar PDF</button>
   </div>
-  <div style="padding: 4px 8px;">${bodyHtml}</div>
+  <div class="content-layer">${bodyHtml}</div>
   <script>setTimeout(function(){ window.print(); }, 450);</script>
 </body>
 </html>`);
@@ -309,7 +312,7 @@ export function AdminCatalogAndSheetsExportModal({
   <div class="header-left">
     ${resolvedLogo ? `<img src="${escHtml(resolvedLogo)}" class="logo" />` : ""}
     <div>
-      <div style="font-size:17px;font-weight:bold;">${escHtml(storeTradeName)} — Ficha Técnica Completa</div>
+      <div style="font-size:17px;font-weight:bold;">${escHtml(storeTradeName)} · Ficha Técnica Completa</div>
       <div style="font-size:11px;opacity:0.9;">${formattedCnpj ? `CNPJ ${escHtml(formattedCnpj)} • ` : ""}Gerado em ${new Date().toLocaleString("pt-BR")}</div>
     </div>
   </div>
@@ -433,8 +436,9 @@ export function AdminCatalogAndSheetsExportModal({
           : "";
 
       openPrintWindow(
-        `${storeTradeName} — Fichas Técnicas`,
-        headerHtml + productBlocks + comboBlocks
+        `${storeTradeName} · Fichas Técnicas`,
+        headerHtml + productBlocks + comboBlocks,
+        resolvedLogo || undefined
       );
       onNotify("Prévia PDF pronta para salvar ou imprimir!");
     } finally {
@@ -570,7 +574,7 @@ export function AdminCatalogAndSheetsExportModal({
   <div class="header-left">
     ${resolvedLogo ? `<img src="${escHtml(resolvedLogo)}" class="logo" />` : ""}
     <div>
-      <div style="font-size:20px;font-weight:bold;">${escHtml(storeTradeName)} — Catálogo Completo</div>
+      <div style="font-size:20px;font-weight:bold;">${escHtml(storeTradeName)} · Catálogo Completo</div>
       <div style="font-size:12px;opacity:0.95;">${escHtml(slogan || "Cardápio Digital & Delivery Oficial")}</div>
       <div style="font-size:10px;opacity:0.85;margin-top:3px;">
         ${formattedCnpj ? `CNPJ ${escHtml(formattedCnpj)} • ` : ""}
@@ -622,7 +626,7 @@ export function AdminCatalogAndSheetsExportModal({
             })
             .join("");
 
-          return `<div class="cat-banner">${escHtml(c.name)}${c.description ? ` — <span style="font-weight:normal;font-size:11px;color:#475569;">${escHtml(c.description)}</span>` : ""}</div><div class="catalog-grid">${cardsHtml}</div>`;
+          return `<div class="cat-banner">${escHtml(c.name)}${c.description ? ` · <span style="font-weight:normal;font-size:11px;color:#475569;">${escHtml(c.description)}</span>` : ""}</div><div class="catalog-grid">${cardsHtml}</div>`;
         })
         .join("");
 
@@ -650,7 +654,7 @@ export function AdminCatalogAndSheetsExportModal({
             `</div>`
           : "";
 
-      openPrintWindow(`${storeTradeName} — Catálogo Completo PDF`, headerHtml + catSections + combosHtml);
+      openPrintWindow(`${storeTradeName} · Catálogo Completo PDF`, headerHtml + catSections + combosHtml, resolvedLogo || undefined);
       onNotify("Catálogo completo em PDF pronto para salvar/imprimir!");
     } finally {
       setBusyExport(false);

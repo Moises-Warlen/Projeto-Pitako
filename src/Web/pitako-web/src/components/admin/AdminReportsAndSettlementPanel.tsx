@@ -2,7 +2,26 @@
 
 import { BarChart3, Bike, Calendar, Clock, DollarSign, Flame, MessageCircle, Printer, Send, TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, resolveMediaUrl } from "@/lib/api";
+
+async function loadLogoAsDataUrl(url?: string | null): Promise<string | null> {
+  const resolved = resolveMediaUrl(url);
+  if (!resolved) return null;
+  if (resolved.startsWith("data:")) return resolved;
+  try {
+    const resp = await fetch(resolved);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return resolved;
+  }
+}
 
 interface ExecutiveReportDto {
   windowDays: number;
@@ -61,10 +80,14 @@ function fmtBrl(v: number) {
 
 export function AdminReportsAndSettlementPanel({
   token,
-  storeTradeName
+  storeTradeName,
+  logoUrl,
+  formattedCnpj
 }: {
   token: string;
   storeTradeName: string;
+  logoUrl?: string | null;
+  formattedCnpj?: string;
 }) {
   const [subTab, setSubTab] = useState<"sales" | "settlement">("sales");
   const [datePreset, setDatePreset] = useState<"1" | "7" | "15" | "30" | "custom">("7");
@@ -119,7 +142,7 @@ export function AdminReportsAndSettlementPanel({
         .map((p, i) => `${i + 1}. ${p.name}: ${p.quantity} un (${fmtBrl(p.revenue)})`)
         .join("\n");
       return [
-        `📊 *Relatório Gerencial — ${storeTradeName}*`,
+        `📊 *Relatório Gerencial | ${storeTradeName}*`,
         `Período: ${periodLabel}`,
         `• Faturamento Líquido: ${fmtBrl(k?.netRevenue ?? 0)} (${k?.validOrderCount ?? 0} pedidos)`,
         `• Taxas de Entrega: ${fmtBrl(k?.deliveryFees ?? 0)}`,
@@ -136,11 +159,11 @@ export function AdminReportsAndSettlementPanel({
 
     const headerWho = selectedCourier ? `Motoqueiro: ${selectedCourier.fullName}` : "Todos os Motoqueiros";
     const runsPreview = (s?.runs || [])
-      .flatMap((r) => r.stops.map((st) => `• #${st.orderNumberSnapshot} (${r.courierName}) — ${st.legDistanceKm} km • Frete ${fmtBrl(st.commission)} [${st.status}]`))
+      .flatMap((r) => r.stops.map((st) => `• #${st.orderNumberSnapshot} (${r.courierName}) · ${st.legDistanceKm} km · Frete ${fmtBrl(st.commission)} [${st.status}]`))
       .slice(0, 12)
       .join("\n");
     return [
-      `🛵 *Acerto de Entregas — ${storeTradeName}*`,
+      `🛵 *Acerto de Entregas | ${storeTradeName}*`,
       `Período: ${periodLabel} • ${headerWho}`,
       `• Total de Entregas: ${s?.totalDeliveries ?? 0}`,
       `• Quilometragem: ${s?.totalDistanceKm ?? 0} km`,
@@ -178,20 +201,36 @@ export function AdminReportsAndSettlementPanel({
     setWaFeedback(`Resumo copiado e WhatsApp aberto para +${digits}!`);
   }
 
-  function handlePrintCleanPdf() {
+  async function handlePrintCleanPdf() {
     const popup = window.open("", "_blank", "width=980,height=780");
     if (!popup) {
       window.print();
       return;
     }
     const esc = (v: string | number | null | undefined) =>
-      String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const safeLogo = await loadLogoAsDataUrl(logoUrl);
+    const reportHeaderHtml = `
+      <div class="rep-hdr">
+        ${safeLogo ? `<img src="${esc(safeLogo)}" alt="${esc(storeTradeName)}" class="rep-logo" />` : ""}
+        <div>
+          <div class="store-name">${esc(storeTradeName)}</div>
+          <div class="store-meta">${formattedCnpj ? `CNPJ ${esc(formattedCnpj)} · ` : ""}Emitido em ${new Date().toLocaleString("pt-BR")}</div>
+        </div>
+      </div>
+    `;
 
     let bodyHtml = "";
     if (subTab === "sales") {
       bodyHtml = `
-        <h1>Relatório Gerencial de Faturamento & Vendas — ${esc(storeTradeName)}</h1>
-        <p class="sub">Período analisado: <strong>${esc(periodLabel)}</strong> • Gerado em ${new Date().toLocaleString("pt-BR")}</p>
+        ${reportHeaderHtml}
+        <h1>Relatório Gerencial de Faturamento & Vendas</h1>
+        <p class="sub">Estabelecimento: <strong>${esc(storeTradeName)}</strong> · Período analisado: <strong>${esc(periodLabel)}</strong></p>
         <div class="kpis">
           <div class="kpi"><span>Faturamento Líquido</span><strong>${esc(fmtBrl(k?.netRevenue ?? 0))}</strong><small>${k?.validOrderCount ?? 0} pedidos</small></div>
           <div class="kpi"><span>Taxas de Entrega</span><strong>${esc(fmtBrl(k?.deliveryFees ?? 0))}</strong><small>Fretes recebidos</small></div>
@@ -228,8 +267,9 @@ export function AdminReportsAndSettlementPanel({
         .join("");
 
       bodyHtml = `
-        <h1>Relatório de Entregas & Acerto de Motoboys — ${esc(storeTradeName)}</h1>
-        <p class="sub">Período: <strong>${esc(periodLabel)}</strong> • Entregador: <strong>${esc(selectedCourier ? selectedCourier.fullName : "Todos os Motoqueiros")}</strong> • Status: <strong>${esc(runStatus || "Todos")}</strong></p>
+        ${reportHeaderHtml}
+        <h1>Relatório de Entregas & Acerto de Motoboys</h1>
+        <p class="sub">Estabelecimento: <strong>${esc(storeTradeName)}</strong> · Período: <strong>${esc(periodLabel)}</strong> · Entregador: <strong>${esc(selectedCourier ? selectedCourier.fullName : "Todos os Motoqueiros")}</strong> · Status: <strong>${esc(runStatus || "Todos")}</strong></p>
         <div class="kpis">
           <div class="kpi"><span>Total de Entregas</span><strong>${s?.totalDeliveries ?? 0}</strong></div>
           <div class="kpi"><span>Quilometragem Total</span><strong>${s?.totalDistanceKm ?? 0} km</strong></div>
@@ -243,29 +283,41 @@ export function AdminReportsAndSettlementPanel({
           <tbody>${stopsRows || `<tr><td colspan="8" style="text-align:center">Sem corridas no período filtrado.</td></tr>`}</tbody>
         </table>
         <div class="sign">
-          <div>Assinatura do Entregador: ______________________________________</div>
-          <div>${esc(storeTradeName)} — Caixa / Responsável: _________________________</div>
+          <div class="sign-col"><div class="sign-line"></div><div>Assinatura do Entregador</div></div>
+          <div class="sign-col"><div class="sign-line"></div><div>${esc(storeTradeName)} · Caixa / Responsável</div></div>
         </div>
       `;
     }
 
-    popup.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório — ${esc(storeTradeName)}</title><style>
+    const watermarkHtml = safeLogo
+      ? `<img src="${esc(safeLogo)}" alt="" class="watermark" aria-hidden="true" />`
+      : "";
+
+    popup.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório | ${esc(storeTradeName)}</title><style>
       @page { size: A4; margin: 14mm; }
-      body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
+      body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; position: relative; }
+      .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; max-height: 240px; object-fit: contain; opacity: 0.055; pointer-events: none; z-index: 0; }
+      .content { position: relative; z-index: 1; }
+      .rep-hdr { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 12px; }
+      .rep-logo { max-width: 110px; max-height: 52px; width: auto; height: auto; object-fit: contain; border-radius: 8px; }
+      .store-name { font-size: 14px; font-weight: 800; color: #0f172a; }
+      .store-meta { font-size: 10px; color: #64748b; margin-top: 2px; }
       h1 { font-size: 18px; margin: 0 0 4px; }
       h2 { font-size: 13px; margin: 16px 0 6px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
       .sub { font-size: 11px; color: #475569; margin: 0 0 14px; }
       .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
-      .kpi { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; }
+      .kpi { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; background: rgba(255,255,255,0.92); }
       .kpi span { display: block; font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
       .kpi strong { display: block; font-size: 15px; margin-top: 2px; }
       .kpi small { font-size: 10px; color: #64748b; }
-      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; background: rgba(255,255,255,0.92); }
       th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
       th { background: #f8fafc; font-weight: bold; }
-      .sign { display: flex; justify-content: space-between; margin-top: 28px; padding-top: 16px; border-top: 1px solid #cbd5e1; font-size: 11px; }
+      .sign { display: flex; justify-content: space-between; gap: 36px; margin-top: 32px; padding-top: 12px; font-size: 11px; }
+      .sign-col { flex: 1; text-align: center; color: #475569; }
+      .sign-line { border-top: 1px solid #475569; margin-bottom: 6px; height: 22px; }
       @media print { button { display: none; } }
-    </style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);};</script></body></html>`);
+    </style></head><body>${watermarkHtml}<div class="content">${bodyHtml}</div><script>window.onload=function(){setTimeout(function(){window.print();},260);};</script></body></html>`);
     popup.document.close();
   }
 
@@ -442,12 +494,33 @@ export function AdminReportsAndSettlementPanel({
         )}
       </div>
 
-      {/* Cabeçalho exclusivo de Impressão direta (caso usuário use Ctrl+P) */}
-      <div className="hidden print:block mb-4 border-b border-slate-300 pb-3">
-        <h1 className="text-lg font-extrabold text-slate-900">
-          {subTab === "sales" ? "Relatório Gerencial de Vendas" : "Acerto de Entregas & Motoboys"} — {storeTradeName}
-        </h1>
-        <p className="text-xs text-slate-600">Período: {periodLabel}</p>
+      {/* Cabeçalho e marca d'água de Impressão direta (Ctrl+P) */}
+      {resolveMediaUrl(logoUrl) && (
+        <img
+          src={resolveMediaUrl(logoUrl)!}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none fixed left-1/2 top-1/2 z-0 hidden max-h-56 max-w-xs -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.06] print:block"
+        />
+      )}
+      <div className="mb-4 hidden items-center justify-between border-b border-slate-300 pb-3 print:flex">
+        <div className="flex items-center gap-3">
+          {resolveMediaUrl(logoUrl) && (
+            <img
+              src={resolveMediaUrl(logoUrl)!}
+              alt={storeTradeName}
+              className="max-h-12 max-w-[110px] rounded object-contain"
+            />
+          )}
+          <div>
+            <h1 className="text-lg font-extrabold text-slate-900">
+              {subTab === "sales" ? "Relatório Gerencial de Vendas" : "Acerto de Entregas & Motoboys"}
+            </h1>
+            <p className="text-xs text-slate-600">
+              {storeTradeName} {formattedCnpj ? `· CNPJ ${formattedCnpj} ` : ""}· Período: {periodLabel}
+            </p>
+          </div>
+        </div>
       </div>
 
       {subTab === "sales" && (
@@ -591,16 +664,25 @@ export function AdminReportsAndSettlementPanel({
       )}
 
       {subTab === "settlement" && (
-        <div className="space-y-6">
+        <div className="relative space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div>
-              <h3 className="text-base font-extrabold text-slate-900">Relatório de Entregas & Acerto de Motoboys — {storeTradeName}</h3>
-              <p className="text-xs text-slate-500">Acompanhe total de corridas, KM percorrido, dinheiro recebido e folha de assinatura.</p>
+            <div className="flex items-center gap-3">
+              {resolveMediaUrl(logoUrl) && (
+                <img
+                  src={resolveMediaUrl(logoUrl)!}
+                  alt={storeTradeName}
+                  className="max-h-11 max-w-[80px] shrink-0 rounded-lg border border-slate-100 bg-white object-contain p-1"
+                />
+              )}
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">Relatório de Entregas & Acerto de Motoboys</h3>
+                <p className="text-xs text-slate-500">{storeTradeName} · Acompanhe total de corridas, KM percorrido, dinheiro recebido e folha de assinatura.</p>
+              </div>
             </div>
             <div className="flex items-center gap-2 print:hidden">
               <button
                 type="button"
-                onClick={handlePrintCleanPdf}
+                onClick={() => void handlePrintCleanPdf()}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
               >
                 <Printer className="h-3.5 w-3.5" /> Baixar Folha de Acerto (PDF)
@@ -672,9 +754,15 @@ export function AdminReportsAndSettlementPanel({
                 <div><strong>Dinheiro Recolhido:</strong> {fmtBrl(s?.cashCollected ?? 0)}</div>
                 <div><strong>Saldo Final:</strong> {fmtBrl(s?.settlementBalance ?? 0)}</div>
               </div>
-              <div className="mt-8 flex flex-wrap justify-between gap-8 border-t border-slate-300 pt-4 text-[11px] text-slate-600">
-                <div>Assinatura do Entregador: ________________________________________</div>
-                <div>{storeTradeName} — Caixa / Responsável: ___________________________</div>
+              <div className="mt-8 grid gap-8 border-t border-slate-300 pt-6 text-[11px] text-slate-600 sm:grid-cols-2">
+                <div className="text-center">
+                  <div className="mx-auto mb-1.5 h-6 w-64 border-b border-slate-500" />
+                  <span>Assinatura do Entregador</span>
+                </div>
+                <div className="text-center">
+                  <div className="mx-auto mb-1.5 h-6 w-64 border-b border-slate-500" />
+                  <span>{storeTradeName} · Caixa / Responsável</span>
+                </div>
               </div>
             </div>
           </div>

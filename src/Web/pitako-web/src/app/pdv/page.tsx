@@ -485,7 +485,7 @@ export default function PdvPage() {
 
       {closeReport && (
         <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-xs text-indigo-950">
-          <div className="font-bold">Relatório de Fechamento — {closeReport.terminalCode}</div>
+          <div className="font-bold">Relatório de Fechamento · {closeReport.terminalCode}</div>
           <div className="mt-1 flex flex-wrap gap-4 font-mono">
             <span>Abertura: {brl(closeReport.openingBalance)}</span>
             <span>Esperado em Dinheiro: {brl(closeReport.expectedCashBalance)}</span>
@@ -822,12 +822,12 @@ export default function PdvPage() {
                 <div className="mb-1 text-[10px] font-bold tracking-wider text-slate-500">[LOGO OFICIAL DA LOJA]</div>
               )}
               <div className="font-bold uppercase">{storeHeaderName}</div>
-              <div>CNPJ: {branding?.cnpj || "—"}</div>
+              <div>CNPJ: {branding?.cnpj || "Não informado"}</div>
               {branding?.address && <div className="text-[10px] text-slate-600">{branding.address}</div>}
             </div>
 
             <hr className="my-2 border-dashed border-slate-400" />
-            <div className="text-center font-bold">DOCUMENTO NÃO FISCAL — CONFERÊNCIA</div>
+            <div className="text-center font-bold">DOCUMENTO NÃO FISCAL · CONFERÊNCIA</div>
             {lastReceipt && (
               <div className="mt-1 text-center text-[10px] text-slate-600">
                 Cupom {lastReceipt.receiptNumber} · {new Date(lastReceipt.settledAtUtc).toLocaleString("pt-BR")}

@@ -49,6 +49,7 @@ public static partial class PitakoStoreSuiteEndpoints
         MapOperationalSettingsEndpoints(v1);
         MapMediaAndSegmentArtEndpoints(v1);
         MapProductFullConfigAndQrPayEndpoints(v1);
+        MapStoreDataSuiteEndpoints(v1);
     }
 
     private static void MapCatalogKitAndBestSellersEndpoints(RouteGroupBuilder v1)

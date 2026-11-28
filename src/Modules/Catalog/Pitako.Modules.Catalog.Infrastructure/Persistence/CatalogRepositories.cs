@@ -96,8 +96,11 @@ public sealed class EfPromotionRepository(CatalogDbContext db) : IPromotionRepos
     public async Task<IReadOnlyList<Promotion>> ListActiveCandidatesAsync(CancellationToken cancellationToken = default) =>
         await db.Promotions.Include(p => p.Targets).Where(p => p.IsActive).ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<Promotion>> ListAllAsync(CancellationToken cancellationToken = default) =>
-        await db.Promotions.Include(p => p.Targets).OrderByDescending(p => p.StartsAtUtc).ToListAsync(cancellationToken);
+    public async Task<IReadOnlyList<Promotion>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var items = await db.Promotions.Include(p => p.Targets).ToListAsync(cancellationToken);
+        return items.OrderByDescending(p => p.StartsAtUtc).ToList();
+    }
 
     public async Task AddAsync(Promotion promotion, CancellationToken cancellationToken = default) =>
         await db.Promotions.AddAsync(promotion, cancellationToken);

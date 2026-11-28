@@ -19,6 +19,7 @@ import {
   AdminSecurityFirewallPanel
 } from "@/components/admin/AdminOpsPrintersCouponsSecurityPanel";
 import { AdminReportsAndSettlementPanel } from "@/components/admin/AdminReportsAndSettlementPanel";
+import { AdminStoreDataImportCleanupPanel } from "@/components/admin/AdminStoreDataImportCleanupPanel";
 import { AdminTechSheetPdfModal, TechnicalSheetSummaryItem } from "@/components/admin/AdminTechSheetPdfModal";
 import { apiFetch, loadSession } from "@/lib/api";
 import { StoreBannerSnapshot, StoreOperatingHoursEntry } from "@/types/menu";
@@ -44,6 +45,7 @@ type AdminTabKey =
   | "printers"
   | "settings"
   | "branding"
+  | "data"
   | "security"
   | "team";
 
@@ -322,7 +324,14 @@ export default function AdminStorePage() {
       {/* Cabeçalho Administrativo */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
         <div>
-          <h1 className="text-lg font-extrabold text-slate-900">Painel do Estabelecimento — {theme.tradeName}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-extrabold text-slate-900">Painel do Estabelecimento</h1>
+            {theme.tradeName && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
+                {theme.tradeName}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
             Gerencie cardápio multi-segmento, grupos de personalização, estoque com perdas, promoções, entrega e visual da loja.
           </p>
@@ -387,6 +396,7 @@ export default function AdminStorePage() {
             { key: "printers", label: "Impressoras" },
             { key: "settings", label: "Configurações & PIX" },
             { key: "branding", label: "Visual & Vitrine" },
+            { key: "data", label: "Importação & Limpeza" },
             { key: "security", label: "Segurança / Firewall" },
             { key: "team", label: "Equipe" }
           ] as const
@@ -445,7 +455,12 @@ export default function AdminStorePage() {
       )}
 
       {tab === "reports" && (
-        <AdminReportsAndSettlementPanel token={token} storeTradeName={theme.tradeName} />
+        <AdminReportsAndSettlementPanel
+          token={token}
+          storeTradeName={theme.tradeName}
+          logoUrl={theme.logoUrl}
+          formattedCnpj={formattedCnpj}
+        />
       )}
 
       {tab === "coupons" && (
@@ -494,6 +509,16 @@ export default function AdminStorePage() {
         />
       )}
 
+      {tab === "data" && (
+        <AdminStoreDataImportCleanupPanel
+          token={token}
+          storeTradeName={theme.tradeName}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
+          onOpenCatalogTab={() => changeTab("catalog")}
+        />
+      )}
+
       {tab === "team" && (
         <AdminTeamTab token={token} team={team} onNotify={notifyAdmin} onReload={handleReloadStoreData} />
       )}
@@ -509,6 +534,7 @@ export default function AdminStorePage() {
           costPerContentUnit: s.costPerContentUnit
         }))}
         storeTradeName={theme.tradeName}
+        logoUrl={theme.logoUrl}
         onSaved={handleReloadStoreData}
         onNotify={notifyAdmin}
         onClose={() => setPdfSheetModal(null)}

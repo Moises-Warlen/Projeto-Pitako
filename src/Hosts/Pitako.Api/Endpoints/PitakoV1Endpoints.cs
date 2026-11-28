@@ -1149,6 +1149,7 @@ public static class PitakoV1Endpoints
             IPromotionRepository promotionRepo,
             IOrderRepository orderRepo,
             IDeliveryPolicyRepository deliveryPolicyRepo,
+            ITechnicalSheetRepository sheetRepo,
             AcaiBuilderManagementService acaiSvc,
             IClock clock,
             CancellationToken ct) =>
@@ -1170,6 +1171,11 @@ public static class PitakoV1Endpoints
             var promotions = await promotionRepo.ListActiveCandidatesAsync(ct);
             var salesCounts = await orderRepo.GetProductSalesCountsAsync(ct);
             var deliveryPolicy = await deliveryPolicyRepo.FindEffectivePolicyAsync(null, ct);
+            var sheets = await sheetRepo.ListAllAsync(ct);
+            var sheetByProduct = sheets
+                .Where(s => s.IsActive && s.ProductId.HasValue)
+                .GroupBy(s => s.ProductId!.Value)
+                .ToDictionary(g => g.Key, g => g.First());
             var acai = await acaiSvc.GetMenuCatalogAsync(includePaused: false, ct);
 
             var utcNow = clock.UtcNow;
@@ -1204,6 +1210,17 @@ public static class PitakoV1Endpoints
                 var discountPct = p.BasePrice.Amount > 0m && bestPrice < p.BasePrice.Amount
                     ? (int)Math.Round((p.BasePrice.Amount - bestPrice) / p.BasePrice.Amount * 100m, MidpointRounding.AwayFromZero)
                     : 0;
+                var productSheet = sheetByProduct.TryGetValue(p.Id, out var matchedSheet) ? matchedSheet : null;
+                var ingredients = productSheet is not null
+                    ? productSheet.Ingredients
+                        .Select(i => i.SupplyItemNameSnapshot)
+                        .Where(n => !string.IsNullOrWhiteSpace(n))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray()
+                    : Array.Empty<string>();
+                var yieldLabel = productSheet is not null && productSheet.YieldQuantity > 0m && !string.IsNullOrWhiteSpace(productSheet.YieldUnitCode)
+                    ? $"{productSheet.YieldQuantity:0.##} {productSheet.YieldUnitCode}"
+                    : null;
 
                 return new
                 {
@@ -1226,6 +1243,8 @@ public static class PitakoV1Endpoints
                     p.IsRecommended,
                     p.AllowsNotes,
                     p.PreparationMinutes,
+                    ingredients,
+                    yieldLabel,
                     p.TrackInventory,
                     p.StockQuantity,
                     p.AutoPauseOnZeroStock,

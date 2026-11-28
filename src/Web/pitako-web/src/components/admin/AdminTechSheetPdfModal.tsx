@@ -61,6 +61,7 @@ export function AdminTechSheetPdfModal({
   product,
   supplies = [],
   storeTradeName,
+  logoUrl,
   onSaved,
   onNotify,
   onClose
@@ -70,6 +71,7 @@ export function AdminTechSheetPdfModal({
   product?: AdminProductDto;
   supplies?: Array<{ id: string; name: string; contentUnitCode: string; costPerContentUnit: number }>;
   storeTradeName: string;
+  logoUrl?: string | null;
   onSaved?: () => Promise<void>;
   onNotify?: (msg: string) => void;
   onClose: () => void;
@@ -152,7 +154,7 @@ export function AdminTechSheetPdfModal({
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-slate-700" />
             <div>
-              <h2 className="text-base font-extrabold text-slate-900">{sheet.productName} — Ficha Técnica Editável</h2>
+              <h2 className="text-base font-extrabold text-slate-900">{sheet.productName} · Ficha Técnica Editável</h2>
               <p className="text-xs text-slate-500">{storeTradeName} • Versão v{sheet.version}</p>
             </div>
           </div>
@@ -201,18 +203,35 @@ export function AdminTechSheetPdfModal({
           </div>
         </div>
 
-        <div className="space-y-5 p-6">
+        <div className="relative space-y-5 p-6">
+          {resolveMediaUrl(logoUrl) && (
+            <img
+              src={resolveMediaUrl(logoUrl)!}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none fixed left-1/2 top-1/2 z-0 hidden max-h-56 max-w-xs -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.05] print:block"
+            />
+          )}
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 print:hidden">
-            💡 <strong>Edição Livre de Insumos:</strong> altere quantidades, valores unitários, exclua itens ou puxe insumos já cadastrados — o custo CMV e a margem recalculam na hora!
+            💡 <strong>Edição Livre de Insumos:</strong> altere quantidades, valores unitários, exclua itens ou puxe insumos já cadastrados; o custo CMV e a margem recalculam na hora!
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{storeTradeName}</p>
-              <h3 className="text-lg font-extrabold text-slate-900">{sheet.name}</h3>
-              <p className="text-xs text-slate-600">
-                Venda: <strong>{fmtBrl(sheet.productSellingPrice)}</strong> · Custo CMV: <strong className="text-rose-700">{fmtBrl(liveTotalCost)}</strong> · Lucro: <strong className={liveProfit >= 0 ? "text-emerald-700" : "text-rose-700"}>{fmtBrl(liveProfit)} ({liveMarginPct.toFixed(1)}%)</strong>
-              </p>
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-3">
+              {resolveMediaUrl(logoUrl) && (
+                <img
+                  src={resolveMediaUrl(logoUrl)!}
+                  alt={storeTradeName}
+                  className="max-h-12 max-w-[90px] shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-1"
+                />
+              )}
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{storeTradeName}</p>
+                <h3 className="text-lg font-extrabold text-slate-900">{sheet.name}</h3>
+                <p className="text-xs text-slate-600">
+                  Venda: <strong>{fmtBrl(sheet.productSellingPrice)}</strong> · Custo CMV: <strong className="text-rose-700">{fmtBrl(liveTotalCost)}</strong> · Lucro: <strong className={liveProfit >= 0 ? "text-emerald-700" : "text-rose-700"}>{fmtBrl(liveProfit)} ({liveMarginPct.toFixed(1)}%)</strong>
+                </p>
+              </div>
             </div>
             <div>
               {liveProfit < 0 ? (

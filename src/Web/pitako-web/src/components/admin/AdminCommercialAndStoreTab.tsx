@@ -197,7 +197,7 @@ export function AdminCommercialTab({
       {/* Inteligência Comercial: Margem & Mais Vendidos */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="mb-3 flex items-center gap-2 text-base font-extrabold text-slate-900">
-          <BarChart3 className="h-4 w-4" /> Inteligência Comercial — Lucratividade & Giro
+          <BarChart3 className="h-4 w-4" /> Inteligência Comercial · Lucratividade & Giro
         </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">

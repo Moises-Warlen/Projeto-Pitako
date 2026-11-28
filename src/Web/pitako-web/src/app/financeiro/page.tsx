@@ -774,7 +774,7 @@ export default function FinancePage() {
           >
             <h3 className="text-base font-bold text-slate-900">Liquidar Título {settlingEntry.entryCode}</h3>
             <p className="mb-4 text-xs text-slate-500">
-              {settlingEntry.counterpartyName} — Original {brl(settlingEntry.originalAmount)}
+              {settlingEntry.counterpartyName} · Original {brl(settlingEntry.originalAmount)}
             </p>
             <div className="space-y-3 text-xs">
               <div>

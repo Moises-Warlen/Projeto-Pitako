@@ -300,9 +300,14 @@ export default function StoreMarketplacesPage() {
     <StoreBrandShell activeSection="/integracoes">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900">
-            Integrações & Marketplaces da Loja {overview?.storeTradeName ? `— ${overview.storeTradeName}` : ""}
-          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-extrabold text-slate-900">Integrações & Marketplaces da Loja</h1>
+            {overview?.storeTradeName && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
+                {overview.storeTradeName}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
             Cada estabelecimento possui suas próprias credenciais cifradas (AES-GCM), vinculações iFood, 99Food, Rappi, Aiqfome, Delivery Much, Keeta e Food To Save, webhooks exclusivos e entrada direta no Kanban.
           </p>

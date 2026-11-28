@@ -163,7 +163,7 @@ export function AdminPrintersPanel({
             >
               {printers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.displayName} — {p.sector.toUpperCase()} ({p.paperWidthMm}mm • {p.endpointOrPort})
+                  {p.displayName} ({p.sector.toUpperCase()} · {p.paperWidthMm}mm · {p.endpointOrPort})
                 </option>
               ))}
             </select>

@@ -118,7 +118,7 @@ export default function PublicStorefrontPage() {
       if (storeRes.ok && storeRes.data) {
         setStoreInfo(storeRes.data);
         if (typeof document !== "undefined") {
-          document.title = `${storeRes.data.tradeName} — Cardápio Digital`;
+          document.title = `${storeRes.data.tradeName} | Cardápio Digital`;
         }
         setTheme({
           tradeName: storeRes.data.tradeName,
@@ -516,7 +516,17 @@ export default function PublicStorefrontPage() {
           : product.effectivePrice;
     const isMonte =
       product.customTemplateKey === "acaiteria-monte" || product.name.toLowerCase().includes("monte do seu jeito");
-    const sizeLabels = product.variations.map((v) => v.variationName).filter(Boolean);
+    const sizeLabels = product.variations
+      .map((v) =>
+        v.measureAmount && v.measureUnit
+          ? `${v.variationName} (${v.measureAmount}${v.measureUnit})`
+          : v.variationName
+      )
+      .filter(Boolean);
+    const modifierNames = product.modifierGroupIds
+      .map((gid) => menu?.modifierGroups.find((g) => g.id === gid)?.name)
+      .filter((n): n is string => Boolean(n));
+    const ingredientsList = (product.ingredients || []).filter((x) => Boolean(x && x.trim()));
     const outOfStock = product.isInStock === false || (product.variations.length > 0 && activeVars.length === 0);
     const outsideSchedule = product.isScheduledAvailable === false;
     const isUnavailable = outOfStock || outsideSchedule;
@@ -593,14 +603,32 @@ export default function PublicStorefrontPage() {
                 </span>
               ))}
               {sizeLabels.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                  Tamanhos: {sizeLabels.join(" • ")}
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                  Opções: {sizeLabels.join(" · ")}
+                </span>
+              )}
+              {product.yieldLabel && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                  Porção: {product.yieldLabel}
                 </span>
               )}
             </div>
 
-            <h3 className="mt-1.5 line-clamp-1 text-sm font-extrabold text-slate-900 sm:text-base">{product.name}</h3>
-            {product.description && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{product.description}</p>}
+            <h3 className="mt-1.5 line-clamp-2 text-sm font-extrabold text-slate-900 sm:text-base">{product.name}</h3>
+            {product.description && (
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">{product.description}</p>
+            )}
+            {ingredientsList.length > 0 && (
+              <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                <strong className="font-semibold text-slate-700">Ingredientes:</strong> {ingredientsList.slice(0, 8).join(", ")}
+                {ingredientsList.length > 8 ? ` (+${ingredientsList.length - 8})` : ""}
+              </p>
+            )}
+            {modifierNames.length > 0 && (
+              <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-slate-600">
+                Personalização: {modifierNames.join(" · ")}
+              </p>
+            )}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -623,7 +651,13 @@ export default function PublicStorefrontPage() {
           </div>
         </div>
 
-        <ProductMediaFrame src={product.primaryImageUrl} alt={product.name} className="h-28 w-28 shrink-0 rounded-xl sm:h-32 sm:w-32" iconSize={30} />
+        <ProductMediaFrame
+          src={product.primaryImageUrl}
+          alt={product.name}
+          fit="contain"
+          className="h-28 w-28 shrink-0 rounded-2xl sm:h-32 sm:w-32 md:h-36 md:w-36"
+          iconSize={32}
+        />
       </button>
     );
   }
@@ -909,7 +943,7 @@ export default function PublicStorefrontPage() {
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Combo</span>
                       <h3 className="mt-1 text-base font-extrabold text-slate-900">{combo.name}</h3>
                     </div>
-                    <ProductMediaFrame src={combo.primaryImageUrl} alt={combo.name} className="h-14 w-14 shrink-0 rounded-xl" iconSize={20} />
+                    <ProductMediaFrame src={combo.primaryImageUrl} alt={combo.name} fit="contain" className="h-20 w-20 shrink-0 rounded-2xl" iconSize={24} />
                   </div>
                   {combo.description && <p className="mt-1 text-xs text-slate-600">{combo.description}</p>}
                   <ul className="mt-2 space-y-0.5 text-xs text-slate-500">
