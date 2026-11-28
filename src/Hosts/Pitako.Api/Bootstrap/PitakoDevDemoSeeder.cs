@@ -16,6 +16,7 @@ using Pitako.Modules.Printing.Application.Services;
 using Pitako.Modules.Printing.Domain;
 using Pitako.Modules.WhatsAppSupport.Application.Services;
 using Pitako.Modules.WhatsAppSupport.Domain;
+using Pitako.Modules.MasterPanel.Application.Abstractions;
 using Pitako.Modules.MasterPanel.Application.Services;
 using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Security.Application.Abstractions;
@@ -93,6 +94,7 @@ public static class PitakoDevDemoSeeder
         var existingMaster = await userRepo.FindByEmailAsync(UserScope.Saas, null, "MASTER@PITAKO.COM.BR", ct);
         if (existingMaster is not null)
         {
+            await EnsureFoodDeliveryPlansAsync(sp, existingMaster, ct);
             await UpgradeLegacyAcaiDemoIfNeededAsync(sp, ct);
             return;
         }
@@ -150,15 +152,17 @@ public static class PitakoDevDemoSeeder
             master,
             new CreatePlanCommand(
                 "pro",
-                "Plano Profissional",
-                "Plano completo para operação multi-canal.",
-                249.90m,
+                "Profissional",
+                "Para delivery com frota própria: pré-pago, despacho automático, Hub Logístico, escalas e Mapa de Calor.",
+                152.30m,
                 "BRL",
                 BillingCycle.Monthly,
                 14,
                 proQuotas,
                 SystemModules.EstablishmentModules),
             ct);
+
+        await EnsureFoodDeliveryPlansAsync(sp, master, ct);
 
         // 3. Cliente SaaS e Estabelecimento Demo (marca exclusiva da loja, sem marca PITAKO)
         var subRes = await planService.CreateCustomerSubscriptionAsync(
@@ -533,6 +537,96 @@ public static class PitakoDevDemoSeeder
         else if (cups.All(c => c.VolumeMl != 700))
         {
             await acaiService.CreateCupSizeAsync(storeAdmin, "Copo 700 ml", 700, 26.90m, 5, 0, AcaiFreeCountingMode.ByPortion, 10, null, "CUP-700", 3, ct, "460g de açaí • até 5 acompanhamentos grátis", 12.50m, true, true);
+        }
+    }
+
+    private static async Task EnsureFoodDeliveryPlansAsync(IServiceProvider sp, User master, CancellationToken ct)
+    {
+        var planRepo = sp.GetRequiredService<ICommercialPlanRepository>();
+        var planService = sp.GetRequiredService<MasterPlanAndSubscriptionService>();
+        var existing = await planRepo.ListAllAsync(false, ct);
+
+        var pro = existing.FirstOrDefault(p => p.Code.Equals("pro", StringComparison.OrdinalIgnoreCase));
+        if (pro is not null && pro.Price.Amount == 249.90m)
+        {
+            var quotas = new PlanQuotaConfiguration(
+                pro.EstablishmentsLimit,
+                pro.UnitsLimit,
+                pro.MarketplaceStoresLimit,
+                pro.UsersLimit,
+                pro.DevicesLimit,
+                pro.ConcurrentSessionsLimit,
+                pro.MonthlyOrdersLimit);
+            await planService.UpdatePlanAsync(
+                master,
+                pro.Id,
+                new CreatePlanCommand(
+                    pro.Code,
+                    "Profissional",
+                    "Para delivery com frota própria: faturamento pré-pago, despacho automático, Hub Logístico, escalas e Mapa de Calor.",
+                    152.30m,
+                    "BRL",
+                    pro.BillingCycle,
+                    pro.TrialDays,
+                    quotas,
+                    pro.Modules.Select(m => m.ModuleCode).ToList(),
+                    pro.Features.Select(f => f.FeatureCode).ToList(),
+                    pro.IsPublic),
+                ct);
+        }
+
+        if (!existing.Any(p => p.Code.Equals("central-entregas", StringComparison.OrdinalIgnoreCase)))
+        {
+            var centralQuotas = new PlanQuotaConfiguration(
+                QuotaLimit.Limited(10).Value,
+                QuotaLimit.Limited(20).Value,
+                QuotaLimit.Limited(10).Value,
+                QuotaLimit.Limited(50).Value,
+                QuotaLimit.Limited(30).Value,
+                QuotaLimit.Limited(30).Value,
+                QuotaLimit.Limited(25000).Value);
+
+            await planService.CreatePlanAsync(
+                master,
+                new CreatePlanCommand(
+                    "central-entregas",
+                    "Central de Entregas",
+                    "Para redes com múltiplos estabelecimentos: despacho automático, integrações, API & Webhooks, escalas e diárias.",
+                    319.00m,
+                    "BRL",
+                    BillingCycle.Monthly,
+                    14,
+                    centralQuotas,
+                    SystemModules.EstablishmentModules,
+                    ["multi_store", "api_access", "dispatch_auto", "logistics_hub"]),
+                ct);
+        }
+
+        if (!existing.Any(p => p.Code.Equals("enterprise-frota", StringComparison.OrdinalIgnoreCase)))
+        {
+            var enterpriseQuotas = new PlanQuotaConfiguration(
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited(),
+                QuotaLimit.Unlimited());
+
+            await planService.CreatePlanAsync(
+                master,
+                new CreatePlanCommand(
+                    "enterprise-frota",
+                    "Enterprise — Frota & Motoboys",
+                    "R$ 0,35/entrega (taxa de setup R$ 2.497,00) · faturamento pós-pago, app personalizado e contas pré-pagas.",
+                    0.35m,
+                    "BRL",
+                    BillingCycle.Monthly,
+                    14,
+                    enterpriseQuotas,
+                    SystemModules.EstablishmentModules,
+                    ["white_label", "api_access", "per_delivery_billing", "prepaid_clients"]),
+                ct);
         }
     }
 }

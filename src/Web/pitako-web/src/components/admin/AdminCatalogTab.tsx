@@ -144,7 +144,6 @@ export function AdminCatalogTab({
   const [catToDelete, setCatToDelete] = useState<AdminCategoryDto | null>(null);
   const [moveTargetCatId, setMoveTargetCatId] = useState<string>("");
   const [draggingCatId, setDraggingCatId] = useState<string | null>(null);
-  const [applyingBuilderCode, setApplyingBuilderCode] = useState<string | null>(null);
 
   // Categoria form
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -577,55 +576,6 @@ export function AdminCatalogTab({
                 </button>
               </div>
             ))}
-        </div>
-      </section>
-
-      {/* Montadores Padrão por Modalidade (mantendo Montador Açaí independente na aba própria) */}
-      <section className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-indigo-950">
-              <Sliders className="h-4 w-4 text-indigo-600" /> Montadores Padrão por Modalidade
-            </h3>
-            <p className="mt-0.5 text-[11px] text-indigo-900/80">
-              Ative montadores completos editáveis (Pizza meia-a-meia, Hambúrguer artesanal ou Lanche) sem alterar o Montador de Açaí existente.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { code: "pizzaria", label: "+ Montador de Pizza" },
-              { code: "hamburgueria", label: "+ Montador de Hambúrguer" },
-              { code: "lanchonete", label: "+ Montador de Lanche" }
-            ].map((b) => (
-              <button
-                key={b.code}
-                type="button"
-                disabled={applyingBuilderCode !== null}
-                onClick={async () => {
-                  setApplyingBuilderCode(b.code);
-                  const res = await apiFetch<{ productsCreated: number; modifierGroupsCreated: number }>(
-                    "/api/v1/catalog/apply-segment-template",
-                    { method: "POST", body: JSON.stringify({ segmentCode: b.code }) },
-                    token
-                  );
-                  setApplyingBuilderCode(null);
-                  if (res.ok && res.data) {
-                    onNotify(
-                      res.data.productsCreated > 0
-                        ? `Montador (${b.code}) adicionado ao cardápio com ${res.data.modifierGroupsCreated} grupo(s) de personalização!`
-                        : `Montador (${b.code}) já está ativo no seu cardápio.`
-                    );
-                    await onReload();
-                  } else {
-                    onNotify(res.errorMessage || "Não foi possível ativar montador.");
-                  }
-                }}
-                className="rounded-xl border border-indigo-300 bg-white px-3 py-1.5 text-xs font-extrabold text-indigo-900 shadow-sm hover:bg-indigo-100 disabled:opacity-50"
-              >
-                {applyingBuilderCode === b.code ? "Ativando..." : b.label}
-              </button>
-            ))}
-          </div>
         </div>
       </section>
 

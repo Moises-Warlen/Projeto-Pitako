@@ -19,6 +19,7 @@ import {
   AdminSecurityFirewallPanel
 } from "@/components/admin/AdminOpsPrintersCouponsSecurityPanel";
 import { AdminReportsAndSettlementPanel } from "@/components/admin/AdminReportsAndSettlementPanel";
+import { AdminSegmentBuilderTab } from "@/components/admin/AdminSegmentBuilderTab";
 import { AdminStoreDataImportCleanupPanel } from "@/components/admin/AdminStoreDataImportCleanupPanel";
 import { AdminTechSheetPdfModal, TechnicalSheetSummaryItem } from "@/components/admin/AdminTechSheetPdfModal";
 import { apiFetch, loadSession } from "@/lib/api";
@@ -34,6 +35,15 @@ const DEFAULT_HOURS: StoreOperatingHoursEntry[] = [
   { dayOfWeek: 6, isOpen: true, openTime: "11:00", closeTime: "23:30" }
 ];
 
+interface AdminSegmentProfileDto {
+  code: string;
+  displayName: string;
+  supportsAcaiBuilder: boolean;
+  supportsPizzaBuilder?: boolean;
+  supportsBurgerBuilder?: boolean;
+  supportsSnackBuilder?: boolean;
+}
+
 type AdminTabKey =
   | "catalog"
   | "chat"
@@ -41,6 +51,7 @@ type AdminTabKey =
   | "reports"
   | "modifiers"
   | "acai"
+  | "builder"
   | "coupons"
   | "printers"
   | "settings"
@@ -162,6 +173,7 @@ export default function AdminStorePage() {
   const [chatConvId, setChatConvId] = useState<string | null>(null);
   const [coupons, setCoupons] = useState<AdminCouponDto[]>([]);
   const [team, setTeam] = useState<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>([]);
+  const [segmentProfiles, setSegmentProfiles] = useState<AdminSegmentProfileDto[]>([]);
 
   const [storeProfile, setStoreProfile] = useState({
     legalName: "",
@@ -193,7 +205,7 @@ export default function AdminStorePage() {
     setToken(session.accessToken);
     if (session.storeSlug) setSlug(session.storeSlug);
 
-    const [brandRes, catRes, acaiRes, supRes, sheetSummaryRes, couponRes, userRes, comboRes] = await Promise.all([
+    const [brandRes, catRes, acaiRes, supRes, sheetSummaryRes, couponRes, userRes, comboRes, segRes] = await Promise.all([
       apiFetch<{
         legalName?: string;
         tradeName?: string;
@@ -228,7 +240,8 @@ export default function AdminStorePage() {
       apiFetch<TechnicalSheetSummaryItem[]>("/api/v1/inventory/technical-sheets/summary", {}, session.accessToken),
       apiFetch<AdminCouponDto[]>("/api/v1/coupons", {}, session.accessToken),
       apiFetch<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>("/api/v1/store/users", {}, session.accessToken),
-      apiFetch<AdminComboExportDto[]>("/api/v1/catalog/combos", {}, session.accessToken)
+      apiFetch<AdminComboExportDto[]>("/api/v1/catalog/combos", {}, session.accessToken),
+      apiFetch<AdminSegmentProfileDto[]>("/api/v1/store/segments", {}, session.accessToken)
     ]);
 
     if (brandRes.ok && brandRes.data) {
@@ -289,6 +302,7 @@ export default function AdminStorePage() {
     if (couponRes.ok && couponRes.data) setCoupons(couponRes.data);
     if (userRes.ok && userRes.data) setTeam(userRes.data);
     if (comboRes.ok && comboRes.data) setCombos(comboRes.data);
+    if (segRes.ok && Array.isArray(segRes.data)) setSegmentProfiles(segRes.data);
   }, []);
 
   useEffect(() => {
@@ -314,6 +328,44 @@ export default function AdminStorePage() {
       await handleReloadStoreData();
     }
   }
+
+  const segLower = (segmentCode || "").toLowerCase();
+  const activeSegProfile = segmentProfiles.find((s) => s.code.toLowerCase() === segLower);
+  const supportsAcai = activeSegProfile ? activeSegProfile.supportsAcaiBuilder : segLower === "acaiteria" || segLower === "sorveteria";
+  const supportsPizza = activeSegProfile ? Boolean(activeSegProfile.supportsPizzaBuilder) : segLower === "pizzaria";
+  const supportsBurger = activeSegProfile ? Boolean(activeSegProfile.supportsBurgerBuilder) : segLower === "hamburgueria";
+  const supportsSnack = activeSegProfile ? Boolean(activeSegProfile.supportsSnackBuilder) : segLower === "lanchonete";
+
+  const modalityBuilderTab: { key: "acai" | "builder"; label: string } | null = supportsAcai
+    ? { key: "acai", label: "Montador Açaí" }
+    : supportsPizza
+      ? { key: "builder", label: "Montador Pizza" }
+      : supportsBurger
+        ? { key: "builder", label: "Montador Hambúrguer" }
+        : supportsSnack
+          ? { key: "builder", label: "Montador Lanche" }
+          : null;
+
+  useEffect(() => {
+    if (tab === "acai" && !supportsAcai) setTab("catalog");
+    else if (tab === "builder" && !(supportsPizza || supportsBurger || supportsSnack)) setTab("catalog");
+  }, [tab, supportsAcai, supportsPizza, supportsBurger, supportsSnack]);
+
+  const adminTabs: Array<{ key: AdminTabKey; label: string }> = [
+    { key: "catalog", label: "Cardápio" },
+    { key: "chat", label: "Chat de Clientes" },
+    { key: "whatsapp", label: "Bot WhatsApp & IA" },
+    { key: "reports", label: "Relatórios & Motoboys" },
+    { key: "modifiers", label: "Grupos & Adicionais" },
+    ...(modalityBuilderTab ? [modalityBuilderTab] : []),
+    { key: "coupons", label: "Cupons" },
+    { key: "printers", label: "Impressoras" },
+    { key: "settings", label: "Configurações & PIX" },
+    { key: "branding", label: "Visual & Vitrine" },
+    { key: "data", label: "Importação & Limpeza" },
+    { key: "security", label: "Segurança / Firewall" },
+    { key: "team", label: "Equipe" }
+  ];
 
   return (
     <StoreBrandShell
@@ -382,25 +434,9 @@ export default function AdminStorePage() {
         </div>
       )}
 
-      {/* Abas */}
+      {/* Abas filtradas estritamente pela modalidade ativa da loja */}
       <div className="mb-6 flex flex-wrap gap-2 print:hidden">
-        {(
-          [
-            { key: "catalog", label: "Cardápio" },
-            { key: "chat", label: "Chat de Clientes" },
-            { key: "whatsapp", label: "Bot WhatsApp & IA" },
-            { key: "reports", label: "Relatórios & Motoboys" },
-            { key: "modifiers", label: "Grupos & Adicionais" },
-            { key: "acai", label: "Montador Açaí" },
-            { key: "coupons", label: "Cupons" },
-            { key: "printers", label: "Impressoras" },
-            { key: "settings", label: "Configurações & PIX" },
-            { key: "branding", label: "Visual & Vitrine" },
-            { key: "data", label: "Importação & Limpeza" },
-            { key: "security", label: "Segurança / Firewall" },
-            { key: "team", label: "Equipe" }
-          ] as const
-        ).map((t) => (
+        {adminTabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -494,8 +530,21 @@ export default function AdminStorePage() {
         />
       )}
 
-      {tab === "acai" && (
+      {tab === "acai" && supportsAcai && (
         <AdminAcaiTab token={token} acai={acai} onNotify={notifyAdmin} onReload={handleReloadStoreData} />
+      )}
+
+      {tab === "builder" && (supportsPizza || supportsBurger || supportsSnack) && (
+        <AdminSegmentBuilderTab
+          token={token}
+          segmentCode={segLower}
+          categories={categories}
+          products={products}
+          modifierGroups={modifierGroups}
+          onNotify={notifyAdmin}
+          onReload={handleReloadStoreData}
+          onOpenCatalog={() => changeTab("catalog")}
+        />
       )}
 
       {tab === "branding" && (

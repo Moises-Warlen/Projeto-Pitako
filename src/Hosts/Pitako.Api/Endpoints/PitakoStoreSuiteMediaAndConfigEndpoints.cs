@@ -306,21 +306,62 @@ public static partial class PitakoStoreSuiteEndpoints
 
                     if (resolvedVarId.HasValue)
                     {
+                        var allowedSet = sz.AllowedGroupIds is { Count: > 0 }
+                            ? new HashSet<Guid>(sz.AllowedGroupIds)
+                            : (sz.AllowedGroupIds is not null ? new HashSet<Guid>() : null);
+
                         foreach (var fgId in freeIncludedGroupIds)
                         {
                             var grp = allGroups.First(g => g.Id == fgId);
-                            var hideFree = !allowFree || (sz.FreeAllowance <= 0 && !grp.IsRequired);
+                            var groupAllowedForSize = allowedSet is null || allowedSet.Contains(fgId);
+
+                            if (grp.IsRequired || grp.SelectionKind == ModifierGroupKind.RequiredChoice)
+                            {
+                                // Grupos obrigatórios (ex.: Base do Açaí, Massa da Pizza) preservam sua própria regra sem herdar o limite de acompanhamentos grátis
+                                var reqHidden = !groupAllowedForSize;
+                                await catalogSvc.SetVariationModifierRuleAsync(
+                                    user,
+                                    id,
+                                    resolvedVarId.Value,
+                                    fgId,
+                                    reqHidden ? 0 : Math.Max(1, grp.MinSelections),
+                                    reqHidden ? 0 : Math.Max(1, grp.MaxSelections),
+                                    reqHidden ? 0 : grp.FreeAllowance,
+                                    !reqHidden && grp.IsRequired,
+                                    isHidden: reqHidden,
+                                    ct);
+                                continue;
+                            }
+
+                            if (grp.SelectionKind == ModifierGroupKind.IngredientRemoval)
+                            {
+                                var prefHidden = !groupAllowedForSize;
+                                await catalogSvc.SetVariationModifierRuleAsync(
+                                    user,
+                                    id,
+                                    resolvedVarId.Value,
+                                    fgId,
+                                    0,
+                                    prefHidden ? 0 : grp.MaxSelections,
+                                    0,
+                                    false,
+                                    isHidden: prefHidden,
+                                    ct);
+                                continue;
+                            }
+
                             var effectiveFree = allowFree ? Math.Max(0, sz.FreeAllowance) : 0;
-                            var maxSel = effectiveFree > 0 ? Math.Max(effectiveFree, grp.MaxSelections) : grp.MaxSelections;
+                            var hideFree = !groupAllowedForSize || !allowFree || (sz.FreeAllowance <= 0 && allowedSet is null);
+                            var maxSel = effectiveFree > 0 ? effectiveFree : grp.MaxSelections;
                             await catalogSvc.SetVariationModifierRuleAsync(
                                 user,
                                 id,
                                 resolvedVarId.Value,
                                 fgId,
-                                hideFree ? 0 : (grp.IsRequired ? Math.Max(1, grp.MinSelections) : 0),
-                                hideFree ? 0 : maxSel,
-                                effectiveFree,
-                                !hideFree && grp.IsRequired,
+                                0,
+                                hideFree ? 0 : Math.Max(1, maxSel),
+                                hideFree ? 0 : effectiveFree,
+                                false,
                                 isHidden: hideFree,
                                 ct);
                         }
@@ -328,16 +369,18 @@ public static partial class PitakoStoreSuiteEndpoints
                         foreach (var pgId in paidGroupIds)
                         {
                             var grp = allGroups.First(g => g.Id == pgId);
+                            var groupAllowedForSize = allowedSet is null || allowedSet.Contains(pgId);
+                            var hidePaid = !groupAllowedForSize || !allowPaid;
                             await catalogSvc.SetVariationModifierRuleAsync(
                                 user,
                                 id,
                                 resolvedVarId.Value,
                                 pgId,
                                 0,
-                                allowPaid ? Math.Max(1, grp.MaxSelections) : 0,
+                                hidePaid ? 0 : Math.Max(1, grp.MaxSelections),
                                 0,
                                 false,
-                                isHidden: !allowPaid,
+                                isHidden: hidePaid,
                                 ct);
                         }
                     }
@@ -756,7 +799,8 @@ public static partial class PitakoStoreSuiteEndpoints
         string? Sku = null,
         bool? IsActive = null,
         bool? TrackInventory = null,
-        int? StockQuantity = null);
+        int? StockQuantity = null,
+        IReadOnlyList<Guid>? AllowedGroupIds = null);
     public sealed record FullProductConfigReq(
         Guid CategoryId,
         string Name,

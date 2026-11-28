@@ -158,14 +158,18 @@ export default function PublicStorefrontPage() {
   useEffect(() => {
     if (!slug || typeof window === "undefined") return;
     if (!trackedOrder) {
-      const savedOrderNum = window.localStorage.getItem(`pitako_last_order_${slug}`);
-      const savedPhone = window.localStorage.getItem(`pitako_last_order_phone_${slug}`) || "";
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryOrderNum = urlParams.get("pedido")?.trim();
+      const queryPhone = urlParams.get("tel")?.trim() || "";
+      const savedOrderNum = queryOrderNum || window.localStorage.getItem(`pitako_last_order_${slug}`);
+      const savedPhone = queryPhone || window.localStorage.getItem(`pitako_last_order_phone_${slug}`) || "";
       if (savedOrderNum) {
         void apiFetch<OrderTrackingResponse>(
           `/api/v1/public/store/${slug}/orders/${encodeURIComponent(savedOrderNum)}?phone=${encodeURIComponent(savedPhone)}`
         ).then((res) => {
-          if (res.ok && res.data && res.data.statusCode < 6) {
+          if (res.ok && res.data && (queryOrderNum || res.data.statusCode < 6)) {
             setTrackedOrder(res.data);
+            if (queryOrderNum) setTrackingOpen(true);
           }
         });
       }

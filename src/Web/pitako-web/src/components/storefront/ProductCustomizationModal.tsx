@@ -115,13 +115,11 @@ export function ProductCustomizationModal({
         product.variationRules.find((r) => !r.variationId && r.modifierGroupId === g.id);
 
       let maxSel = override ? override.maxSelections : g.maxSelections;
-      let freeAllow = override ? override.freeAllowance : g.freeAllowance;
+      const freeAllow = override ? override.freeAllowance : g.freeAllowance;
       if (g.selectionKind === 6 && activeVariation && activeVariation.maxFlavors > 0) {
         maxSel = override ? Math.min(override.maxSelections, activeVariation.maxFlavors) : activeVariation.maxFlavors;
-      }
-      if (isMonteInclusosGroup(g)) {
-        freeAllow = 3;
-        maxSel = 3;
+      } else if (isMonteInclusosGroup(g) && freeAllow > 0) {
+        maxSel = freeAllow;
       }
 
       map.set(g.id, {
@@ -526,13 +524,11 @@ export function ProductCustomizationModal({
                         {group.name}: {monteInclusosLock ? usedCount : m.selectedTotal} de {rule.freeAllowance > 0 ? rule.freeAllowance : rule.maxSelections}
                       </h3>
                       <p className="text-xs text-slate-500">
-                        {monteInclusosLock
-                          ? "Acompanhamentos Inclusos: até 3 opções sem custo adicional."
-                          : rule.freeAllowance > 0
-                            ? `Selecione até ${rule.freeAllowance} opções sem custo adicional.`
-                            : rule.maxSelections > 0
-                              ? `Máximo ${rule.maxSelections} opções`
-                              : "Opcional"}
+                        {rule.freeAllowance > 0
+                          ? `Selecione até ${rule.freeAllowance} opções sem custo adicional.`
+                          : rule.maxSelections > 0
+                            ? `Máximo ${rule.maxSelections} opções`
+                            : "Opcional"}
                       </p>
                     </div>
                     {hasFreePool && (

@@ -46,6 +46,7 @@ interface StoreMetaDto {
   tradeName?: string;
   legalName?: string;
   address?: string;
+  slug?: string;
 }
 
 const SEVEN_COLUMNS = [
@@ -132,6 +133,7 @@ export default function OrdersKanbanPage() {
       setStoreMeta({
         tradeName: brandRes.data.tradeName || brandRes.data.legalName || "Loja",
         address: brandRes.data.address || "Endereço da Loja",
+        slug: brandRes.data.slug || session.storeSlug || "acai-demo",
       });
     }
     setLoading(false);
@@ -612,6 +614,7 @@ export default function OrdersKanbanPage() {
         orders={orders}
         couriers={couriers}
         recentRuns={recentRuns}
+        storeSlug={storeMeta.slug || "acai-demo"}
         storeName={storeMeta.tradeName || "Loja"}
         storeAddress={storeMeta.address || "Ponto de Partida"}
         originLat={originCoords.originLatitude}

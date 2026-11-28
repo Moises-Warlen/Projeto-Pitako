@@ -1266,6 +1266,104 @@ export default function MasterPanelPage() {
       )}
 
       {activeTab === "plans" && (
+        <div className="space-y-8">
+          {/* Vitrine Comparativa de Planos de Assinatura (Food Delivery + Frota + Ilimitado) */}
+          <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-extrabold text-white">Planos de Assinatura & Logística</h2>
+                <p className="text-xs text-zinc-400">Modelos comerciais inspirados em centrais de delivery: frota própria, central multi-lojas, enterprise por entrega e ilimitado.</p>
+              </div>
+              <span className="rounded-full bg-red-600/20 px-3 py-1 text-xs font-bold text-red-400">Prontos para contratação no cadastro de clientes</span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  code: "pro",
+                  headerBg: "bg-red-800",
+                  title: "Profissional",
+                  subtitle: "Para delivery com frota própria",
+                  pricePrefix: "A partir de",
+                  priceText: "R$ 152,30",
+                  unitText: "/mês*",
+                  footnote: "*contratando o plano mensalizado",
+                  features: ["Faturamento pré-pago", "Monitoramento de entregador GPS", "Integrações PDV & Marketplaces", "Despacho Automático de entregas", "API de integração & Webhooks", "Relatórios & Dashboards", "Controle de taxas por distância", "Hub Logístico & Escalas/Diárias", "Mapa de Calor"]
+                },
+                {
+                  code: "central-entregas",
+                  headerBg: "bg-rose-600",
+                  title: "Central de Entregas",
+                  subtitle: "Para redes com múltiplos estabelecimentos",
+                  pricePrefix: "A partir de",
+                  priceText: "R$ 319,00",
+                  unitText: "/mês",
+                  footnote: "Até 10 estabelecimentos integrados",
+                  features: ["Faturamento pré-pago", "Multi estabelecimentos", "Monitoramento de entregador GPS", "Integrações & Cardápio Digital", "Despacho Automático inteligente", "API de integração & Webhooks", "Suporte técnico e CS dedicado", "Controle de taxas & Escalas/Diárias", "Mapa de Calor"]
+                },
+                {
+                  code: "enterprise-frota",
+                  headerBg: "bg-zinc-950 border-b border-zinc-700",
+                  title: "Enterprise",
+                  subtitle: "Para empresas de motoboys & operações",
+                  pricePrefix: "Taxa de setup R$ 2.497,00",
+                  priceText: "R$ 0,35",
+                  unitText: "/entrega*",
+                  footnote: "*plano possui valor mínimo mensal",
+                  features: ["Faturamento pós-pago", "Aplicativo personalizado (white-label)", "Multi estabelecimentos ilimitados", "Monitoramento & Chat de entregadores", "Integrações + API & Webhooks", "Despacho Automático & Roteirizador", "Relatórios financeiros & Dashboards", "Controle de Escalas, Diárias e Taxas", "Contas pré-pagas para clientes"]
+                },
+                {
+                  code: "ilimitado",
+                  headerBg: "bg-violet-800",
+                  title: "Plano Ilimitado",
+                  subtitle: "SaaS Completo White-Label sem limites",
+                  pricePrefix: "Mensalidade fixa",
+                  priceText: "R$ 499,90",
+                  unitText: "/mês",
+                  footnote: "Lojas, usuários e pedidos ilimitados",
+                  features: ["Estabelecimentos ilimitados", "Pedidos e dispositivos ilimitados", "Todos os 12+ módulos do PITAKO", "Hub Logístico + WhatsApp Bot IA", "Totem Autoatendimento + Mesas QR", "Sync offline + API White-Label"]
+                }
+              ].map((card) => {
+                const livePlan = plans.find((p) => p.code.toLowerCase() === card.code);
+                return (
+                  <div key={card.code} className="flex flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-white text-slate-900 shadow-lg">
+                    <div className={`${card.headerBg} px-4 py-3 text-center text-white`}>
+                      <h3 className="text-base font-extrabold">{livePlan?.name || card.title}</h3>
+                      <p className="text-[11px] opacity-90">{card.subtitle}</p>
+                    </div>
+                    <div className="flex flex-1 flex-col p-4">
+                      <div className="border-b border-slate-200 pb-3 text-center">
+                        <p className="text-[10px] font-semibold text-slate-500">{card.pricePrefix}</p>
+                        <p className="mt-0.5 text-2xl font-black text-red-700">
+                          {card.code === "enterprise-frota" ? card.priceText : `R$ ${(livePlan?.price ?? Number(card.priceText.replace("R$ ", "").replace(",", "."))).toFixed(2).replace(".", ",")}`}
+                          <span className="text-xs font-bold text-red-600">{card.unitText}</span>
+                        </p>
+                        <p className="mt-0.5 text-[10px] font-medium text-red-500">{card.footnote}</p>
+                      </div>
+                      <ul className="my-3 flex-1 space-y-1.5 text-[11px] font-medium text-slate-700">
+                        {card.features.map((f) => (
+                          <li key={f} className="flex items-start gap-1.5">
+                            <span className="mt-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white">✓</span>
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (livePlan) setCustomerPlanId(livePlan.id);
+                          setActiveTab("customers");
+                        }}
+                        className="mt-2 w-full rounded-full bg-rose-500 py-2 text-xs font-extrabold text-white shadow hover:bg-rose-600"
+                      >
+                        Contratar / Vincular Cliente
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
         <div className="grid gap-8 lg:grid-cols-3">
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
             <h2 className="mb-4 text-lg font-semibold text-white">Planos & Módulos</h2>
@@ -1321,6 +1419,7 @@ export default function MasterPanelPage() {
               </button>
             </form>
           </section>
+        </div>
         </div>
       )}
       {activeTab === "emails" && (

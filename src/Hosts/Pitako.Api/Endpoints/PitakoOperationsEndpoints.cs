@@ -16,6 +16,8 @@ using Pitako.Modules.Finance.Domain;
 using Pitako.Modules.Marketplaces.Application.Abstractions;
 using Pitako.Modules.Marketplaces.Application.Services;
 using Pitako.Modules.Marketplaces.Domain;
+using Pitako.Modules.MasterPanel.Application.Abstractions;
+using Pitako.Modules.MasterPanel.Domain;
 using Pitako.Modules.Orders.Application.Abstractions;
 using Pitako.Modules.Orders.Application.Services;
 using Pitako.Modules.Orders.Domain;
@@ -815,6 +817,308 @@ public static class PitakoOperationsEndpoints
                 completedAtUtc = updatedRun?.CompletedAtUtc
             });
         });
+
+        delivery.MapGet("/hub-ops", async (
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            IDeliveryPolicyRepository policyRepo,
+            IDeliveryCourierRepository courierRepo,
+            IMarketplaceStoreBindingRepository bindingRepo,
+            IGlobalSettingRepository settingRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var tenant = tenantId != Guid.Empty ? await tenantRepo.FindByIdAsync(tenantId, ct) : null;
+            var policy = await policyRepo.FindEffectivePolicyAsync(null, ct);
+            var couriers = await courierRepo.ListAllAsync(ct);
+            var bindings = await bindingRepo.ListAllAsync(ct);
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+
+            var originLat = policy?.OriginLatitude ?? -20.5386;
+            var originLng = policy?.OriginLongitude ?? -47.4008;
+
+            var gpsPositions = couriers.Select((c, idx) =>
+            {
+                var seed = Math.Abs(c.Id.GetHashCode()) + idx * 17;
+                var dLat = ((seed % 18) - 9) * 0.0012;
+                var dLng = (((seed / 19) % 18) - 9) * 0.0012;
+                return new
+                {
+                    courierId = c.Id,
+                    courierName = c.FullName,
+                    status = c.Availability.ToString(),
+                    vehicleType = c.VehicleType.ToString(),
+                    latitude = Math.Round(originLat + dLat, 6),
+                    longitude = Math.Round(originLng + dLng, 6),
+                    batteryPct = 76 + (seed % 24),
+                    lastPingUtc = DateTimeOffset.UtcNow.AddSeconds(-(seed % 45))
+                };
+            });
+
+            return Results.Ok(new
+            {
+                storeSlug = tenant?.Slug ?? "acai-demo",
+                storeName = tenant?.TradeName ?? "Loja",
+                settings = state.Settings,
+                shifts = state.Shifts,
+                chatMessages = state.ChatMessages.TakeLast(40),
+                externalRequests = state.ExternalRequests.TakeLast(20),
+                confirmations = state.Confirmations.TakeLast(30),
+                gpsPositions,
+                policy = policy is null ? null : new
+                {
+                    mode = policy.CalculationMode.ToString(),
+                    fixedAmount = policy.BaseFee.Amount,
+                    freeOverAmount = policy.FreeShippingThreshold?.Amount,
+                    estimatedMinutes = policy.BaseEstimatedMinutes,
+                    maxRadiusKm = policy.MaxRadiusKm
+                },
+                integrations = bindings.Select(b => new
+                {
+                    b.Id,
+                    provider = b.Provider.ToString(),
+                    b.ExternalStoreName,
+                    status = b.Status.ToString(),
+                    b.AutoAcceptOrders,
+                    b.LastSyncUtc
+                })
+            });
+        });
+
+        delivery.MapPut("/hub-ops/settings", async (
+            DeliveryHubSettingsReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+            state = state with
+            {
+                Settings = new DeliveryHubSettingsDto(
+                    req.AutoDispatchEnabled,
+                    Math.Clamp(req.SlaTargetMinutes, 10, 180),
+                    req.ExternalHubActive,
+                    string.IsNullOrWhiteSpace(req.ExternalHubPartner) ? "iFood Entrega Sob Demanda" : req.ExternalHubPartner.Trim(),
+                    req.AutoSyncMarketplaces)
+            };
+            await DeliveryHubStore.SaveAsync(settingRepo, tenantId, state, clock.UtcNow, ct);
+            return Results.Ok(state.Settings);
+        });
+
+        delivery.MapPost("/hub-ops/auto-dispatch", async (
+            ApiSecurityGuard guard,
+            CourierDispatchAndGpsService dispatchSvc,
+            IDeliveryCourierRepository courierRepo,
+            IDeliveryPolicyRepository policyRepo,
+            IOrderRepository orderRepo,
+            OrderManagementService orderSvc,
+            ITenantRepository tenantRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var couriers = (await courierRepo.ListAllAsync(ct))
+                .Where(c => c.Availability != CourierAvailabilityStatus.Suspended)
+                .ToList();
+            if (couriers.Count == 0)
+            {
+                var created = await dispatchSvc.RegisterCourierAsync(user!, "Motoboy Frota Própria", "16999990001", CourierVehicleType.Motorcycle, CourierCommissionMode.FixedPerDelivery, 6.50m, 0m, null, "PIT-0001", ct);
+                if (created.IsSuccess) couriers.Add(created.Value);
+            }
+            if (couriers.Count == 0)
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Dispatch.NoCourier", "Cadastre ou ative ao menos um entregador."));
+
+            var allOrders = await orderRepo.ListRecentAllAsync(80, ct);
+            var pendingDelivery = allOrders
+                .Where(o => o.FulfillmentMode == FulfillmentMode.Delivery && o.Status >= OrderStatus.Received && o.Status <= OrderStatus.Ready)
+                .OrderBy(o => o.PlacedAtUtc)
+                .Take(10)
+                .ToList();
+
+            if (pendingDelivery.Count == 0)
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Dispatch.NoOrders", "Nenhum pedido de entrega aguardando despacho."));
+
+            var policy = await policyRepo.FindEffectivePolicyAsync(null, ct);
+            var tenant = user!.TenantId.HasValue ? await tenantRepo.FindByIdAsync(user.TenantId.Value, ct) : null;
+            var originLat = policy?.OriginLatitude ?? -20.5386;
+            var originLng = policy?.OriginLongitude ?? -47.4008;
+
+            var courier = couriers[0];
+            var stops = pendingDelivery.Select((o, idx) =>
+            {
+                var angle = ((Math.Abs((o.DeliveryAddressSummary ?? o.OrderNumber).GetHashCode()) % 360) * Math.PI) / 180d;
+                var dLat = (1.2 + idx * 0.35) / 111d * Math.Sin(angle);
+                var dLng = (1.2 + idx * 0.35) / 111d * Math.Cos(angle);
+                return new DispatchStopInput(
+                    o.Id,
+                    o.OrderNumber,
+                    o.CustomerName,
+                    o.DeliveryAddressSummary ?? tenant?.Address ?? "Endereço de entrega",
+                    Math.Round(originLat + dLat, 6),
+                    Math.Round(originLng + dLng, 6),
+                    o.NetDeliveryFee);
+            }).ToList();
+
+            var runRes = await dispatchSvc.CreateAndOptimizeDispatchRunAsync(user!, courier.Id, originLat, originLng, stops, "Despacho Automático Food Delivery", ct);
+            if (runRes.IsFailure) return ApiSecurityGuard.ProblemFromError(runRes.Error);
+
+            await dispatchSvc.StartRunAsync(user!, runRes.Value.Id, ct);
+            foreach (var ord in pendingDelivery)
+                await AdvanceOrderUpToAsync(orderSvc, orderRepo, user!, ord.Id, OrderStatus.Dispatched, false, ct);
+
+            return Results.Ok(new
+            {
+                runId = runRes.Value.Id,
+                runCode = runRes.Value.RunCode,
+                courierName = courier.FullName,
+                dispatchedOrders = pendingDelivery.Count,
+                totalEstimatedDistanceKm = runRes.Value.TotalEstimatedDistanceKm
+            });
+        });
+
+        delivery.MapPost("/hub-ops/shifts", async (
+            DeliveryShiftReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+            var list = state.Shifts.ToList();
+
+            if (!string.IsNullOrWhiteSpace(req.DeleteId))
+            {
+                list.RemoveAll(s => s.Id == req.DeleteId);
+            }
+            else if (!string.IsNullOrWhiteSpace(req.ToggleId))
+            {
+                var idx = list.FindIndex(s => s.Id == req.ToggleId);
+                if (idx >= 0) list[idx] = list[idx] with { Active = !list[idx].Active };
+            }
+            else
+            {
+                list.Add(new DeliveryShiftDto(
+                    Guid.NewGuid().ToString("N")[..10],
+                    req.CourierId,
+                    string.IsNullOrWhiteSpace(req.CourierName) ? "Motoboy Escala" : req.CourierName.Trim(),
+                    string.IsNullOrWhiteSpace(req.ShiftWindow) ? "18:00 - 23:30" : req.ShiftWindow.Trim(),
+                    Math.Max(0m, req.DailyRate),
+                    string.IsNullOrWhiteSpace(req.DaysCsv) ? "Sex, Sáb, Dom" : req.DaysCsv.Trim(),
+                    true));
+            }
+
+            state = state with { Shifts = list };
+            await DeliveryHubStore.SaveAsync(settingRepo, tenantId, state, clock.UtcNow, ct);
+            return Results.Ok(state.Shifts);
+        });
+
+        delivery.MapPost("/hub-ops/chat", async (
+            DeliveryChatReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+            if (string.IsNullOrWhiteSpace(req.Message))
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Chat.Empty", "Mensagem é obrigatória."));
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+            var msgs = state.ChatMessages.ToList();
+            var entry = new DeliveryChatMessageDto(
+                Guid.NewGuid().ToString("N")[..10],
+                req.CourierId,
+                string.IsNullOrWhiteSpace(req.CourierName) ? "Motoboy" : req.CourierName.Trim(),
+                string.IsNullOrWhiteSpace(req.SenderRole) ? "Loja" : req.SenderRole.Trim(),
+                req.OrderNumber,
+                req.Message.Trim(),
+                clock.UtcNow);
+            msgs.Add(entry);
+            state = state with { ChatMessages = msgs.TakeLast(60).ToList() };
+            await DeliveryHubStore.SaveAsync(settingRepo, tenantId, state, clock.UtcNow, ct);
+            return Results.Ok(entry);
+        });
+
+        delivery.MapPost("/hub-ops/request-external-fleet", async (
+            ExternalFleetReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+            var list = state.ExternalRequests.ToList();
+            var item = new ExternalFleetDispatchDto(
+                $"HUB-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}",
+                string.IsNullOrWhiteSpace(req.Provider) ? "iFood Entrega Sob Demanda" : req.Provider.Trim(),
+                string.IsNullOrWhiteSpace(req.OrderNumber) ? "PEDIDO-FILA" : req.OrderNumber.Trim(),
+                Math.Max(0m, req.EstimatedFee),
+                "Entregador parceiro acionado",
+                clock.UtcNow);
+            list.Add(item);
+            state = state with { ExternalRequests = list.TakeLast(30).ToList() };
+            await DeliveryHubStore.SaveAsync(settingRepo, tenantId, state, clock.UtcNow, ct);
+            return Results.Ok(item);
+        });
+
+        delivery.MapPost("/hub-ops/confirm-delivery", async (
+            ConfirmDeliveryReq req,
+            ApiSecurityGuard guard,
+            IOrderRepository orderRepo,
+            OrderManagementService orderSvc,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Delivery, ct);
+            if (err is not null) return err;
+
+            var order = await orderRepo.FindByIdAsync(req.OrderId, ct);
+            if (order is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Order.NotFound", "Pedido não encontrado."));
+
+            await AdvanceOrderUpToAsync(orderSvc, orderRepo, user!, order.Id, OrderStatus.Completed, true, ct);
+
+            var tenantId = user!.TenantId ?? Guid.Empty;
+            var state = await DeliveryHubStore.LoadAsync(settingRepo, tenantId, ct);
+            var confs = state.Confirmations.ToList();
+            var conf = new DeliveryConfirmationDto(
+                order.Id,
+                order.OrderNumber,
+                string.IsNullOrWhiteSpace(req.ConfirmationCode) ? "BAIXA-DIRETA" : req.ConfirmationCode.Trim(),
+                string.IsNullOrWhiteSpace(req.Notes) ? "Entrega confirmada no Hub Logístico" : req.Notes.Trim(),
+                clock.UtcNow);
+            confs.Add(conf);
+            state = state with { Confirmations = confs.TakeLast(50).ToList() };
+            await DeliveryHubStore.SaveAsync(settingRepo, tenantId, state, clock.UtcNow, ct);
+            return Results.Ok(conf);
+        });
     }
 
     private static async Task AdvanceOrderUpToAsync(
@@ -1487,3 +1791,68 @@ public sealed record BindMarketplaceStoreReq(Guid PartnerAccountId, string Exter
 public sealed record MapMarketplaceCatalogReq(Guid StoreBindingId, Guid InternalProductId, string InternalItemTitle, string ExternalSkuCode, decimal CurrentPrice);
 public sealed record ToggleMarketplaceStoreReq(bool PauseStore, string? Reason = null);
 public sealed record SimulateMarketplaceOrderReq(string? ExternalOrderCode = null, string? CustomerName = null, string? ItemTitle = null, decimal UnitPrice = 26.90m, decimal DeliveryFee = 5.00m);
+
+public sealed record DeliveryHubSettingsDto(bool AutoDispatchEnabled, int SlaTargetMinutes, bool ExternalHubActive, string ExternalHubPartner, bool AutoSyncMarketplaces);
+public sealed record DeliveryShiftDto(string Id, Guid? CourierId, string CourierName, string ShiftWindow, decimal DailyRate, string DaysCsv, bool Active);
+public sealed record DeliveryChatMessageDto(string Id, Guid? CourierId, string CourierName, string SenderRole, string? OrderNumber, string Message, DateTimeOffset SentAtUtc);
+public sealed record ExternalFleetDispatchDto(string ProtocolCode, string Provider, string OrderNumber, decimal EstimatedFee, string Status, DateTimeOffset RequestedAtUtc);
+public sealed record DeliveryConfirmationDto(Guid OrderId, string OrderNumber, string ConfirmationCode, string Notes, DateTimeOffset ConfirmedAtUtc);
+public sealed record DeliveryHubStateDto(
+    DeliveryHubSettingsDto Settings,
+    List<DeliveryShiftDto> Shifts,
+    List<DeliveryChatMessageDto> ChatMessages,
+    List<ExternalFleetDispatchDto> ExternalRequests,
+    List<DeliveryConfirmationDto> Confirmations);
+
+public sealed record DeliveryHubSettingsReq(bool AutoDispatchEnabled, int SlaTargetMinutes = 35, bool ExternalHubActive = false, string? ExternalHubPartner = null, bool AutoSyncMarketplaces = true);
+public sealed record DeliveryShiftReq(Guid? CourierId, string? CourierName, string? ShiftWindow, decimal DailyRate = 85m, string? DaysCsv = null, string? ToggleId = null, string? DeleteId = null);
+public sealed record DeliveryChatReq(Guid? CourierId, string? CourierName, string? SenderRole, string? OrderNumber, string Message);
+public sealed record ExternalFleetReq(string? Provider, string? OrderNumber, decimal EstimatedFee = 9.90m);
+public sealed record ConfirmDeliveryReq(Guid OrderId, string? ConfirmationCode = null, string? Notes = null);
+
+internal static class DeliveryHubStore
+{
+    private static string KeyFor(Guid tenantId) => $"delivery:hub:{tenantId:N}";
+
+    public static async Task<DeliveryHubStateDto> LoadAsync(IGlobalSettingRepository repo, Guid tenantId, CancellationToken ct)
+    {
+        var rec = await repo.FindByKeyAsync(KeyFor(tenantId), ct);
+        if (!string.IsNullOrWhiteSpace(rec?.Value))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<DeliveryHubStateDto>(rec.Value);
+                if (parsed is not null) return parsed;
+            }
+            catch
+            {
+                // Fallback padrão abaixo
+            }
+        }
+        return new DeliveryHubStateDto(
+            new DeliveryHubSettingsDto(false, 35, false, "iFood Entrega Sob Demanda", true),
+            [new DeliveryShiftDto("turno-noite-01", null, "Escala Noite Padrão", "18:00 - 23:30", 90m, "Sex, Sáb, Dom", true)],
+            [],
+            [],
+            []);
+    }
+
+    public static async Task SaveAsync(IGlobalSettingRepository repo, Guid tenantId, DeliveryHubStateDto state, DateTimeOffset utcNow, CancellationToken ct)
+    {
+        var key = KeyFor(tenantId);
+        var json = JsonSerializer.Serialize(state);
+        var existing = await repo.FindByKeyAsync(key, ct);
+        if (existing is null)
+        {
+            var created = new GlobalPlatformSetting(Guid.NewGuid(), key, json, "Central Logistica Delivery", false);
+            created.SetCreatedAudit(utcNow);
+            await repo.AddAsync(created, ct);
+        }
+        else
+        {
+            existing.UpdateValue(json);
+            existing.SetUpdatedAudit(utcNow);
+        }
+        await repo.SaveChangesAsync(ct);
+    }
+}

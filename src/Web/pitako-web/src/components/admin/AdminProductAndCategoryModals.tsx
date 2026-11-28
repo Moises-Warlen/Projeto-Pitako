@@ -376,6 +376,7 @@ interface SizeFormRow {
   allowPaidExtras: boolean;
   trackInventory: boolean;
   stockQuantity: string;
+  allowedGroupIds: string[];
 }
 
 const DIETARY_SEALS = [
@@ -441,11 +442,25 @@ export function AdminProductFullModal({
   // Aba 3: Variações & Estratégia
   const [pricingStrategy, setPricingStrategy] = useState<number>(product?.pricingStrategy ?? (segmentCode?.toLowerCase() === "pizzaria" ? 2 : 1));
   const [sizes, setSizes] = useState<SizeFormRow[]>(() => {
+    const defaultFreePoolGroup =
+      freeGroups.find((fg) => fg.selectionKind === 2 || (!fg.isRequired && (fg.freeAllowance > 0 || fg.name.toLowerCase().includes("acompanhamento")))) ??
+      freeGroups.find((fg) => !fg.isRequired);
+
     if (product && product.variations.length > 0) {
+      const productGroupIds = product.modifierGroupIds || [];
       return product.variations.map((v) => {
-        const freeRule = product.variationRules.find((r) => r.variationId === v.id && freeGroups.some((fg) => fg.id === r.modifierGroupId));
+        const freeRule =
+          (defaultFreePoolGroup
+            ? product.variationRules.find((r) => r.variationId === v.id && r.modifierGroupId === defaultFreePoolGroup.id)
+            : undefined) ??
+          product.variationRules.find(
+            (r) =>
+              r.variationId === v.id &&
+              freeGroups.some((fg) => fg.id === r.modifierGroupId && !fg.isRequired && fg.selectionKind !== 5)
+          );
         const paidRule = product.variationRules.find((r) => r.variationId === v.id && paidGroups.some((pg) => pg.id === r.modifierGroupId));
         const costMatch = v.description?.match(/Custo\s*(?:estimado)?\s*R\$\s*([\d.,]+)/i);
+        const descAllowanceMatch = v.description?.match(/até\s*(\d+)/i);
         const allowFree = freeRule ? !freeRule.isHidden : true;
         const allowPaid = paidRule ? !paidRule.isHidden : true;
         const resolvedMode: CupAddonMode =
@@ -459,6 +474,14 @@ export function AdminProductFullModal({
                 ? String(estimatedSheetCost)
                 : "0";
         const cleanDesc = v.description && costMatch && v.description.trim().startsWith("Custo") ? "" : (v.description || "");
+        const hiddenForVar = new Set(
+          product.variationRules.filter((r) => r.variationId === v.id && r.isHidden).map((r) => r.modifierGroupId)
+        );
+        const allowedGroupIds = productGroupIds.filter((gid) => !hiddenForVar.has(gid));
+        const fallbackAllowance =
+          descAllowanceMatch?.[1] ??
+          String(defaultFreePoolGroup?.freeAllowance ?? (v.maxFlavors > 1 ? v.maxFlavors : 3));
+
         return {
           id: v.id,
           variationName: v.variationName,
@@ -468,25 +491,27 @@ export function AdminProductFullModal({
           measureUnit: v.measureUnit || labels.defaultUnit,
           price: String(v.price),
           costAmount: resolvedCost,
-          freeAllowance: String(freeRule?.freeAllowance ?? Math.max(0, v.maxFlavors || 3)),
+          freeAllowance: freeRule ? String(freeRule.freeAllowance) : fallbackAllowance,
           addonMode: resolvedMode,
           allowPaidExtras: allowPaid,
           trackInventory: Boolean(v.trackInventory),
-          stockQuantity: String(v.stockQuantity ?? 10)
+          stockQuantity: String(v.stockQuantity ?? 10),
+          allowedGroupIds
         };
       });
     }
+    const allDefaultIds = modifierGroups.map((g) => g.id);
     if (segmentCode?.toLowerCase() === "pizzaria") {
       return [
-        { variationName: "Broto (4 fatias)", description: "4 fatias individuais", sku: "", measureAmount: "4", measureUnit: "fatias", price: basePrice || "32.90", costAmount: "11.50", freeAllowance: "2", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10" },
-        { variationName: "Grande (8 fatias)", description: "8 fatias tradicionais", sku: "", measureAmount: "8", measureUnit: "fatias", price: "49.90", costAmount: "16.80", freeAllowance: "2", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10" }
+        { variationName: "Broto (4 fatias)", description: "4 fatias individuais", sku: "", measureAmount: "4", measureUnit: "fatias", price: basePrice || "32.90", costAmount: "11.50", freeAllowance: "2", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10", allowedGroupIds: allDefaultIds },
+        { variationName: "Grande (8 fatias)", description: "8 fatias tradicionais", sku: "", measureAmount: "8", measureUnit: "fatias", price: "49.90", costAmount: "16.80", freeAllowance: "2", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10", allowedGroupIds: allDefaultIds }
       ];
     }
     if (segmentCode?.toLowerCase() === "acaiteria" || !segmentCode) {
       return [
-        { variationName: "300 ml", description: "Copo 300 ml cremoso", sku: "", measureAmount: "300", measureUnit: "ml", price: "15.90", costAmount: "6.80", freeAllowance: "3", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10" },
-        { variationName: "500 ml", description: "Copo 500 ml caprichado", sku: "", measureAmount: "500", measureUnit: "ml", price: "19.90", costAmount: "9.40", freeAllowance: "4", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10" },
-        { variationName: "700 ml", description: "Copo 700 ml tamanho família", sku: "", measureAmount: "700", measureUnit: "ml", price: "26.90", costAmount: "12.50", freeAllowance: "5", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10" }
+        { variationName: "300 ml", description: "Copo 300 ml cremoso", sku: "", measureAmount: "300", measureUnit: "ml", price: "15.90", costAmount: "6.80", freeAllowance: "3", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10", allowedGroupIds: allDefaultIds },
+        { variationName: "500 ml", description: "Copo 500 ml caprichado", sku: "", measureAmount: "500", measureUnit: "ml", price: "19.90", costAmount: "9.40", freeAllowance: "4", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10", allowedGroupIds: allDefaultIds },
+        { variationName: "700 ml", description: "Copo 700 ml tamanho família", sku: "", measureAmount: "700", measureUnit: "ml", price: "26.90", costAmount: "12.50", freeAllowance: "5", addonMode: "both", allowPaidExtras: true, trackInventory: false, stockQuantity: "10", allowedGroupIds: allDefaultIds }
       ];
     }
     return [];
@@ -549,6 +574,7 @@ export function AdminProductFullModal({
   }
 
   function addSizeRow() {
+    const activeGroupIds = Array.from(new Set([...selectedFreeGroupIds, ...(enablePaidExtras ? selectedPaidGroupIds : [])]));
     setSizes([
       ...sizes,
       {
@@ -563,7 +589,8 @@ export function AdminProductFullModal({
         addonMode: "both",
         allowPaidExtras: true,
         trackInventory: false,
-        stockQuantity: "10"
+        stockQuantity: "10",
+        allowedGroupIds: activeGroupIds
       }
     ]);
   }
@@ -667,7 +694,8 @@ export function AdminProductFullModal({
             addonMode: s.addonMode,
             isActive: true,
             trackInventory: s.trackInventory,
-            stockQuantity: Math.max(0, Number(s.stockQuantity) || 0)
+            stockQuantity: Math.max(0, Number(s.stockQuantity) || 0),
+            allowedGroupIds: s.allowedGroupIds
           }))
         })
       },
@@ -1166,6 +1194,46 @@ export function AdminProductFullModal({
                             Lucro: R$ {profitNum.toFixed(2)} ({marginPct}%)
                           </span>
                         </div>
+
+                        {modifierGroups.length > 0 && (
+                          <div className="border-t border-slate-200 pt-2">
+                            <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-600">
+                              Categorias / Grupos visíveis neste tamanho:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {modifierGroups
+                                .filter((g) => selectedFreeGroupIds.includes(g.id) || (enablePaidExtras && selectedPaidGroupIds.includes(g.id)))
+                                .map((grp) => {
+                                  const isAllowed = sz.allowedGroupIds.includes(grp.id);
+                                  return (
+                                    <label
+                                      key={grp.id}
+                                      className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold transition ${
+                                        isAllowed
+                                          ? "border-indigo-300 bg-indigo-50 text-indigo-900"
+                                          : "border-slate-200 bg-white text-slate-400 line-through"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="h-3 w-3"
+                                        checked={isAllowed}
+                                        onChange={(e) => {
+                                          const copy = [...sizes];
+                                          const nextIds = e.target.checked
+                                            ? Array.from(new Set([...sz.allowedGroupIds, grp.id]))
+                                            : sz.allowedGroupIds.filter((gid) => gid !== grp.id);
+                                          copy[idx] = { ...sz, allowedGroupIds: nextIds };
+                                          setSizes(copy);
+                                        }}
+                                      />
+                                      {grp.name}
+                                    </label>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
