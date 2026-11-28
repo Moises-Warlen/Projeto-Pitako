@@ -973,7 +973,7 @@ public static partial class PitakoStoreSuiteEndpoints
             });
         });
 
-        printing.MapPost("/printers", async (
+        printing.MapPost("/printers/register", async (
             CreatePrinterProfileReq req,
             ApiSecurityGuard guard,
             IPrinterProfileRepository printerRepo,

@@ -88,7 +88,7 @@ export function AdminPrintersPanel({
     }
     setSavingNew(true);
     const res = await apiFetch(
-      "/api/v1/printing/printers",
+      "/api/v1/printing/printers/register",
       {
         method: "POST",
         body: JSON.stringify({

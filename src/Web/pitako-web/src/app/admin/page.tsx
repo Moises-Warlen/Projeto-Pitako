@@ -184,7 +184,10 @@ export default function AdminStorePage() {
 
   const refreshStoreData = useCallback(async () => {
     const session = loadSession();
-    if (!session) return;
+    if (!session || session.scope !== "Establishment") {
+      router.replace("/login");
+      return;
+    }
     setToken(session.accessToken);
     if (session.storeSlug) setSlug(session.storeSlug);
 
