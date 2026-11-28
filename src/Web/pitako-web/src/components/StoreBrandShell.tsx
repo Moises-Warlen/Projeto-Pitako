@@ -220,12 +220,12 @@ export function StoreBrandShell({
     void pollLiveAlerts();
   }
 
-  const openConversationThread = useCallback(async (convId: string) => {
+  const openConversationThread = useCallback(async (convId: string, clearFeedback = false) => {
     const session = loadSession();
     if (!session) return;
     setSelectedConvId(convId);
     setChatLoading(true);
-    setChatFeedback(null);
+    if (clearFeedback) setChatFeedback(null);
     try {
       const res = await apiFetch<{
         conversations?: Array<{
@@ -531,7 +531,7 @@ export function StoreBrandShell({
                 </button>
 
                 {chatInboxOpen && (
-                  <div className="absolute right-0 top-10 z-50 w-96 max-w-[92vw] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
+                  <div className="fixed right-4 top-16 z-50 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
                     <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
                       <div className="flex items-center gap-2">
                         <MessageCircle className="h-4 w-4 text-emerald-600" />
@@ -574,7 +574,7 @@ export function StoreBrandShell({
                             <button
                               key={c.id}
                               type="button"
-                              onClick={() => void openConversationThread(c.id)}
+                              onClick={() => void openConversationThread(c.id, true)}
                               className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
                             >
                               <div className="min-w-0 flex-1">
