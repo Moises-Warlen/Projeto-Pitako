@@ -11,7 +11,9 @@ public enum MarketplaceProvider
     DeliveryMuch = 4,
     Food99 = 5,
     Keeta = 6,
-    FoodToSave = 7
+    FoodToSave = 7,
+    MenuDino = 8,
+    OwnDeliveryWebhook = 9
 }
 
 public enum MarketplaceAuthKind
@@ -115,7 +117,19 @@ public static class MarketplaceCapabilityMatrix
                 MarketplaceProvider.FoodToSave, "Food To Save", MarketplaceAuthKind.ApiKey,
                 SupportsOrderConfirmation: true, SupportsOrderDispatch: true, SupportsOrderCancellation: true,
                 SupportsItemPauseToggle: true, SupportsCatalogPriceSync: false, SupportsStoreOpenCloseToggle: true,
-                SupportsWebhookHmacSignature: false, SupportsBulkMenuActions: false, MaxBatchSize: 20)
+                SupportsWebhookHmacSignature: false, SupportsBulkMenuActions: false, MaxBatchSize: 20),
+
+            [MarketplaceProvider.MenuDino] = new(
+                MarketplaceProvider.MenuDino, "MenuDino", MarketplaceAuthKind.ApiKey,
+                SupportsOrderConfirmation: true, SupportsOrderDispatch: true, SupportsOrderCancellation: true,
+                SupportsItemPauseToggle: true, SupportsCatalogPriceSync: true, SupportsStoreOpenCloseToggle: true,
+                SupportsWebhookHmacSignature: false, SupportsBulkMenuActions: false, MaxBatchSize: 50),
+
+            [MarketplaceProvider.OwnDeliveryWebhook] = new(
+                MarketplaceProvider.OwnDeliveryWebhook, "Delivery Próprio (Webhook / API)", MarketplaceAuthKind.ApiKey,
+                SupportsOrderConfirmation: true, SupportsOrderDispatch: true, SupportsOrderCancellation: true,
+                SupportsItemPauseToggle: true, SupportsCatalogPriceSync: true, SupportsStoreOpenCloseToggle: true,
+                SupportsWebhookHmacSignature: false, SupportsBulkMenuActions: true, MaxBatchSize: 200)
         };
 
     public static MarketplaceCapabilities GetFor(MarketplaceProvider provider) =>

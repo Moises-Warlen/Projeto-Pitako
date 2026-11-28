@@ -1429,15 +1429,48 @@ public static class PitakoOperationsEndpoints
             var eventId = http.Request.Headers["X-Event-Id"].FirstOrDefault() ?? $"wh-{Guid.NewGuid():N}";
             var signature = http.Request.Headers["X-Hub-Signature-256"].FirstOrDefault()
                 ?? http.Request.Headers["X-IFood-Signature"].FirstOrDefault()
-                ?? http.Request.Headers["X-Signature"].FirstOrDefault();
+                ?? http.Request.Headers["X-Signature"].FirstOrDefault()
+                ?? http.Request.Headers["X-Api-Key"].FirstOrDefault()
+                ?? http.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 
-            if (string.IsNullOrWhiteSpace(merchantId) && !string.IsNullOrWhiteSpace(rawBody))
+            if ((parsedProvider == MarketplaceProvider.MenuDino || parsedProvider == MarketplaceProvider.OwnDeliveryWebhook)
+                && string.IsNullOrWhiteSpace(signature))
+            {
+                return ApiSecurityGuard.ProblemFromError(Error.Unauthorized(
+                    "Marketplace.ApiKeyRequired",
+                    $"Envie o cabeçalho X-Api-Key (ou Authorization: Bearer) com o segredo cadastrado em {parsedProvider}."));
+            }
+
+            string? extractedPhone = null;
+            string? extractedAddress = null;
+            decimal extractedDeliveryFee = 0m;
+            string? extractedPaymentMethod = null;
+
+            if (!string.IsNullOrWhiteSpace(rawBody))
             {
                 try
                 {
                     using var doc = JsonDocument.Parse(rawBody);
-                    if (doc.RootElement.TryGetProperty("merchantId", out var mpProp))
+                    var r = doc.RootElement;
+                    if (string.IsNullOrWhiteSpace(merchantId) && r.TryGetProperty("merchantId", out var mpProp))
                         merchantId = mpProp.GetString();
+
+                    if (r.TryGetProperty("customerPhone", out var ph1) || r.TryGetProperty("telefone", out ph1))
+                        extractedPhone = ph1.ValueKind == JsonValueKind.String ? ph1.GetString() : ph1.GetRawText();
+
+                    if (r.TryGetProperty("deliveryAddress", out var adr1) || r.TryGetProperty("endereco", out adr1) || r.TryGetProperty("enderecoEntrega", out adr1))
+                    {
+                        if (adr1.ValueKind == JsonValueKind.String) extractedAddress = adr1.GetString();
+                        else if (adr1.ValueKind == JsonValueKind.Object) extractedAddress = adr1.GetRawText();
+                    }
+
+                    if (r.TryGetProperty("deliveryFee", out var df1) || r.TryGetProperty("taxaEntrega", out df1))
+                    {
+                        if (df1.ValueKind == JsonValueKind.Number && df1.TryGetDecimal(out var dVal)) extractedDeliveryFee = dVal;
+                    }
+
+                    if (r.TryGetProperty("paymentMethod", out var pm1) || r.TryGetProperty("formaPagamento", out pm1))
+                        extractedPaymentMethod = pm1.ValueKind == JsonValueKind.String ? pm1.GetString() : null;
                 }
                 catch { /* parsed below by connector */ }
             }
@@ -1454,13 +1487,16 @@ public static class PitakoOperationsEndpoints
                 binding,
                 res.Value,
                 res.Value.NormalizedCustomerName ?? $"Cliente {parsedProvider}",
-                "Pedido Marketplace",
+                "Pedido Externo",
                 Math.Max(0m, res.Value.NormalizedTotal.Amount),
-                0m,
+                Math.Max(0m, extractedDeliveryFee),
                 orderRepo,
                 realtimeNotifier,
                 clock,
-                ct);
+                ct,
+                extractedPhone,
+                extractedAddress,
+                extractedPaymentMethod);
 
             return Results.Ok(new
             {
@@ -1483,7 +1519,10 @@ public static class PitakoOperationsEndpoints
         IOrderRepository orderRepo,
         IOrderRealtimeNotifier realtimeNotifier,
         IClock clock,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? customerPhone = null,
+        string? deliveryAddressSummary = null,
+        string? paymentMethodLabel = null)
     {
         var existingByKey = await orderRepo.FindByIdempotencyKeyAsync($"mp-{inbound.Provider}-{inbound.ExternalEventId}", ct);
         if (existingByKey is not null)
@@ -1530,12 +1569,17 @@ public static class PitakoOperationsEndpoints
             MarketplaceProvider.Food99 => "99",
             MarketplaceProvider.Rappi => "RP",
             MarketplaceProvider.Aiqfome => "AQ",
+            MarketplaceProvider.MenuDino => "MD",
+            MarketplaceProvider.OwnDeliveryWebhook => "DP",
             _ => "MK"
         };
         var orderNumber = $"{prefix}-{seq:D4}";
         var fulfillment = inbound.NormalizedFulfillment == MarketplaceFulfillmentKind.CounterPickup
             ? FulfillmentMode.CounterPickup
             : FulfillmentMode.Delivery;
+        var addressText = !string.IsNullOrWhiteSpace(deliveryAddressSummary)
+            ? deliveryAddressSummary.Trim()
+            : $"{inbound.Provider} · Pedido {inbound.ExternalOrderId}";
 
         var order = Order.CreateFromCart(
             cart,
@@ -1543,8 +1587,8 @@ public static class PitakoOperationsEndpoints
             OrderChannel.Marketplace,
             fulfillment,
             customerName,
-            null,
-            $"{inbound.Provider} · Pedido {inbound.ExternalOrderId}",
+            customerPhone,
+            addressText,
             Money.Create(Math.Max(0m, deliveryFeeAmount)).Value,
             Money.Zero(),
             Money.Zero(),
@@ -1553,7 +1597,7 @@ public static class PitakoOperationsEndpoints
             null,
             $"mp-{inbound.Provider}-{inbound.ExternalEventId}",
             utcNow,
-            $"{inbound.Provider} (Online)").Value;
+            !string.IsNullOrWhiteSpace(paymentMethodLabel) ? paymentMethodLabel.Trim() : $"{inbound.Provider} (Online)").Value;
 
         order.ConfirmPayment(Guid.Empty, $"Pago online via {inbound.Provider}", utcNow);
         if (binding?.AutoAcceptOrders == true)
@@ -1649,6 +1693,33 @@ public static class PitakoOperationsEndpoints
                 totalAmount = total,
                 pickupType = "TAKEOUT",
                 bags = new[] { new { bagSku = "BAG-FTS-01", bagTitle = itemTitle, quantity = 1, bagPrice = unitPrice } }
+            }),
+            MarketplaceProvider.MenuDino => JsonSerializer.Serialize(new
+            {
+                orderId = extOrderCode,
+                shortCode = extOrderCode[^4..],
+                customerName = customer,
+                customerPhone = "16999112233",
+                deliveryAddress = "Av. Centro, 150 — MenuDino",
+                deliveryFee,
+                discount = 0m,
+                totalAmount = total,
+                orderType = "DELIVERY",
+                items = new[] { new { sku = "SKU-MD-01", name = itemTitle, quantity = 1, unitPrice, customization = "Pedido MenuDino" } }
+            }),
+            MarketplaceProvider.OwnDeliveryWebhook => JsonSerializer.Serialize(new
+            {
+                orderId = extOrderCode,
+                shortCode = extOrderCode[^4..],
+                customerName = customer,
+                customerPhone = "16999887766",
+                deliveryAddress = "Rua Comercial, 400 — Delivery Próprio",
+                deliveryFee,
+                discount = 0m,
+                totalAmount = total,
+                fulfillment = "STORE_DELIVERY",
+                paymentMethod = "PIX Online (Site Próprio)",
+                items = new[] { new { sku = "SKU-DP-01", name = itemTitle, quantity = 1, unitPrice, customization = "Cardápio Próprio Externo" } }
             }),
             _ => JsonSerializer.Serialize(new
             {

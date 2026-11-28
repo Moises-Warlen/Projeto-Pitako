@@ -280,7 +280,7 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         var mpOverviewRes = await client.SendAsync(mpOverviewReq);
         Assert.Equal(HttpStatusCode.OK, mpOverviewRes.StatusCode);
         var mpJson = await mpOverviewRes.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(7, mpJson.GetProperty("capabilities").GetArrayLength());
+        Assert.Equal(9, mpJson.GetProperty("capabilities").GetArrayLength());
         var food99Binding = mpJson.GetProperty("bindings").EnumerateArray().First(b => b.GetProperty("providerName").GetString() == "Food99");
         var food99BindingId = food99Binding.GetProperty("id").GetGuid();
 
@@ -291,6 +291,45 @@ public sealed class OperationalModulesAndPixEndToEndIntegrationTests : IAsyncLif
         Assert.Equal(HttpStatusCode.Created, sim99Res.StatusCode);
         var sim99Json = await sim99Res.Content.ReadFromJsonAsync<JsonElement>();
         Assert.StartsWith("99-", sim99Json.GetProperty("orderNumber").GetString());
+
+        // 6b. Delivery Próprio (Webhook / API) & MenuDino — conexão por chave API e recepção no Kanban
+        using var accOwnReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/marketplaces/accounts");
+        accOwnReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        accOwnReq.Content = JsonContent.Create(new
+        {
+            provider = 9,
+            accountLabel = "Site Próprio Express",
+            clientOrMerchantIdentifier = "site-proprio-01",
+            rawSecretPayload = "chave-site-proprio-secreta"
+        });
+        var accOwnRes = await client.SendAsync(accOwnReq);
+        Assert.Equal(HttpStatusCode.Created, accOwnRes.StatusCode);
+        var accOwnId = (await accOwnRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        using var bindOwnReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/marketplaces/bindings");
+        bindOwnReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", storeToken);
+        bindOwnReq.Content = JsonContent.Create(new
+        {
+            partnerAccountId = accOwnId,
+            externalMerchantId = "MERCH-SITE-PROPRIO-01",
+            externalStoreName = "Site Próprio E2E",
+            autoAcceptOrders = true
+        });
+        var bindOwnRes = await client.SendAsync(bindOwnReq);
+        Assert.Equal(HttpStatusCode.Created, bindOwnRes.StatusCode);
+
+        var sitePayload = """{"orderId":"SITE-901","shortCode":"0901","customerName":"Lucas Site","customerPhone":"16999001122","deliveryAddress":"Rua Teste, 123","deliveryFee":7.0,"totalAmount":42.0,"fulfillment":"STORE_DELIVERY","items":[{"sku":"SKU-01","name":"Açaí Completo 500ml","quantity":1,"unitPrice":35.0}]}""";
+        var unauthWh = await client.PostAsync("/api/v1/public/webhooks/marketplaces/OwnDeliveryWebhook/acai-demo", new StringContent(sitePayload, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthWh.StatusCode);
+
+        using var validWhReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/public/webhooks/marketplaces/OwnDeliveryWebhook/acai-demo");
+        validWhReq.Headers.Add("X-Api-Key", "chave-site-proprio-secreta");
+        validWhReq.Headers.Add("X-Merchant-Id", "MERCH-SITE-PROPRIO-01");
+        validWhReq.Content = new StringContent(sitePayload, System.Text.Encoding.UTF8, "application/json");
+        var validWhRes = await client.SendAsync(validWhReq);
+        Assert.Equal(HttpStatusCode.OK, validWhRes.StatusCode);
+        var validWhJson = await validWhRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.StartsWith("DP-", validWhJson.GetProperty("orderNumber").GetString());
 
         // Provision a 2nd independent store and confirm ZERO cross-tenant marketplace leakage
         var masterLogin = await client.PostAsJsonAsync("/api/v1/auth/login-saas", new

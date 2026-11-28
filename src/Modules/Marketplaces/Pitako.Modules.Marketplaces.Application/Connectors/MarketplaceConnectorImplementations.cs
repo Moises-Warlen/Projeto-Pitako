@@ -41,11 +41,21 @@ public abstract class MarketplaceConnectorBase : IMarketplaceConnector
 
     public virtual bool VerifyWebhookSignature(string rawBody, string? signatureHeader, string secretKey)
     {
-        if (!Capabilities.SupportsWebhookHmacSignature)
-            return true;
+        if (string.IsNullOrWhiteSpace(signatureHeader))
+            return !Capabilities.SupportsWebhookHmacSignature;
 
-        if (string.IsNullOrWhiteSpace(signatureHeader) || string.IsNullOrWhiteSpace(secretKey))
-            return false;
+        if (string.IsNullOrWhiteSpace(secretKey))
+            return !Capabilities.SupportsWebhookHmacSignature;
+
+        // Aceita ApiKey / Bearer Token direto para conectores de API Key (ex.: MenuDino e Delivery Próprio)
+        if (Capabilities.AuthKind == MarketplaceAuthKind.ApiKey)
+        {
+            var tokenCandidate = signatureHeader.Trim()
+                .Replace("Bearer ", string.Empty, StringComparison.OrdinalIgnoreCase)
+                .Trim();
+            if (string.Equals(tokenCandidate, secretKey.Trim(), StringComparison.Ordinal))
+                return true;
+        }
 
         var keyBytes = Encoding.UTF8.GetBytes(secretKey.Trim());
         var bodyBytes = Encoding.UTF8.GetBytes(rawBody ?? string.Empty);
@@ -107,9 +117,9 @@ public abstract class MarketplaceConnectorBase : IMarketplaceConnector
                 shortCode,
                 externalMerchantId.Trim(),
                 customerName,
-                ReadString(root, "customerPhone"),
+                ReadString(root, "customerPhone") ?? ReadString(root, "telefone") ?? ReadString(root, "clienteTelefone"),
                 fulfillment,
-                ReadString(root, "deliveryAddress"),
+                ReadAddressSummary(root),
                 items,
                 deliveryFee,
                 discount,
@@ -164,6 +174,28 @@ public abstract class MarketplaceConnectorBase : IMarketplaceConnector
         };
     }
 
+    private static string? ReadAddressSummary(JsonElement root)
+    {
+        foreach (var key in new[] { "deliveryAddress", "enderecoEntrega", "endereco", "address" })
+        {
+            if (!root.TryGetProperty(key, out var prop)) continue;
+            if (prop.ValueKind == JsonValueKind.String) return prop.GetString();
+            if (prop.ValueKind == JsonValueKind.Object)
+            {
+                var parts = new[]
+                {
+                    ReadString(prop, "street") ?? ReadString(prop, "rua") ?? ReadString(prop, "logradouro"),
+                    ReadString(prop, "number") ?? ReadString(prop, "numero"),
+                    ReadString(prop, "neighborhood") ?? ReadString(prop, "bairro"),
+                    ReadString(prop, "city") ?? ReadString(prop, "cidade")
+                }.Where(p => !string.IsNullOrWhiteSpace(p));
+                var joined = string.Join(", ", parts);
+                if (!string.IsNullOrWhiteSpace(joined)) return joined;
+            }
+        }
+        return null;
+    }
+
     private static string? ReadString(JsonElement elem, string key)
     {
         if (!elem.TryGetProperty(key, out var prop))
@@ -213,8 +245,14 @@ public sealed class KeetaConnector() : MarketplaceConnectorBase(MarketplaceProvi
 public sealed class FoodToSaveConnector() : MarketplaceConnectorBase(MarketplaceProvider.FoodToSave, new(
     "bagOrderCode", "pickupPin", "consumerName", "bags", "bagSku", "bagTitle", "quantity", "bagPrice", "totalAmount", "deliveryFee", "discount", "pickupType"));
 
+public sealed class MenuDinoConnector() : MarketplaceConnectorBase(MarketplaceProvider.MenuDino, new(
+    "orderId", "shortCode", "customerName", "items", "sku", "name", "quantity", "unitPrice", "totalAmount", "deliveryFee", "discount", "orderType"));
+
+public sealed class OwnDeliveryWebhookConnector() : MarketplaceConnectorBase(MarketplaceProvider.OwnDeliveryWebhook, new(
+    "orderId", "shortCode", "customerName", "items", "sku", "name", "quantity", "unitPrice", "totalAmount", "deliveryFee", "discount", "fulfillment"));
+
 /// <summary>
-/// Registro central dos conectores oficiais para os 7 marketplaces configurados no Hub.
+/// Registro central dos conectores oficiais e webhooks externos configurados no Hub PITAKO.
 /// </summary>
 public sealed class MarketplaceConnectorRegistry
 {
@@ -230,7 +268,9 @@ public sealed class MarketplaceConnectorRegistry
             new DeliveryMuchConnector(),
             new Food99Connector(),
             new KeetaConnector(),
-            new FoodToSaveConnector()
+            new FoodToSaveConnector(),
+            new MenuDinoConnector(),
+            new OwnDeliveryWebhookConnector()
         };
 
         var dict = defaults.ToDictionary(c => c.Provider);

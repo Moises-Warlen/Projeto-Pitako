@@ -28,7 +28,7 @@ public sealed class MarketplacesConnectorsUnitTests
         var registry = new MarketplaceConnectorRegistry();
         var capabilities = registry.ListAllCapabilities();
 
-        Assert.Equal(7, capabilities.Count);
+        Assert.Equal(9, capabilities.Count);
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.IFood);
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.Rappi);
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.Aiqfome);
@@ -36,6 +36,8 @@ public sealed class MarketplacesConnectorsUnitTests
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.Food99);
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.Keeta);
         Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.FoodToSave);
+        Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.MenuDino);
+        Assert.Contains(capabilities, c => c.Provider == MarketplaceProvider.OwnDeliveryWebhook);
 
         var samples = new Dictionary<MarketplaceProvider, string>
         {
@@ -45,7 +47,9 @@ public sealed class MarketplacesConnectorsUnitTests
             [MarketplaceProvider.DeliveryMuch] = """{"orderCode":"DM-40","shortCode":"4040","customer":"Diego","shipping":7.0,"totalValue":47.0,"products":[{"code":"SKU-4","title":"Burger","qty":2,"unitValue":20.0}]}""",
             [MarketplaceProvider.Food99] = """{"orderNo":"99F-50","pickupCode":"5050","buyerName":"Eva","freightAmount":3.0,"payAmount":28.0,"dishes":[{"dishCode":"SKU-5","dishName":"Tigela","count":1,"price":25.0}]}""",
             [MarketplaceProvider.Keeta] = """{"orderSn":"KT-60","daySeq":"6060","recipientName":"Fábio","deliveryAmount":5.0,"orderAmount":35.0,"skuList":[{"outerSkuId":"SKU-6","skuName":"Combo","quantity":1,"price":30.0}]}""",
-            [MarketplaceProvider.FoodToSave] = """{"bagOrderCode":"FTS-70","pickupPin":"7070","consumerName":"Gabi","totalAmount":19.90,"pickupType":"PICKUP","bags":[{"bagSku":"BAG-M","bagTitle":"Sacola Surpresa M","quantity":1,"bagPrice":19.90}]}"""
+            [MarketplaceProvider.FoodToSave] = """{"bagOrderCode":"FTS-70","pickupPin":"7070","consumerName":"Gabi","totalAmount":19.90,"pickupType":"PICKUP","bags":[{"bagSku":"BAG-M","bagTitle":"Sacola Surpresa M","quantity":1,"bagPrice":19.90}]}""",
+            [MarketplaceProvider.MenuDino] = """{"orderId":"MD-80","shortCode":"8080","customerName":"Henrique","deliveryFee":6.0,"totalAmount":38.90,"orderType":"DELIVERY","items":[{"sku":"SKU-8","name":"X-Salada Especial","quantity":1,"unitPrice":32.90}]}""",
+            [MarketplaceProvider.OwnDeliveryWebhook] = """{"orderId":"DP-90","shortCode":"9090","customerName":"Juliana","customerPhone":"16999112233","deliveryAddress":"Av. Brasil, 500","deliveryFee":5.0,"totalAmount":45.0,"fulfillment":"STORE_DELIVERY","items":[{"sku":"SKU-9","name":"Pizza Grande","quantity":1,"unitPrice":40.0}]}"""
         };
 
         foreach (var (provider, json) in samples)

@@ -195,11 +195,11 @@ public sealed class MarketplaceHubService
         var secret = _secretProtector.Unprotect(account.EncryptedCredentialsBlob);
         var signatureValid = connector.VerifyWebhookSignature(rawPayloadJson, signatureHeader, secret);
 
-        if (connector.Capabilities.SupportsWebhookHmacSignature && !signatureValid)
+        if (!signatureValid && (connector.Capabilities.SupportsWebhookHmacSignature || !string.IsNullOrWhiteSpace(signatureHeader)))
         {
             return Result.Failure<MarketplaceInboundEvent>(Error.Unauthorized(
                 "Marketplace.InvalidWebhookSignature",
-                $"Assinatura HMAC inválida para webhook de {connector.Capabilities.DisplayName}."));
+                $"Credencial/assinatura inválida para webhook de {connector.Capabilities.DisplayName}."));
         }
 
         var utcNow = _clock.UtcNow;

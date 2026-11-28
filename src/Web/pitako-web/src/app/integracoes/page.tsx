@@ -309,7 +309,7 @@ export default function StoreMarketplacesPage() {
             )}
           </div>
           <p className="text-xs text-slate-500">
-            Cada estabelecimento possui suas próprias credenciais cifradas (AES-GCM), vinculações iFood, 99Food, Rappi, Aiqfome, Delivery Much, Keeta e Food To Save, webhooks exclusivos e entrada direta no Kanban.
+            Cada estabelecimento possui suas próprias credenciais cifradas (AES-GCM), vinculações iFood, 99Food, Rappi, Aiqfome, Delivery Much, Keeta, Food To Save, <strong>MenuDino</strong> e <strong>Delivery Próprio (Webhook / API)</strong> com entrada direta no Kanban.
           </p>
         </div>
         {token && (
@@ -356,14 +356,51 @@ export default function StoreMarketplacesPage() {
       {token && (
         <>
           {/* Webhook Endpoint Banner per Store */}
-          <div className="mb-6 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 text-xs text-indigo-950">
-            <div className="font-bold">Endpoint Webhook Exclusivo desta Loja ({overview?.storeSlug})</div>
-            <p className="mt-0.5 text-indigo-800">
-              Configure nos portais de desenvolvedor iFood / 99Food / Rappi com validação HMAC-SHA256 automática por tenant:
-            </p>
-            <code className="mt-2 block overflow-x-auto rounded-lg border border-indigo-200 bg-white px-3 py-2 font-mono text-[11px] text-slate-800">
-              POST {webhookBase}
-            </code>
+          <div className="mb-6 space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 text-xs text-indigo-950">
+            <div>
+              <div className="font-bold">Endpoint Webhook Exclusivo desta Loja ({overview?.storeSlug})</div>
+              <p className="mt-0.5 text-indigo-800">
+                Configure no iFood, 99Food, Rappi, <strong>MenuDino</strong> ou no seu <strong>site / cardápio próprio externo</strong> (`OwnDeliveryWebhook`) usando `X-Api-Key` (sua chave cadastrada abaixo) ou assinatura HMAC-SHA256:
+              </p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="rounded-xl border border-indigo-200 bg-white p-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-wide text-indigo-700">MenuDino (Webhook de Pedidos)</p>
+                <code className="mt-1 block overflow-x-auto font-mono text-[11px] text-slate-800">
+                  POST {API_BASE_URL}/api/v1/public/webhooks/marketplaces/MenuDino/{overview?.storeSlug || "slug-da-loja"}
+                </code>
+              </div>
+              <div className="rounded-xl border border-indigo-200 bg-white p-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Delivery Próprio / Site Externo (API Aberta)</p>
+                <code className="mt-1 block overflow-x-auto font-mono text-[11px] text-slate-800">
+                  POST {API_BASE_URL}/api/v1/public/webhooks/marketplaces/OwnDeliveryWebhook/{overview?.storeSlug || "slug-da-loja"}
+                </code>
+              </div>
+            </div>
+            <details className="rounded-xl border border-indigo-200 bg-white p-3">
+              <summary className="cursor-pointer font-bold text-slate-800">
+                Ver cabeçalho e modelo JSON para conectar MenuDino ou site próprio do cliente
+              </summary>
+              <div className="mt-2 space-y-2 text-[11px] text-slate-700">
+                <p>
+                  <strong>Cabeçalho HTTP:</strong> <code>X-Api-Key: SUA_CHAVE_SECRETA_CADASTRADA_ABAIXO</code> (ou <code>Authorization: Bearer SUA_CHAVE</code>)
+                </p>
+                <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 font-mono text-[10px] text-emerald-300">{`{
+  "orderId": "SITE-1042",
+  "shortCode": "1042",
+  "customerName": "Maria Silva",
+  "customerPhone": "16999112233",
+  "deliveryAddress": "Rua das Flores, 210 - Centro",
+  "deliveryFee": 6.00,
+  "totalAmount": 42.90,
+  "fulfillment": "STORE_DELIVERY",
+  "paymentMethod": "PIX Online",
+  "items": [
+    { "sku": "ITEM-01", "name": "Açaí 500ml", "quantity": 1, "unitPrice": 36.90, "notes": "Sem granola" }
+  ]
+}`}</pre>
+              </div>
+            </details>
           </div>
 
           {/* Partners Capability Matrix Grid */}
