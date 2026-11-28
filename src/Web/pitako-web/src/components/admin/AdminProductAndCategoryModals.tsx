@@ -279,7 +279,7 @@ export function AdminCategoryEditModal({
 
         <div className="space-y-3 text-xs">
           <div>
-            <label className="font-bold text-slate-700">Template da Categoria (Estilo iFood)</label>
+            <label className="font-bold text-slate-700">Formato da Categoria</label>
             <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
               {CATEGORY_TEMPLATES.map((tpl) => {
                 const selected = templateKind === tpl.id;

@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileText, Plus, Printer, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Plus, Printer, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, resolveMediaUrl } from "@/lib/api";
+import { AdminProductDto } from "./AdminCatalogTab";
+import { downloadSingleSheetExcelHtml } from "./AdminCatalogAndSheetsExportModal";
 
 export interface TechnicalSheetSummaryItem {
   id: string;
@@ -56,6 +58,7 @@ function fmtBrl(v: number) {
 export function AdminTechSheetPdfModal({
   token,
   sheet,
+  product,
   supplies = [],
   storeTradeName,
   onSaved,
@@ -64,6 +67,7 @@ export function AdminTechSheetPdfModal({
 }: {
   token?: string;
   sheet: TechnicalSheetSummaryItem | null;
+  product?: AdminProductDto;
   supplies?: Array<{ id: string; name: string; contentUnitCode: string; costPerContentUnit: number }>;
   storeTradeName: string;
   onSaved?: () => Promise<void>;
@@ -163,6 +167,21 @@ export function AdminTechSheetPdfModal({
                 <Save className="h-3.5 w-3.5" /> {saving ? "Salvando..." : "Salvar Ficha Técnica"}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                downloadSingleSheetExcelHtml(
+                  sheet,
+                  product,
+                  storeTradeName,
+                  resolveMediaUrl(product?.primaryImageUrl) || undefined
+                );
+                onNotify?.("Ficha técnica exportada para Excel (.xls)!");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-teal-700"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Excel (.xls)
+            </button>
             <button
               type="button"
               onClick={() => window.print()}

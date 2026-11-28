@@ -18,6 +18,9 @@ public sealed class EfPrinterProfileRepository(PrintingDbContext db) : IPrinterP
     public async Task AddAsync(PrinterProfile printer, CancellationToken cancellationToken = default) =>
         await db.Printers.AddAsync(printer, cancellationToken);
 
+    public void Remove(PrinterProfile printer) =>
+        db.Printers.Remove(printer);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }
@@ -42,6 +45,15 @@ public sealed class EfSectorRoutingRuleRepository(PrintingDbContext db) : ISecto
 
     public async Task AddAsync(SectorRoutingRule rule, CancellationToken cancellationToken = default) =>
         await db.SectorRoutingRules.AddAsync(rule, cancellationToken);
+
+    public async Task RemoveRulesForPrinterAsync(Guid printerId, CancellationToken cancellationToken = default)
+    {
+        var rules = await db.SectorRoutingRules
+            .Where(r => r.PrimaryPrinterId == printerId || r.FallbackPrinterId == printerId)
+            .ToListAsync(cancellationToken);
+        if (rules.Count > 0)
+            db.SectorRoutingRules.RemoveRange(rules);
+    }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

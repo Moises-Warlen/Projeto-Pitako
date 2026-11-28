@@ -9,6 +9,7 @@ public interface IPrinterProfileRepository
     Task<PrinterProfile?> FindByCodeAsync(string printerCode, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PrinterProfile>> ListAllAsync(CancellationToken cancellationToken = default);
     Task AddAsync(PrinterProfile printer, CancellationToken cancellationToken = default);
+    void Remove(PrinterProfile printer);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
@@ -17,6 +18,7 @@ public interface ISectorRoutingRuleRepository
     Task<SectorRoutingRule?> FindMatchingRuleAsync(ProductionSectorType sectorType, Guid? categoryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SectorRoutingRule>> ListActiveAsync(CancellationToken cancellationToken = default);
     Task AddAsync(SectorRoutingRule rule, CancellationToken cancellationToken = default);
+    Task RemoveRulesForPrinterAsync(Guid printerId, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

@@ -159,6 +159,13 @@ public static partial class PitakoStoreSuiteEndpoints
             var conversations = await convRepo.ListInboxAsync(ct);
             var ops = await LoadStoreOpsStateAsync(settingRepo, tenantId, tenant, ct);
             var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
+            var training = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenantId, ct);
+            var qrSession = await PitakoBotTrainingHelper.LoadQrSessionAsync(settingRepo, tenantId, ct);
+            var feedbacks = await PitakoBotTrainingHelper.LoadFeedbacksAsync(
+                settingRepo,
+                tenantId,
+                botState.Feedbacks.Select(f => (f.Id, f.CustomerPhone, f.MessageText, f.CreatedAtUtc)).ToList(),
+                ct);
             var audits = await auditRepo.ListByTenantAsync(tenantId, ct);
 
             var allMessages = conversations.SelectMany(c => c.Messages).ToList();
@@ -227,8 +234,162 @@ public static partial class PitakoStoreSuiteEndpoints
                     dayOfWeek = botState.WeeklyScheduleDay,
                     time = botState.WeeklyScheduleHour
                 },
-                feedbacks = botState.Feedbacks
+                feedbacks,
+                training,
+                qrSession
             });
+        });
+
+        wa.MapPost("/qr-session", async (
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+            var sessionId = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+            var pairingCode = $"{sessionId[..4]}-{sessionId[4..8]}";
+            var now = clock.UtcNow;
+            var qrState = new WhatsAppQrSessionState
+            {
+                SessionId = sessionId,
+                PairingCode = pairingCode,
+                QrPayload = $"https://wa.me/{NormalizeDigits(tenant?.ContactPhone)}?text=Conectar-PITAKO-{tenant?.Slug ?? "loja"}-{pairingCode}",
+                Status = "WaitingScan",
+                PairedPhone = tenant?.ContactPhone,
+                CreatedAtUtc = now,
+                ExpiresAtUtc = now.AddSeconds(120)
+            };
+
+            await PitakoBotTrainingHelper.SaveQrSessionAsync(settingRepo, tenantId, qrState, now, ct);
+            return Results.Ok(qrState);
+        });
+
+        wa.MapPost("/qr-session/confirm", async (
+            ConfirmQrReq? req,
+            ApiSecurityGuard guard,
+            IWhatsAppChannelConfigRepository channelRepo,
+            IWhatsAppSecretProtector protector,
+            WhatsAppSupportService waSvc,
+            IGlobalSettingRepository settingRepo,
+            ITenantRepository tenantRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+            var now = clock.UtcNow;
+            var channels = await channelRepo.ListAllAsync(ct);
+            var existing = channels.FirstOrDefault();
+            var rawPhone = NormalizeDigits(req?.DisplayPhoneNumber ?? existing?.DisplayPhoneNumber ?? tenant?.ContactPhone ?? "5516991098863");
+            if (string.IsNullOrWhiteSpace(rawPhone)) rawPhone = "5516991098863";
+
+            if (existing is null)
+            {
+                await waSvc.ConfigureChannelAsync(
+                    user,
+                    tenant?.TradeName ?? "Loja",
+                    $"+{rawPhone}",
+                    $"qr-{tenant?.Slug ?? tenantId.ToString("N")[..6]}",
+                    $"waba-qr-{tenant?.Slug ?? tenantId.ToString("N")[..6]}",
+                    protector.Protect("qr-session-token"),
+                    protector.Protect("qr-session-secret"),
+                    "pitako-qr-verify",
+                    WhatsAppAutoReplyMode.HybridBotThenAi,
+                    $"/loja/{tenant?.Slug}",
+                    null,
+                    ct);
+            }
+            else
+            {
+                existing.Activate();
+                await channelRepo.SaveChangesAsync(ct);
+            }
+
+            var currentQr = await PitakoBotTrainingHelper.LoadQrSessionAsync(settingRepo, tenantId, ct) ?? new WhatsAppQrSessionState();
+            currentQr.Status = "Connected";
+            currentQr.PairedPhone = $"+{rawPhone}";
+            if (string.IsNullOrWhiteSpace(currentQr.SessionId))
+                currentQr.SessionId = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+            await PitakoBotTrainingHelper.SaveQrSessionAsync(settingRepo, tenantId, currentQr, now, ct);
+
+            return Results.Ok(new { connected = true, qrSession = currentQr, displayPhoneNumber = $"+{rawPhone}" });
+        });
+
+        wa.MapPut("/training", async (
+            SaveBotTrainingReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var bundle = new BotTrainingBundleDto(
+                req.AssistantPersona ?? "Amigável e Acolhedor",
+                req.WelcomeGreeting ?? string.Empty,
+                req.StoreKnowledgeNotes ?? string.Empty,
+                (req.Faqs ?? []).Select(f => new BotTrainingFaqEntry(f.Id, f.QuestionTitle, f.KeywordsCsv, f.AnswerText, f.IsActive)).ToList());
+
+            await PitakoBotTrainingHelper.SaveTrainingAsync(settingRepo, tenantId, bundle, clock.UtcNow, ct);
+            var saved = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenantId, ct);
+            return Results.Ok(new { saved = true, training = saved });
+        });
+
+        wa.MapPost("/training/test", async (
+            TestBotTrainingReq req,
+            ApiSecurityGuard guard,
+            ITenantRepository tenantRepo,
+            IStoreVisualIdentityRepository identityRepo,
+            IProductRepository productRepo,
+            ICouponRepository couponRepo,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            if (string.IsNullOrWhiteSpace(req.Question))
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Training.QuestionRequired", "Digite uma pergunta para testar o bot."));
+
+            var tenantId = user!.TenantId!.Value;
+            var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+            if (tenant is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Tenant.NotFound", "Loja não encontrada."));
+
+            var training = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenantId, ct);
+            var identity = await identityRepo.FindByTenantIdForPublicViewAsync(tenantId, ct);
+            var pub = identity?.GetPublishedView();
+            var opStatus = StoreOperatingHoursHelper.Evaluate(pub?.OperatingHoursJson, pub?.IsTemporarilyPaused ?? false, pub?.PauseReason, clock.UtcNow);
+            var allProducts = (await productRepo.ListAllOrderedAsync(ct)).Where(p => p.Status == CatalogItemStatus.Active).ToList();
+            var activeCoupons = (await couponRepo.ListAllAsync(ct)).Where(c => c.IsActive).ToList();
+
+            var (replyText, matchedFaqTitle, usedTraining) = PitakoBotTrainingHelper.GenerateSmartBotReply(
+                req.Question,
+                tenant,
+                opStatus.IsOpenNow,
+                opStatus.DetailText,
+                allProducts,
+                activeCoupons,
+                training,
+                clock.UtcNow);
+
+            return Results.Ok(new { replyText, matchedFaqTitle, usedTraining });
         });
 
         wa.MapPut("/weekly-schedule", async (
@@ -251,6 +412,64 @@ public static partial class PitakoStoreSuiteEndpoints
             return Results.Ok(new { saved = true });
         });
 
+        wa.MapPost("/feedbacks/{id:guid}/analyze", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            ITenantRepository tenantRepo,
+            IWhatsAppChannelConfigRepository channelRepo,
+            IWhatsAppConversationRepository convRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var tenant = await tenantRepo.FindByIdAsync(tenantId, ct);
+            var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
+            var list = await PitakoBotTrainingHelper.LoadFeedbacksAsync(
+                settingRepo,
+                tenantId,
+                botState.Feedbacks.Select(f => (f.Id, f.CustomerPhone, f.MessageText, f.CreatedAtUtc)).ToList(),
+                ct);
+
+            var target = list.FirstOrDefault(f => f.Id == id);
+            if (target is null)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Feedback.NotFound", "Ocorrência não encontrada."));
+
+            list = list.Select(f => f.Id == id ? f with { Status = "Analyzing", UpdatedAtUtc = clock.UtcNow } : f).ToList();
+            await PitakoBotTrainingHelper.SaveFeedbacksAsync(settingRepo, tenantId, list, clock.UtcNow, ct);
+            if (botState.Feedbacks.Count > 0)
+            {
+                botState.Feedbacks = [];
+                await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            }
+
+            // Send notification message directly into the customer's chat conversation
+            var channels = await channelRepo.ListAllAsync(ct);
+            var channel = channels.FirstOrDefault();
+            if (channel is not null && !string.IsNullOrWhiteSpace(target.CustomerPhone))
+            {
+                var conv = await convRepo.FindByCustomerPhoneAsync(channel.Id, target.CustomerPhone, ct);
+                if (conv is null)
+                {
+                    var st = WhatsAppConversation.Start(tenantId, channel.Id, target.CustomerPhone, target.CustomerName, clock.UtcNow);
+                    conv = st.Value;
+                    await convRepo.AddAsync(conv, ct);
+                }
+                var greeting = PitakoBotTrainingHelper.GetBrazilGreeting(clock.UtcNow);
+                var tradeName = tenant?.TradeName ?? "nossa loja";
+                var snippet = target.MessageText.Length > 70 ? target.MessageText[..70] + "..." : target.MessageText;
+                var notifyMsg = $"{greeting}! Aqui é da equipe da {tradeName}. Recebemos sua mensagem (\"{snippet}\") e já estamos analisando com atenção para te dar um retorno rápido!";
+                conv.RecordOutbound(WhatsAppMessageDirection.OutboundHumanAgent, null, notifyMsg, true, null, true, clock.UtcNow);
+                await convRepo.SaveChangesAsync(ct);
+            }
+
+            return Results.Ok(new { analyzing = true, id });
+        });
+
         wa.MapPost("/feedbacks/{id:guid}/resolve", async (
             Guid id,
             ApiSecurityGuard guard,
@@ -264,9 +483,49 @@ public static partial class PitakoStoreSuiteEndpoints
 
             var tenantId = user!.TenantId!.Value;
             var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
-            botState.Feedbacks = botState.Feedbacks.Where(f => f.Id != id).ToList();
-            await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            var list = await PitakoBotTrainingHelper.LoadFeedbacksAsync(
+                settingRepo,
+                tenantId,
+                botState.Feedbacks.Select(f => (f.Id, f.CustomerPhone, f.MessageText, f.CreatedAtUtc)).ToList(),
+                ct);
+
+            list = list.Select(f => f.Id == id ? f with { Status = "Resolved", UpdatedAtUtc = clock.UtcNow } : f).ToList();
+            await PitakoBotTrainingHelper.SaveFeedbacksAsync(settingRepo, tenantId, list, clock.UtcNow, ct);
+            if (botState.Feedbacks.Count > 0)
+            {
+                botState.Feedbacks = [];
+                await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            }
             return Results.Ok(new { resolved = true });
+        });
+
+        wa.MapDelete("/feedbacks/{id:guid}", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.WhatsApp, ct);
+            if (err is not null) return err;
+
+            var tenantId = user!.TenantId!.Value;
+            var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
+            var list = await PitakoBotTrainingHelper.LoadFeedbacksAsync(
+                settingRepo,
+                tenantId,
+                botState.Feedbacks.Select(f => (f.Id, f.CustomerPhone, f.MessageText, f.CreatedAtUtc)).ToList(),
+                ct);
+
+            list = list.Where(f => f.Id != id).ToList();
+            await PitakoBotTrainingHelper.SaveFeedbacksAsync(settingRepo, tenantId, list, clock.UtcNow, ct);
+            if (botState.Feedbacks.Count > 0)
+            {
+                botState.Feedbacks = [];
+                await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
+            }
+            return Results.Ok(new { deleted = true });
         });
 
         wa.MapPut("/channel", async (
@@ -567,13 +826,27 @@ public static partial class PitakoStoreSuiteEndpoints
                 await SaveBotOpsStateAsync(settingRepo, tenant.Id, botState, clock.UtcNow, ct);
             }
 
-            var isComplaint = lowerText.Contains("reclam") || lowerText.Contains("atras") || lowerText.Contains("errado") || lowerText.Contains("ruim") || lowerText.Contains("demor");
+            var isComplaint = lowerText.Contains("reclam") || lowerText.Contains("atras") || lowerText.Contains("errado") || lowerText.Contains("ruim") || lowerText.Contains("demor") || lowerText.Contains("sugest") || lowerText.Contains("problema") || lowerText.Contains("faltou");
             if (isComplaint)
             {
-                botState.Feedbacks.Insert(0, new BotFeedbackEntry(Guid.NewGuid(), cleanPhone, textTrimmed, clock.UtcNow));
-                if (botState.Feedbacks.Count > 20)
-                    botState.Feedbacks = botState.Feedbacks.Take(20).ToList();
-                await SaveBotOpsStateAsync(settingRepo, tenant.Id, botState, clock.UtcNow, ct);
+                var fbList = await PitakoBotTrainingHelper.LoadFeedbacksAsync(
+                    settingRepo,
+                    tenant.Id,
+                    botState.Feedbacks.Select(f => (f.Id, f.CustomerPhone, f.MessageText, f.CreatedAtUtc)).ToList(),
+                    ct);
+                fbList.Insert(0, new BotFeedbackRecord(
+                    Guid.NewGuid(),
+                    cleanPhone,
+                    string.IsNullOrWhiteSpace(req.CustomerName) ? "Cliente" : req.CustomerName.Trim(),
+                    textTrimmed,
+                    clock.UtcNow,
+                    "Pending"));
+                await PitakoBotTrainingHelper.SaveFeedbacksAsync(settingRepo, tenant.Id, fbList, clock.UtcNow, ct);
+                if (botState.Feedbacks.Count > 0)
+                {
+                    botState.Feedbacks = [];
+                    await SaveBotOpsStateAsync(settingRepo, tenant.Id, botState, clock.UtcNow, ct);
+                }
             }
 
             var ops = await LoadStoreOpsStateAsync(settingRepo, tenant.Id, tenant, ct);
@@ -601,11 +874,12 @@ public static partial class PitakoStoreSuiteEndpoints
             }
             else if (lowerText.Contains("atendente") || lowerText.Contains("humano") || lowerText.Contains("gerente") || isComplaint)
             {
+                var greeting = PitakoBotTrainingHelper.GetBrazilGreeting(clock.UtcNow);
                 conv.RequestHumanHandoff(isComplaint ? "Ouvidoria / Reclamação registrada no chat" : "Cliente solicitou atendimento humano", clock.UtcNow);
                 conv.RecordOutbound(
                     WhatsAppMessageDirection.OutboundTraditionalBot,
                     null,
-                    $"Encaminhei sua mensagem para a equipe da {tenant.TradeName}! Um atendente responderá aqui mesmo em instantes.",
+                    $"{greeting}! Encaminhei sua mensagem para a equipe da {tenant.TradeName}. Um dos nossos atendentes já vai falar com você por aqui!",
                     true,
                     null,
                     true,
@@ -617,30 +891,17 @@ public static partial class PitakoStoreSuiteEndpoints
                     .Where(p => p.Status == CatalogItemStatus.Active)
                     .ToList();
                 var activeCoupons = (await couponRepo.ListAllAsync(ct)).Where(c => c.IsActive).ToList();
+                var training = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenant.Id, ct);
 
-                string replyText;
-                if (lowerText.Contains("cupom") || lowerText.Contains("desconto") || lowerText.Contains("promo"))
-                {
-                    replyText = activeCoupons.Count > 0
-                        ? $"Temos cupom ativo hoje na {tenant.TradeName}: use {activeCoupons[0].Code} no carrinho! Confira também nossos destaques no cardápio digital."
-                        : $"Nossos combos e destaques já estão com valores especiais no cardápio da {tenant.TradeName}!";
-                }
-                else if (lowerText.Contains("hora") || lowerText.Contains("abert") || lowerText.Contains("fech") || lowerText.Contains("onde") || lowerText.Contains("endere"))
-                {
-                    replyText = $"{tenant.TradeName}: {(opStatus.IsOpenNow ? "estamos ABERTOS agora!" : opStatus.DetailText)} {(string.IsNullOrWhiteSpace(tenant.Address) ? "" : $"Endereço: {tenant.Address}.")}";
-                }
-                else
-                {
-                    var matchingProducts = allProducts
-                        .Where(p => lowerText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(w => w.Length >= 4 && p.Name.Contains(w, StringComparison.OrdinalIgnoreCase)))
-                        .Take(3)
-                        .ToList();
-                    var showcase = matchingProducts.Count > 0 ? matchingProducts : allProducts.Take(4).ToList();
-                    var itemsText = showcase.Count > 0
-                        ? string.Join(" | ", showcase.Select(p => $"{p.Name} (R$ {p.BasePrice.Amount:0.00})"))
-                        : "Confira todos os itens disponíveis acima no cardápio!";
-                    replyText = $"Olá! Na {tenant.TradeName} temos: {itemsText}. Você pode personalizar tamanhos e ingredientes clicando no item ou, se preferir falar com alguém da equipe, digite \"atendente\".";
-                }
+                var (replyText, _, _) = PitakoBotTrainingHelper.GenerateSmartBotReply(
+                    textTrimmed,
+                    tenant,
+                    opStatus.IsOpenNow,
+                    opStatus.DetailText,
+                    allProducts,
+                    activeCoupons,
+                    training,
+                    clock.UtcNow);
 
                 conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, replyText, true, null, true, clock.UtcNow);
             }
@@ -688,6 +949,7 @@ public static partial class PitakoStoreSuiteEndpoints
                         p.PrinterCode,
                         p.DisplayName,
                         sector = sectorLabel,
+                        isPrimaryForSector = matchingRule is not null,
                         connectionKind = p.ConnectionKind.ToString(),
                         p.EndpointOrPort,
                         paperWidthMm = (int)p.PaperWidthMm,
@@ -709,6 +971,155 @@ public static partial class PitakoStoreSuiteEndpoints
                     };
                 })
             });
+        });
+
+        printing.MapPost("/printers", async (
+            CreatePrinterProfileReq req,
+            ApiSecurityGuard guard,
+            IPrinterProfileRepository printerRepo,
+            ISectorRoutingRuleRepository routingRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Printing, ct);
+            if (err is not null) return err;
+
+            if (string.IsNullOrWhiteSpace(req.DisplayName) || string.IsNullOrWhiteSpace(req.EndpointOrPort))
+                return ApiSecurityGuard.ProblemFromError(Error.Validation("Printer.FieldsRequired", "Informe o nome e a porta/IP da impressora."));
+
+            var rawCode = string.IsNullOrWhiteSpace(req.PrinterCode)
+                ? $"PRT-{req.Sector}-{DateTimeOffset.UtcNow:HHmmss}"
+                : req.PrinterCode.Trim();
+            var normalizedCode = new string(rawCode.ToUpperInvariant().Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray());
+            if (string.IsNullOrWhiteSpace(normalizedCode))
+                normalizedCode = $"PRT-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+
+            if (await printerRepo.FindByCodeAsync(normalizedCode, ct) is not null)
+                normalizedCode = $"{normalizedCode[..Math.Min(28, normalizedCode.Length)]}-{DateTimeOffset.UtcNow:ss}";
+
+            var connKind = Enum.TryParse<PrinterConnectionKind>(req.ConnectionKind, true, out var parsedConn)
+                ? parsedConn
+                : (req.EndpointOrPort.Contains(':') || req.EndpointOrPort.Contains('.')
+                    ? PrinterConnectionKind.NetworkTcpEscPos
+                    : PrinterConnectionKind.UsbSpooler);
+            var paperWidth = req.PaperWidthMm == 58 ? PaperWidthMm.Mm58 : PaperWidthMm.Mm80;
+            var sectorType = Enum.TryParse<ProductionSectorType>(req.Sector, true, out var parsedSec)
+                ? parsedSec
+                : ProductionSectorType.Kitchen;
+
+            var createRes = PrinterProfile.Create(
+                user!.TenantId!.Value,
+                normalizedCode,
+                req.DisplayName.Trim(),
+                connKind,
+                req.EndpointOrPort.Trim(),
+                paperWidth);
+
+            if (createRes.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(createRes.Error);
+
+            var printer = createRes.Value;
+            await printerRepo.AddAsync(printer, ct);
+
+            var existingRule = await routingRepo.FindMatchingRuleAsync(sectorType, null, ct);
+            if (req.SetAsPrimary || existingRule is null)
+            {
+                if (existingRule is null)
+                {
+                    var ruleRes = SectorRoutingRule.Create(user.TenantId!.Value, sectorType, printer.Id);
+                    if (ruleRes.IsSuccess)
+                        await routingRepo.AddAsync(ruleRes.Value, ct);
+                }
+                else
+                {
+                    existingRule.UpdatePrinters(printer.Id, existingRule.FallbackPrinterId, existingRule.CopiesCount);
+                }
+            }
+
+            await printerRepo.SaveChangesAsync(ct);
+            await routingRepo.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                printer.Id,
+                printer.PrinterCode,
+                printer.DisplayName,
+                sector = sectorType.ToString(),
+                isPrimaryForSector = req.SetAsPrimary || existingRule is null,
+                connectionKind = printer.ConnectionKind.ToString(),
+                printer.EndpointOrPort,
+                paperWidthMm = (int)printer.PaperWidthMm
+            });
+        });
+
+        printing.MapPost("/printers/{id:guid}/select", async (
+            Guid id,
+            string? sector,
+            ApiSecurityGuard guard,
+            IPrinterProfileRepository printerRepo,
+            ISectorRoutingRuleRepository routingRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Printing, ct);
+            if (err is not null) return err;
+
+            var printer = await printerRepo.FindByIdAsync(id, ct);
+            if (printer is null || printer.TenantId != user!.TenantId)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Printer.NotFound", "Impressora não encontrada."));
+
+            printer.SetStatus(PrinterStatus.Online);
+
+            var rules = await routingRepo.ListActiveAsync(ct);
+            var existingPrinterRule = rules.FirstOrDefault(r => r.PrimaryPrinterId == id);
+            var sectorType = Enum.TryParse<ProductionSectorType>(sector, true, out var parsedSec)
+                ? parsedSec
+                : existingPrinterRule?.SectorType
+                    ?? (printer.PrinterCode.Contains("COZINHA", StringComparison.OrdinalIgnoreCase)
+                        ? ProductionSectorType.Kitchen
+                        : ProductionSectorType.Counter);
+
+            var targetRule = await routingRepo.FindMatchingRuleAsync(sectorType, null, ct);
+            if (targetRule is null)
+            {
+                var ruleRes = SectorRoutingRule.Create(user.TenantId!.Value, sectorType, printer.Id);
+                if (ruleRes.IsSuccess)
+                    await routingRepo.AddAsync(ruleRes.Value, ct);
+            }
+            else
+            {
+                var backup = targetRule.FallbackPrinterId == printer.Id ? null : targetRule.FallbackPrinterId;
+                targetRule.UpdatePrinters(printer.Id, backup, targetRule.CopiesCount);
+            }
+
+            await printerRepo.SaveChangesAsync(ct);
+            await routingRepo.SaveChangesAsync(ct);
+
+            return Results.Ok(new { selected = true, printer.Id, printer.DisplayName, sector = sectorType.ToString() });
+        });
+
+        printing.MapDelete("/printers/{id:guid}", async (
+            Guid id,
+            ApiSecurityGuard guard,
+            IPrinterProfileRepository printerRepo,
+            ISectorRoutingRuleRepository routingRepo,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Printing, ct);
+            if (err is not null) return err;
+
+            var printer = await printerRepo.FindByIdAsync(id, ct);
+            if (printer is null || printer.TenantId != user!.TenantId)
+                return ApiSecurityGuard.ProblemFromError(Error.NotFound("Printer.NotFound", "Impressora não encontrada."));
+
+            await routingRepo.RemoveRulesForPrinterAsync(id, ct);
+            await routingRepo.SaveChangesAsync(ct);
+
+            printerRepo.Remove(printer);
+            await printerRepo.SaveChangesAsync(ct);
+
+            return Results.Ok(new { deleted = true, id });
         });
 
         printing.MapPost("/printers/{id:guid}/toggle-auto", async (
@@ -803,6 +1214,7 @@ public static partial class PitakoStoreSuiteEndpoints
             Guid id,
             int? paperWidthMm,
             string? sector,
+            Guid? printerId,
             ApiSecurityGuard guard,
             IOrderRepository orderRepo,
             IPrinterProfileRepository printerRepo,
@@ -823,7 +1235,9 @@ public static partial class PitakoStoreSuiteEndpoints
             if (idRes.IsFailure)
                 return ApiSecurityGuard.ProblemFromError(idRes.Error);
 
-            var widthMm = paperWidthMm == 58 ? 58 : 80;
+            var printers = await printerRepo.ListAllAsync(ct);
+            var explicitPrinter = printerId.HasValue ? printers.FirstOrDefault(p => p.Id == printerId.Value) : null;
+            var widthMm = paperWidthMm == 58 || (paperWidthMm is null && explicitPrinter?.PaperWidthMm == PaperWidthMm.Mm58) ? 58 : 80;
             var cols = widthMm == 58 ? 32 : 48;
             var sec = Enum.TryParse<ProductionSectorType>(sector, true, out var parsedSec)
                 ? parsedSec
@@ -879,11 +1293,11 @@ public static partial class PitakoStoreSuiteEndpoints
             var finalTicketText = extraBlock.ToString();
             var finalEscPos = Convert.ToBase64String(Encoding.UTF8.GetBytes(finalTicketText));
 
-            var printers = await printerRepo.ListAllAsync(ct);
-            var targetPrinter = printers
-                .Where(p => p.Status == PrinterStatus.Online)
-                .OrderByDescending(p => (int)p.PaperWidthMm == widthMm)
-                .FirstOrDefault();
+            var targetPrinter = explicitPrinter
+                ?? printers
+                    .Where(p => p.Status == PrinterStatus.Online)
+                    .OrderByDescending(p => (int)p.PaperWidthMm == widthMm)
+                    .FirstOrDefault();
 
             var hardwareDispatched = false;
             if (targetPrinter is not null)
@@ -918,25 +1332,67 @@ public static partial class PitakoStoreSuiteEndpoints
     {
         v1.MapGet("/reports/executive", async (
             int? days,
+            string? startDate,
+            string? endDate,
             Guid? courierId,
+            string? runStatus,
             ApiSecurityGuard guard,
             IOrderRepository orderRepo,
             ITechnicalSheetRepository sheetRepo,
             IProductRepository productRepo,
             IDeliveryCourierRepository courierRepo,
             IDeliveryDispatchRunRepository runRepo,
+            IGlobalSettingRepository settingRepo,
+            ITenantRepository tenantRepo,
             IClock clock,
             HttpContext http,
             CancellationToken ct) =>
         {
-            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Reports, ct);
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Establishment, SystemModules.Reports, ct);
             if (err is not null) return err;
 
+            var brOffset = TimeSpan.FromHours(-3);
+            var nowBr = clock.UtcNow.ToOffset(brOffset);
             var windowDays = Math.Clamp(days ?? 7, 1, 90);
-            var cutoffUtc = clock.UtcNow.AddDays(-windowDays);
+
+            DateTimeOffset cutoffUtc;
+            DateTimeOffset endUtc;
+            string effectiveStartIso;
+            string effectiveEndIso;
+
+            if (DateTime.TryParse(startDate, out var parsedStart) && DateTime.TryParse(endDate, out var parsedEnd))
+            {
+                if (parsedEnd < parsedStart) (parsedStart, parsedEnd) = (parsedEnd, parsedStart);
+                cutoffUtc = new DateTimeOffset(parsedStart.Year, parsedStart.Month, parsedStart.Day, 0, 0, 0, brOffset).ToUniversalTime();
+                endUtc = new DateTimeOffset(parsedEnd.Year, parsedEnd.Month, parsedEnd.Day, 23, 59, 59, 999, brOffset).ToUniversalTime();
+                effectiveStartIso = parsedStart.ToString("yyyy-MM-dd");
+                effectiveEndIso = parsedEnd.ToString("yyyy-MM-dd");
+                windowDays = Math.Max(1, (int)Math.Ceiling((parsedEnd - parsedStart).TotalDays) + 1);
+            }
+            else if (DateTime.TryParse(startDate, out var onlyStart))
+            {
+                cutoffUtc = new DateTimeOffset(onlyStart.Year, onlyStart.Month, onlyStart.Day, 0, 0, 0, brOffset).ToUniversalTime();
+                endUtc = clock.UtcNow;
+                effectiveStartIso = onlyStart.ToString("yyyy-MM-dd");
+                effectiveEndIso = nowBr.ToString("yyyy-MM-dd");
+            }
+            else
+            {
+                cutoffUtc = clock.UtcNow.AddDays(-windowDays);
+                endUtc = clock.UtcNow;
+                effectiveStartIso = nowBr.AddDays(-windowDays + 1).ToString("yyyy-MM-dd");
+                effectiveEndIso = nowBr.ToString("yyyy-MM-dd");
+            }
+
+            var tenant = user?.TenantId.HasValue == true
+                ? await tenantRepo.FindByIdAsync(user.TenantId.Value, ct)
+                : null;
+            var ops = tenant is not null
+                ? await LoadStoreOpsStateAsync(settingRepo, tenant.Id, tenant, ct)
+                : null;
 
             var allOrders = (await orderRepo.ListRecentAllAsync(500, ct))
-                .Where(o => o.PlacedAtUtc >= cutoffUtc)
+                .Where(o => o.PlacedAtUtc >= cutoffUtc && o.PlacedAtUtc <= endUtc)
                 .ToList();
 
             var sheets = await sheetRepo.ListAllAsync(ct);
@@ -1019,11 +1475,13 @@ public static partial class PitakoStoreSuiteEndpoints
                 .ToList();
 
             var couriers = await courierRepo.ListAllAsync(ct);
-            var runs = (await runRepo.ListRecentAsync(120, ct))
-                .Where(r => r.AssignedAtUtc >= cutoffUtc)
+            var runs = (await runRepo.ListRecentAsync(250, ct))
+                .Where(r => r.AssignedAtUtc >= cutoffUtc && r.AssignedAtUtc <= endUtc)
                 .ToList();
             if (courierId.HasValue && courierId.Value != Guid.Empty)
                 runs = runs.Where(r => r.CourierId == courierId.Value).ToList();
+            if (!string.IsNullOrWhiteSpace(runStatus) && !runStatus.Equals("All", StringComparison.OrdinalIgnoreCase))
+                runs = runs.Where(r => r.Status.ToString().Equals(runStatus.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
 
             var courierMap = couriers.ToDictionary(c => c.Id);
             var orderMap = allOrders.ToDictionary(o => o.Id);
@@ -1049,6 +1507,9 @@ public static partial class PitakoStoreSuiteEndpoints
             return Results.Ok(new
             {
                 windowDays,
+                startDateIso = effectiveStartIso,
+                endDateIso = effectiveEndIso,
+                storeWhatsAppPhone = ops?.StoreWhatsAppPhone ?? tenant?.ContactPhone,
                 financialKpis = new
                 {
                     netRevenue,
@@ -1481,6 +1942,11 @@ public static partial class PitakoStoreSuiteEndpoints
 
     public sealed record BotCampaignEntry(Guid Id, string Title, string MessageText, int AudienceCount, DateTimeOffset CreatedAtUtc, string Status);
     public sealed record BotFeedbackEntry(Guid Id, string CustomerPhone, string MessageText, DateTimeOffset CreatedAtUtc);
+    public sealed record CreatePrinterProfileReq(string? PrinterCode, string DisplayName, string Sector, string? ConnectionKind, string EndpointOrPort, int PaperWidthMm = 80, bool SetAsPrimary = true);
+    public sealed record ConfirmQrReq(string? DisplayPhoneNumber = null);
+    public sealed record SaveBotTrainingReq(string? AssistantPersona, string? WelcomeGreeting, string? StoreKnowledgeNotes, IReadOnlyList<BotTrainingFaqReq>? Faqs);
+    public sealed record BotTrainingFaqReq(Guid Id, string QuestionTitle, string KeywordsCsv, string AnswerText, bool IsActive = true);
+    public sealed record TestBotTrainingReq(string Question);
     public sealed record UpdateWeeklyScheduleReq(bool Enabled, string DayOfWeek, string Time);
     public sealed record ImportKitReq(string SegmentCode);
     public sealed record UpdateWhatsAppChannelReq(string? DisplayPhoneNumber, bool IsActive = true, bool AiEnabled = true, string? GeminiApiKey = null, string? ChatAgentName = null);

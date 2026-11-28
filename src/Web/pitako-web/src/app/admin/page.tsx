@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { StoreBrandShell, StoreBrandTheme } from "@/components/StoreBrandShell";
 import { AdminAcaiConfigDto, AdminAcaiTab, AdminTeamTab } from "@/components/admin/AdminAcaiAndTeamTabs";
+import { AdminCatalogAndSheetsExportModal, AdminComboExportDto } from "@/components/admin/AdminCatalogAndSheetsExportModal";
 import { AdminCategoryDto, AdminCatalogTab, AdminProductDto } from "@/components/admin/AdminCatalogTab";
 import { AdminBrandingAndStoreTab, AdminCouponDto } from "@/components/admin/AdminCommercialAndStoreTab";
 import { AdminSupplyDto } from "@/components/admin/AdminInventoryTab";
@@ -152,6 +153,8 @@ export default function AdminStorePage() {
   const [acai, setAcai] = useState<AdminAcaiConfigDto>({ cupSizes: [], baseFlavors: [], freeToppings: [], paidAddons: [] });
   const [supplies, setSupplies] = useState<AdminSupplyDto[]>([]);
   const [techSheetSummaries, setTechSheetSummaries] = useState<TechnicalSheetSummaryItem[]>([]);
+  const [combos, setCombos] = useState<AdminComboExportDto[]>([]);
+  const [formattedCnpj, setFormattedCnpj] = useState<string>("");
   const [pdfSheetModal, setPdfSheetModal] = useState<TechnicalSheetSummaryItem | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | null>(null);
   const [chatConvId, setChatConvId] = useState<string | null>(null);
@@ -185,12 +188,13 @@ export default function AdminStorePage() {
     setToken(session.accessToken);
     if (session.storeSlug) setSlug(session.storeSlug);
 
-    const [brandRes, catRes, acaiRes, supRes, sheetSummaryRes, couponRes, userRes] = await Promise.all([
+    const [brandRes, catRes, acaiRes, supRes, sheetSummaryRes, couponRes, userRes, comboRes] = await Promise.all([
       apiFetch<{
         legalName?: string;
         tradeName?: string;
         slug?: string;
         segmentCode?: string;
+        cnpj?: string;
         address?: string;
         contactPhone?: string;
         contactEmail?: string;
@@ -218,18 +222,21 @@ export default function AdminStorePage() {
       apiFetch<AdminSupplyDto[]>("/api/v1/inventory/supplies", {}, session.accessToken),
       apiFetch<TechnicalSheetSummaryItem[]>("/api/v1/inventory/technical-sheets/summary", {}, session.accessToken),
       apiFetch<AdminCouponDto[]>("/api/v1/coupons", {}, session.accessToken),
-      apiFetch<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>("/api/v1/store/users", {}, session.accessToken)
+      apiFetch<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>("/api/v1/store/users", {}, session.accessToken),
+      apiFetch<AdminComboExportDto[]>("/api/v1/catalog/combos", {}, session.accessToken)
     ]);
 
     if (brandRes.ok && brandRes.data) {
       const d = brandRes.data.draft;
       setTheme({
         tradeName: brandRes.data.tradeName || session.email,
+        formattedCnpj: brandRes.data.cnpj || "",
         logoUrl: d.logoUrl,
         primaryColorHex: d.primaryColorHex,
         secondaryColorHex: d.secondaryColorHex,
         accentColorHex: d.accentColorHex
       });
+      if (brandRes.data.cnpj) setFormattedCnpj(brandRes.data.cnpj);
       if (brandRes.data.slug) setSlug(brandRes.data.slug);
       if (brandRes.data.segmentCode) setSegmentCode(brandRes.data.segmentCode);
       setIsPaused(Boolean(d.isTemporarilyPaused));
@@ -276,6 +283,7 @@ export default function AdminStorePage() {
     if (sheetSummaryRes.ok && sheetSummaryRes.data) setTechSheetSummaries(sheetSummaryRes.data);
     if (couponRes.ok && couponRes.data) setCoupons(couponRes.data);
     if (userRes.ok && userRes.data) setTeam(userRes.data);
+    if (comboRes.ok && comboRes.data) setCombos(comboRes.data);
   }, []);
 
   useEffect(() => {
@@ -309,7 +317,7 @@ export default function AdminStorePage() {
       onStoreStatusChanged={(paused) => setIsPaused(paused)}
     >
       {/* Cabeçalho Administrativo */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
         <div>
           <h1 className="text-lg font-extrabold text-slate-900">Painel do Estabelecimento — {theme.tradeName}</h1>
           <p className="text-xs text-slate-500">
@@ -356,7 +364,7 @@ export default function AdminStorePage() {
       </div>
 
       {msg && (
-        <div className="mb-5 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-900">
+        <div className="mb-5 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-900 print:hidden">
           <span>{msg}</span>
           <button type="button" onClick={() => setMsg(null)} className="underline">Fechar</button>
         </div>
@@ -404,10 +412,15 @@ export default function AdminStorePage() {
           slogan={brandingData.slogan}
           primaryColorHex={brandingData.primaryColorHex}
           accentColorHex={brandingData.accentColorHex}
+          formattedCnpj={formattedCnpj}
+          storeAddress={storeProfile.address}
+          whatsAppNumber={brandingData.whatsAppNumber || storeProfile.contactPhone}
+          instagramHandle={brandingData.instagramHandle}
           categories={categories}
           products={products}
           modifierGroups={modifierGroups}
           techSheetSummaries={techSheetSummaries}
+          combos={combos}
           onOpenTechSheetPdf={(s) => setPdfSheetModal(s)}
           onNotify={notifyAdmin}
           onReload={handleReloadStoreData}
@@ -485,6 +498,7 @@ export default function AdminStorePage() {
       <AdminTechSheetPdfModal
         token={token}
         sheet={pdfSheetModal}
+        product={products.find((p) => p.id === pdfSheetModal?.productId)}
         supplies={supplies.map((s) => ({
           id: s.id,
           name: s.name,

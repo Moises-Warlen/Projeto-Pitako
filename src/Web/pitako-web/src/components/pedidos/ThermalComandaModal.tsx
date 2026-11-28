@@ -35,6 +35,8 @@ export function ThermalComandaModal({
   onClose: () => void;
 }) {
   const [widthMm, setWidthMm] = useState<58 | 80>(initialWidthMm);
+  const [printers, setPrinters] = useState<Array<{ id: string; displayName: string; sector: string; paperWidthMm: number }>>([]);
+  const [selectedPrinterId, setSelectedPrinterId] = useState("");
   const [ticket, setTicket] = useState<PrintedOrderTicketDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -44,12 +46,20 @@ export function ThermalComandaModal({
   }, [initialWidthMm, orderId]);
 
   useEffect(() => {
+    if (!open || !token) return;
+    void apiFetch<{ printers: typeof printers }>("/api/v1/printing/printers", {}, token).then((res) => {
+      if (res.ok && res.data?.printers) setPrinters(res.data.printers);
+    });
+  }, [open, token]);
+
+  useEffect(() => {
     if (!open || !orderId || !token) return;
     let cancelled = false;
     setLoading(true);
     setErrMsg(null);
+    const printerQs = selectedPrinterId ? `&printerId=${encodeURIComponent(selectedPrinterId)}` : "";
     void apiFetch<PrintedOrderTicketDto>(
-      `/api/v1/orders/${orderId}/print-ticket?paperWidthMm=${widthMm}`,
+      `/api/v1/orders/${orderId}/print-ticket?paperWidthMm=${widthMm}${printerQs}`,
       { method: "POST" },
       token
     ).then((res) => {
@@ -64,7 +74,7 @@ export function ThermalComandaModal({
     return () => {
       cancelled = true;
     };
-  }, [open, orderId, widthMm, token]);
+  }, [open, orderId, selectedPrinterId, widthMm, token]);
 
   if (!open || !orderId) return null;
 
@@ -120,7 +130,29 @@ export function ThermalComandaModal({
             </h3>
             {ticket && <p className="text-[11px] text-slate-500">{ticket.statusMessage}</p>}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {printers.length > 0 && (
+              <select
+                value={selectedPrinterId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedPrinterId(id);
+                  const found = printers.find((p) => p.id === id);
+                  if (found && (found.paperWidthMm === 58 || found.paperWidthMm === 80)) {
+                    setWidthMm(found.paperWidthMm);
+                  }
+                }}
+                aria-label="Selecionar impressora"
+                className="max-w-[165px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-800"
+              >
+                <option value="">Impressora Automática</option>
+                {printers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.displayName} ({p.paperWidthMm}mm)
+                  </option>
+                ))}
+              </select>
+            )}
             <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] font-bold">
               <button
                 type="button"

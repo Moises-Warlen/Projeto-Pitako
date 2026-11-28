@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Check, MessageCircle, Power, Radio, Send, Store, UtensilsCrossed, Volume2, VolumeX, X } from "lucide-react";
+import { Bell, Check, LogOut, MessageCircle, Power, Radio, Send, Store, UtensilsCrossed, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, loadSession, resolveMediaUrl } from "@/lib/api";
+import { apiFetch, clearSession, loadSession, resolveMediaUrl } from "@/lib/api";
 import {
   getOrderAlarmMuted,
   playContinuousOrderRingPulse,
@@ -43,12 +43,14 @@ export function StoreBrandShell({
   theme,
   activeSection,
   hideOpsNav = false,
+  hideTopHeader = false,
   onStoreStatusChanged,
   children
 }: {
   theme?: StoreBrandTheme;
   activeSection?: string;
   hideOpsNav?: boolean;
+  hideTopHeader?: boolean;
   onStoreStatusChanged?: (isPaused: boolean) => void;
   children: React.ReactNode;
 }) {
@@ -420,7 +422,8 @@ export function StoreBrandShell({
 
   return (
     <div style={styleVars} className="min-h-screen bg-slate-50 text-slate-900">
-      <header style={{ backgroundColor: "var(--store-primary)" }} className="text-white shadow">
+      {!hideTopHeader && (
+      <header style={{ backgroundColor: "var(--store-primary)" }} className="text-white shadow print:hidden">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
             {resolveMediaUrl(resolvedTheme.logoUrl) ? (
@@ -696,14 +699,28 @@ export function StoreBrandShell({
                     {item.label}
                   </Link>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentSession = loadSession();
+                    const targetSlug = currentSession?.storeSlug;
+                    clearSession();
+                    router.push(targetSlug ? `/portal/${targetSlug}` : "/login");
+                  }}
+                  title="Sair da sessão do estabelecimento"
+                  className="ml-1 inline-flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-rose-600 hover:border-rose-500"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Sair
+                </button>
               </nav>
             </div>
           )}
         </div>
       </header>
+      )}
 
       {!hideOpsNav && pendingWaiterCalls.length > 0 && (
-        <div className="border-b border-amber-300 bg-amber-50 px-6 py-2.5 text-xs text-amber-950 shadow-sm">
+        <div className="border-b border-amber-300 bg-amber-50 px-6 py-2.5 text-xs text-amber-950 shadow-sm print:hidden">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 font-extrabold">
               <UtensilsCrossed className="h-4 w-4 text-amber-700" />
@@ -728,7 +745,7 @@ export function StoreBrandShell({
       {liveToast && (
         <div
           role="alert"
-          className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs text-white shadow-2xl"
+          className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs text-white shadow-2xl print:hidden"
         >
           <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
           <div className="min-w-0 flex-1">

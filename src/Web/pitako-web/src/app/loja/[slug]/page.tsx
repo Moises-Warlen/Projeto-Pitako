@@ -640,98 +640,100 @@ export default function PublicStorefrontPage() {
   }
 
   return (
-    <StoreBrandShell theme={theme} hideOpsNav>
-      {/* Faixa de aviso / anúncio da loja */}
-      {storeInfo?.branding.announcementText && (
-        <div
-          style={{ backgroundColor: "var(--store-accent)" }}
-          className="mb-4 rounded-2xl px-4 py-2.5 text-center text-xs font-bold text-white shadow-sm"
-        >
-          {storeInfo.branding.announcementText}
-        </div>
-      )}
-
+    <StoreBrandShell theme={theme} hideOpsNav hideTopHeader>
       {/* Toast flutuante */}
       {toastMsg && (
-        <div className="fixed right-4 top-20 z-40 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-xl">
+        <div className="fixed right-4 top-6 z-40 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-xl">
           {toastMsg}
         </div>
       )}
 
       {/* Cabeçalho Institucional Whitelabel da Loja */}
       <section className="mb-5 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-          <div className="flex items-start gap-4">
+        <div style={{ backgroundColor: "var(--store-primary)" }} className="h-2 w-full" />
+        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-6">
+          <div className="flex items-start gap-4 min-w-0">
             {storeInfo?.branding.logoUrl && (
               <ProductMediaFrame
                 src={storeInfo.branding.logoUrl}
                 alt={storeInfo.tradeName || theme.tradeName}
-                className="h-16 w-16 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-xs"
-                iconSize={26}
+                className="h-16 w-16 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-xs sm:h-20 sm:w-20"
+                iconSize={28}
               />
             )}
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 {opStatus && (
                   <button
                     type="button"
                     onClick={() => setHoursModalOpen(true)}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-extrabold transition hover:opacity-90 ${
                       opStatus.isOpenNow ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
                     }`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${opStatus.isOpenNow ? "bg-emerald-500" : "bg-rose-500"}`} />
-                    {opStatus.statusLabel}
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${opStatus.isOpenNow ? "bg-emerald-500" : "bg-rose-500"}`} />
+                    <span>{opStatus.statusLabel}</span>
+                    <span className="opacity-50">•</span>
                     <span className="underline">Ver horários</span>
                   </button>
                 )}
                 {storeInfo?.segmentCode && (
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                  <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">
                     {storeInfo.segmentCode}
                   </span>
                 )}
               </div>
 
-              <h1 className="text-xl font-extrabold text-slate-900 sm:text-2xl">{storeInfo?.tradeName || theme.tradeName}</h1>
-              <p className="text-xs text-slate-600 sm:text-sm">{storeInfo?.branding.slogan || "Peça online com preparo artesanal e entrega rápida."}</p>
+              <div>
+                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
+                  {storeInfo?.tradeName || theme.tradeName}
+                </h1>
+                <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
+                  {storeInfo?.branding.slogan || "Peça online com preparo artesanal e entrega rápida."}
+                </p>
+              </div>
 
-              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
                 {storeInfo?.address && (
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" /> {storeInfo.address}
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span>{storeInfo.address}</span>
                   </span>
                 )}
                 {storeInfo?.contactPhone && (
-                  <span className="inline-flex items-center gap-1">
-                    <Phone className="h-3.5 w-3.5" /> {storeInfo.contactPhone}
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="font-mono">{storeInfo.contactPhone}</span>
                   </span>
                 )}
                 {menu?.delivery?.freeShippingThreshold && (
-                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                    <Tag className="h-3.5 w-3.5" /> Frete grátis acima de {formatBrl(menu.delivery.freeShippingThreshold)}
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
+                    <Tag className="h-3.5 w-3.5 shrink-0" />
+                    <span>Frete grátis acima de {formatBrl(menu.delivery.freeShippingThreshold)}</span>
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:flex lg:shrink-0 lg:items-center">
             <button
               type="button"
               onClick={() => setTrackingOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 text-xs font-extrabold text-slate-700 shadow-2xs transition hover:bg-slate-50 lg:w-auto"
             >
-              <Clock className="h-4 w-4" /> Acompanhar Pedido
+              <Clock className="h-4 w-4 shrink-0 text-slate-500" />
+              <span>Acompanhar Pedido</span>
             </button>
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               style={{ backgroundColor: "var(--store-primary)" }}
-              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-sm"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl px-5 text-xs font-extrabold text-white shadow-sm transition hover:opacity-95 lg:w-auto"
             >
-              <ShoppingBag className="h-4 w-4" />
+              <ShoppingBag className="h-4 w-4 shrink-0" />
               <span>Sacola ({cartItemsCount})</span>
-              <span className="font-mono">· {formatBrl(cart?.totalAmount ?? 0)}</span>
+              <span className="font-mono font-bold tabular-nums opacity-95">· {formatBrl(cart?.totalAmount ?? 0)}</span>
             </button>
           </div>
         </div>

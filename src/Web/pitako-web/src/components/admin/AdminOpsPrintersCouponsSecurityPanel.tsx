@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, CreditCard, MessageCircle, Printer, Save, ShieldAlert, Tag, Ticket, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, CreditCard, MessageCircle, Plus, Printer, Save, ShieldAlert, Tag, Ticket, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { StoreOperatingHoursEntry } from "@/types/menu";
@@ -21,6 +21,7 @@ export function AdminPrintersPanel({
       printerCode: string;
       displayName: string;
       sector: string;
+      isPrimaryForSector?: boolean;
       connectionKind: string;
       endpointOrPort: string;
       paperWidthMm: number;
@@ -28,6 +29,15 @@ export function AdminPrintersPanel({
       isAutoPrintEnabled: boolean;
     }>
   >([]);
+  const [selectedPrinterId, setSelectedPrinterId] = useState("");
+  const [addFormOpen, setAddFormOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newSector, setNewSector] = useState("Kitchen");
+  const [newConnKind, setNewConnKind] = useState("UsbSpooler");
+  const [newEndpoint, setNewEndpoint] = useState("USB002");
+  const [newPaperMm, setNewPaperMm] = useState<58 | 80>(80);
+  const [newSetPrimary, setNewSetPrimary] = useState(true);
+  const [savingNew, setSavingNew] = useState(false);
   const [testPreview, setTestPreview] = useState<{
     printerCode: string;
     storeLogoUrl?: string | null;
@@ -39,7 +49,13 @@ export function AdminPrintersPanel({
   const loadPrinters = useCallback(async () => {
     if (!token) return;
     const res = await apiFetch<{ printers: typeof printers }>("/api/v1/printing/printers", {}, token);
-    if (res.ok && res.data) setPrinters(res.data.printers || []);
+    if (res.ok && res.data) {
+      const list = res.data.printers || [];
+      setPrinters(list);
+      if (list.length > 0) {
+        setSelectedPrinterId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0].id));
+      }
+    }
   }, [token]);
 
   useEffect(() => {
@@ -54,6 +70,55 @@ export function AdminPrintersPanel({
     }
   }
 
+  async function selectPrinter(id: string, sector?: string) {
+    setSelectedPrinterId(id);
+    const qs = sector ? `?sector=${encodeURIComponent(sector)}` : "";
+    const res = await apiFetch(`/api/v1/printing/printers/${id}/select${qs}`, { method: "POST" }, token);
+    if (res.ok) {
+      onNotify("Impressora selecionada como ativa para o setor!");
+      await loadPrinters();
+    } else onNotify(res.errorMessage || "Erro ao selecionar impressora.");
+  }
+
+  async function addPrinter(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim() || !newEndpoint.trim()) {
+      onNotify("Preencha o nome e a porta/IP da nova impressora.");
+      return;
+    }
+    setSavingNew(true);
+    const res = await apiFetch(
+      "/api/v1/printing/printers",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: newName.trim(),
+          sector: newSector,
+          connectionKind: newConnKind,
+          endpointOrPort: newEndpoint.trim(),
+          paperWidthMm: newPaperMm,
+          setAsPrimary: newSetPrimary
+        })
+      },
+      token
+    );
+    setSavingNew(false);
+    if (res.ok) {
+      setNewName("");
+      setAddFormOpen(false);
+      onNotify("Nova impressora adicionada e pronta para uso!");
+      await loadPrinters();
+    } else onNotify(res.errorMessage || "Erro ao adicionar impressora.");
+  }
+
+  async function removePrinter(id: string, name: string) {
+    const res = await apiFetch(`/api/v1/printing/printers/${id}`, { method: "DELETE" }, token);
+    if (res.ok) {
+      onNotify(`Impressora "${name}" removida.`);
+      await loadPrinters();
+    } else onNotify(res.errorMessage || "Erro ao remover impressora.");
+  }
+
   async function runTest(id: string) {
     const res = await apiFetch<typeof testPreview>(`/api/v1/printing/printers/${id}/test`, { method: "POST" }, token);
     if (res.ok && res.data) {
@@ -65,50 +130,198 @@ export function AdminPrintersPanel({
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-          <Printer className="h-5 w-5 text-slate-700" /> Gerenciamento de Impressoras Térmicas
-        </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Configure suas estações de impressão térmica (1ª Via Produção/Cozinha e 2ª Via Caixa/Entrega) utilizando exclusivamente logo e CNPJ da loja.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+              <Printer className="h-5 w-5 text-slate-700" /> Gerenciamento de Impressoras Térmicas
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Selecione sua impressora padrão, adicione novas impressoras (Cozinha, Caixa, Bar, Balcão) ou remova dispositivos inutilizados.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAddFormOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-slate-800"
+          >
+            <Plus className="h-3.5 w-3.5" /> {addFormOpen ? "Cancelar" : "Adicionar Impressora"}
+          </button>
+        </div>
+
+        {/* Seletor Rápido da Impressora Ativa */}
+        {printers.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+            <span className="font-extrabold text-slate-700">Impressora Selecionada Agora:</span>
+            <select
+              value={selectedPrinterId}
+              onChange={(e) => {
+                const chosen = printers.find((x) => x.id === e.target.value);
+                void selectPrinter(e.target.value, chosen?.sector);
+              }}
+              aria-label="Selecionar impressora principal"
+              className="flex-1 min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-900"
+            >
+              {printers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName} — {p.sector.toUpperCase()} ({p.paperWidthMm}mm • {p.endpointOrPort})
+                </option>
+              ))}
+            </select>
+            {selectedPrinterId && (
+              <button
+                type="button"
+                onClick={() => void runTest(selectedPrinterId)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-800 hover:bg-slate-100"
+              >
+                Testar Selecionada
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Formulário de Nova Impressora */}
+        {addFormOpen && (
+          <form onSubmit={addPrinter} className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 text-xs space-y-3">
+            <p className="font-extrabold text-indigo-950">➕ Cadastrar Nova Impressora Térmica</p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="font-bold text-slate-700">
+                Nome da Impressora
+                <input
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Ex: Impressora Caixa 02 (Epson TM-T20)"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                />
+              </label>
+              <label className="font-bold text-slate-700">
+                Setor
+                <select value={newSector} onChange={(e) => setNewSector(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2">
+                  <option value="Kitchen">Cozinha / Produção (Kitchen)</option>
+                  <option value="Counter">Balcão & Entrega (Counter)</option>
+                  <option value="Cashier">Caixa (Cashier)</option>
+                  <option value="Production">Montagem (Production)</option>
+                  <option value="Bar">Bar / Bebidas (Bar)</option>
+                </select>
+              </label>
+              <label className="font-bold text-slate-700">
+                Conexão
+                <select value={newConnKind} onChange={(e) => setNewConnKind(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2">
+                  <option value="UsbSpooler">USB / Spooler Windows</option>
+                  <option value="NetworkTcpEscPos">Rede TCP/IP (Wi-Fi/Cabo)</option>
+                  <option value="SerialEscPos">Serial (COM)</option>
+                </select>
+              </label>
+              <label className="font-bold text-slate-700">
+                Porta / IP e Bobina
+                <div className="mt-1 flex gap-1.5">
+                  <input
+                    required
+                    value={newEndpoint}
+                    onChange={(e) => setNewEndpoint(e.target.value)}
+                    placeholder="USB002 ou 192.168.0.105:9100"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-2.5 py-2 font-mono"
+                  />
+                  <select
+                    value={newPaperMm}
+                    onChange={(e) => setNewPaperMm(Number(e.target.value) === 58 ? 58 : 80)}
+                    className="rounded-xl border border-slate-300 bg-white px-2 py-2 font-bold"
+                  >
+                    <option value={80}>80mm</option>
+                    <option value={58}>58mm</option>
+                  </select>
+                </div>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-2 font-bold text-slate-700">
+                <input type="checkbox" checked={newSetPrimary} onChange={(e) => setNewSetPrimary(e.target.checked)} />
+                Definir como impressora principal deste setor
+              </label>
+              <button
+                type="submit"
+                disabled={savingNew}
+                className="rounded-xl bg-emerald-600 px-4 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {savingNew ? "Salvando..." : "Salvar Nova Impressora"}
+              </button>
+            </div>
+          </form>
+        )}
 
         <div className="mt-4 space-y-3">
-          {printers.map((p) => (
-            <div
-              key={p.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4"
-            >
-              <div>
-                <p className="text-sm font-extrabold text-slate-900">{p.displayName}</p>
-                <p className="text-xs text-slate-500">
-                  Setor: <strong>{p.sector.toUpperCase()}</strong> • Bobina: {p.paperWidthMm}mm • {p.endpointOrPort}
-                </p>
-                <p className={`mt-1 text-xs font-extrabold ${p.isAutoPrintEnabled ? "text-emerald-700" : "text-amber-700"}`}>
-                  {p.isAutoPrintEnabled
-                    ? "⚡ Auto-Impressão ATIVA (sai automático)"
-                    : "⏸️ Auto-Impressão DESLIGADA (impressão somente manual)"}
-                </p>
+          {printers.map((p) => {
+            const isSelected = p.id === selectedPrinterId;
+            return (
+              <div
+                key={p.id}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 transition ${
+                  isSelected ? "border-emerald-400 bg-emerald-50/40" : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-extrabold text-slate-900">{p.displayName}</p>
+                    {p.isPrimaryForSector && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold text-indigo-800">
+                        <CheckCircle2 className="h-3 w-3" /> Principal ({p.sector})
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                        Selecionada
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Setor: <strong>{p.sector.toUpperCase()}</strong> • Bobina: {p.paperWidthMm}mm • {p.endpointOrPort}
+                  </p>
+                  <p className={`mt-1 text-xs font-extrabold ${p.isAutoPrintEnabled ? "text-emerald-700" : "text-amber-700"}`}>
+                    {p.isAutoPrintEnabled
+                      ? "⚡ Auto-Impressão ATIVA (sai automático)"
+                      : "⏸️ Auto-Impressão DESLIGADA (impressão somente manual)"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void selectPrinter(p.id, p.sector)}
+                    className={`rounded-xl px-3 py-2 text-xs font-bold ${
+                      isSelected
+                        ? "bg-emerald-700 text-white"
+                        : "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                    }`}
+                  >
+                    {isSelected ? "Selecionada" : "Selecionar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleAuto(p.id)}
+                    className={`rounded-xl px-3 py-2 text-xs font-bold text-white ${
+                      p.isAutoPrintEnabled ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                  >
+                    {p.isAutoPrintEnabled ? "Desativar Auto" : "Ativar Auto"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runTest(p.id)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                  >
+                    Imprimir Teste
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removePrinter(p.id, p.displayName)}
+                    title={`Remover ${p.displayName}`}
+                    className="inline-flex items-center gap-1 rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Remover
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void toggleAuto(p.id)}
-                  className={`rounded-xl px-3.5 py-2 text-xs font-bold text-white ${
-                    p.isAutoPrintEnabled ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
-                  }`}
-                >
-                  {p.isAutoPrintEnabled ? "Desativar Auto" : "Ativar Auto"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runTest(p.id)}
-                  className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
-                >
-                  Imprimir Teste
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

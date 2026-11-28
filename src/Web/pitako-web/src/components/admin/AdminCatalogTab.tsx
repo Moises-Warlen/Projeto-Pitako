@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, ArrowDown, ArrowUp, Clock, Edit3, FileText, Flame, GripVertical, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Star, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Clock, Edit3, FileSpreadsheet, FileText, Flame, GripVertical, Image as ImageIcon, Layers, LayoutGrid, List, Pause, Play, Plus, Sliders, Star, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { apiFetch, compressImageFileToDataUrl, resolveMediaUrl } from "@/lib/api";
 import { ProductMediaFrame } from "../storefront/ProductMediaFrame";
+import { AdminCatalogAndSheetsExportModal, AdminComboExportDto } from "./AdminCatalogAndSheetsExportModal";
 import { AdminFlyerModal } from "./AdminFlyerModal";
 import { AdminCategoryEditModal, AdminProductFullModal, ModifierGroupDetailedDto } from "./AdminProductAndCategoryModals";
 import { TechnicalSheetSummaryItem } from "./AdminTechSheetPdfModal";
@@ -96,10 +97,15 @@ export function AdminCatalogTab({
   slogan,
   primaryColorHex = "#4C1D95",
   accentColorHex = "#F59E0B",
+  formattedCnpj,
+  storeAddress,
+  whatsAppNumber,
+  instagramHandle,
   categories,
   products,
   modifierGroups,
   techSheetSummaries = [],
+  combos = [],
   onOpenTechSheetPdf,
   onNotify,
   onReload
@@ -112,10 +118,15 @@ export function AdminCatalogTab({
   slogan?: string | null;
   primaryColorHex?: string;
   accentColorHex?: string;
+  formattedCnpj?: string;
+  storeAddress?: string;
+  whatsAppNumber?: string;
+  instagramHandle?: string;
   categories: AdminCategoryDto[];
   products: AdminProductDto[];
   modifierGroups: ModifierGroupDetailedDto[];
   techSheetSummaries?: TechnicalSheetSummaryItem[];
+  combos?: AdminComboExportDto[];
   onOpenTechSheetPdf?: (sheet: TechnicalSheetSummaryItem) => void;
   onNotify: (msg: string) => void;
   onReload: () => Promise<void>;
@@ -126,6 +137,7 @@ export function AdminCatalogTab({
   const [prodModalOpen, setProdModalOpen] = useState(false);
   const [modalProduct, setModalProduct] = useState<AdminProductDto | null>(null);
   const [flyerOpen, setFlyerOpen] = useState(false);
+  const [exportCenterOpen, setExportCenterOpen] = useState(false);
   const [bestSellerPickId, setBestSellerPickId] = useState("");
   const [sidebarUploadingImg, setSidebarUploadingImg] = useState(false);
   const [selectedCatFilter, setSelectedCatFilter] = useState<string>("all");
@@ -674,6 +686,13 @@ export function AdminCatalogTab({
                   className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-bold ${viewMode === "cards" ? "bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" /> Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportCenterOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-indigo-700"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Fichas &amp; Catálogo PDF/Excel
                 </button>
                 <button
                   type="button"
@@ -1276,6 +1295,27 @@ export function AdminCatalogTab({
         categories={categories}
         products={products}
         onClose={() => setFlyerOpen(false)}
+      />
+
+      <AdminCatalogAndSheetsExportModal
+        open={exportCenterOpen}
+        slug={slug}
+        storeTradeName={storeTradeName}
+        formattedCnpj={formattedCnpj}
+        logoUrl={logoUrl}
+        slogan={slogan}
+        primaryColorHex={primaryColorHex}
+        accentColorHex={accentColorHex}
+        storeAddress={storeAddress}
+        whatsAppNumber={whatsAppNumber}
+        instagramHandle={instagramHandle}
+        categories={categories}
+        products={products}
+        modifierGroups={modifierGroups}
+        techSheets={techSheetSummaries}
+        combos={combos}
+        onNotify={onNotify}
+        onClose={() => setExportCenterOpen(false)}
       />
     </div>
   );

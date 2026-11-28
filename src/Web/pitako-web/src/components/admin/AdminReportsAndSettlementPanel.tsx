@@ -1,11 +1,14 @@
 "use client";
 
-import { BarChart3, Bike, Clock, DollarSign, Flame, Printer, TrendingUp } from "lucide-react";
+import { BarChart3, Bike, Calendar, Clock, DollarSign, Flame, MessageCircle, Printer, Send, TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 interface ExecutiveReportDto {
   windowDays: number;
+  startDateIso?: string;
+  endDateIso?: string;
+  storeWhatsAppPhone?: string | null;
   financialKpis: {
     netRevenue: number;
     validOrderCount: number;
@@ -64,17 +67,40 @@ export function AdminReportsAndSettlementPanel({
   storeTradeName: string;
 }) {
   const [subTab, setSubTab] = useState<"sales" | "settlement">("sales");
-  const [days, setDays] = useState("7");
+  const [datePreset, setDatePreset] = useState<"1" | "7" | "15" | "30" | "custom">("7");
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date(Date.now() - 6 * 86400_000);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [courierId, setCourierId] = useState("");
+  const [runStatus, setRunStatus] = useState("");
   const [report, setReport] = useState<ExecutiveReportDto | null>(null);
+  const [waModalOpen, setWaModalOpen] = useState(false);
+  const [waTargetMode, setWaTargetMode] = useState<"store" | "courier" | "custom">("store");
+  const [customWaPhone, setCustomWaPhone] = useState("");
+  const [waFeedback, setWaFeedback] = useState<string | null>(null);
 
   const loadReport = useCallback(async () => {
     if (!token) return;
-    const qs = new URLSearchParams({ days });
+    const qs = new URLSearchParams();
+    if (datePreset === "custom") {
+      if (startDate) qs.set("startDate", startDate);
+      if (endDate) qs.set("endDate", endDate);
+    } else {
+      qs.set("days", datePreset);
+    }
     if (courierId) qs.set("courierId", courierId);
+    if (runStatus) qs.set("runStatus", runStatus);
     const res = await apiFetch<ExecutiveReportDto>(`/api/v1/reports/executive?${qs.toString()}`, {}, token);
-    if (res.ok && res.data) setReport(res.data);
-  }, [courierId, days, token]);
+    if (res.ok && res.data) {
+      setReport(res.data);
+      if (datePreset !== "custom" && res.data.startDateIso && res.data.endDateIso) {
+        setStartDate(res.data.startDateIso);
+        setEndDate(res.data.endDateIso);
+      }
+    }
+  }, [courierId, datePreset, endDate, runStatus, startDate, token]);
 
   useEffect(() => {
     void loadReport();
@@ -83,52 +109,345 @@ export function AdminReportsAndSettlementPanel({
   const k = report?.financialKpis;
   const s = report?.courierSettlement;
   const maxBestQty = Math.max(1, ...(report?.bestSellingProducts || []).map((p) => p.quantity));
+  const selectedCourier = s?.couriers.find((c) => c.id === courierId) || null;
+  const periodLabel = `${startDate.split("-").reverse().join("/")} até ${endDate.split("-").reverse().join("/")}`;
+
+  function buildWhatsAppText() {
+    if (subTab === "sales") {
+      const topProducts = (report?.bestSellingProducts || [])
+        .slice(0, 5)
+        .map((p, i) => `${i + 1}. ${p.name}: ${p.quantity} un (${fmtBrl(p.revenue)})`)
+        .join("\n");
+      return [
+        `📊 *Relatório Gerencial — ${storeTradeName}*`,
+        `Período: ${periodLabel}`,
+        `• Faturamento Líquido: ${fmtBrl(k?.netRevenue ?? 0)} (${k?.validOrderCount ?? 0} pedidos)`,
+        `• Taxas de Entrega: ${fmtBrl(k?.deliveryFees ?? 0)}`,
+        `• Descontos Cupons: ${fmtBrl(k?.discounts ?? 0)}`,
+        `• Cancelados: ${k?.cancelledCount ?? 0} (${fmtBrl(k?.cancelledTotal ?? 0)})`,
+        `• Custo Insumos (CMV): ${fmtBrl(k?.cogs ?? 0)}`,
+        `• Lucro Bruto Real: ${fmtBrl(k?.grossProfit ?? 0)}`,
+        `• Ticket Médio: ${fmtBrl(k?.avgTicket ?? 0)}`,
+        topProducts ? `\n🔥 *Mais Vendidos:*\n${topProducts}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    const headerWho = selectedCourier ? `Motoqueiro: ${selectedCourier.fullName}` : "Todos os Motoqueiros";
+    const runsPreview = (s?.runs || [])
+      .flatMap((r) => r.stops.map((st) => `• #${st.orderNumberSnapshot} (${r.courierName}) — ${st.legDistanceKm} km • Frete ${fmtBrl(st.commission)} [${st.status}]`))
+      .slice(0, 12)
+      .join("\n");
+    return [
+      `🛵 *Acerto de Entregas — ${storeTradeName}*`,
+      `Período: ${periodLabel} • ${headerWho}`,
+      `• Total de Entregas: ${s?.totalDeliveries ?? 0}`,
+      `• Quilometragem: ${s?.totalDistanceKm ?? 0} km`,
+      `• Fretes a Pagar: ${fmtBrl(s?.totalFreightPayable ?? 0)}`,
+      `• Dinheiro Recolhido: ${fmtBrl(s?.cashCollected ?? 0)}`,
+      `• Saldo Final do Acerto: ${fmtBrl(s?.settlementBalance ?? 0)}`,
+      runsPreview ? `\n📋 *Corridas:*\n${runsPreview}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function resolveWhatsAppPhoneDigits() {
+    let raw = "";
+    if (waTargetMode === "store") raw = report?.storeWhatsAppPhone || "";
+    else if (waTargetMode === "courier") raw = selectedCourier?.phone || customWaPhone;
+    else raw = customWaPhone;
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+    return digits.startsWith("55") ? digits : `55${digits}`;
+  }
+
+  function handleSendWhatsAppReport() {
+    const text = buildWhatsAppText();
+    const digits = resolveWhatsAppPhoneDigits();
+    if (!digits || digits.length < 10) {
+      setWaFeedback("Informe um número de WhatsApp válido (com DDD) para enviar.");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(text).catch(() => {});
+    }
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setWaFeedback(`Resumo copiado e WhatsApp aberto para +${digits}!`);
+  }
+
+  function handlePrintCleanPdf() {
+    const popup = window.open("", "_blank", "width=980,height=780");
+    if (!popup) {
+      window.print();
+      return;
+    }
+    const esc = (v: string | number | null | undefined) =>
+      String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    let bodyHtml = "";
+    if (subTab === "sales") {
+      bodyHtml = `
+        <h1>Relatório Gerencial de Faturamento & Vendas — ${esc(storeTradeName)}</h1>
+        <p class="sub">Período analisado: <strong>${esc(periodLabel)}</strong> • Gerado em ${new Date().toLocaleString("pt-BR")}</p>
+        <div class="kpis">
+          <div class="kpi"><span>Faturamento Líquido</span><strong>${esc(fmtBrl(k?.netRevenue ?? 0))}</strong><small>${k?.validOrderCount ?? 0} pedidos</small></div>
+          <div class="kpi"><span>Taxas de Entrega</span><strong>${esc(fmtBrl(k?.deliveryFees ?? 0))}</strong><small>Fretes recebidos</small></div>
+          <div class="kpi"><span>Descontos Cupons</span><strong>${esc(fmtBrl(k?.discounts ?? 0))}</strong><small>Concedidos</small></div>
+          <div class="kpi"><span>Pedidos Cancelados</span><strong>${k?.cancelledCount ?? 0}</strong><small>${esc(fmtBrl(k?.cancelledTotal ?? 0))}</small></div>
+          <div class="kpi"><span>Custo Insumos (CMV)</span><strong>${esc(fmtBrl(k?.cogs ?? 0))}</strong><small>Via Ficha Técnica</small></div>
+          <div class="kpi"><span>Lucro Bruto Real</span><strong>${esc(fmtBrl(k?.grossProfit ?? 0))}</strong><small>Após CMV</small></div>
+          <div class="kpi"><span>Ticket Médio</span><strong>${esc(fmtBrl(k?.avgTicket ?? 0))}</strong><small>Por pedido</small></div>
+          <div class="kpi"><span>Tempo Médio Preparo</span><strong>${k?.avgPrepMinutes ?? 24} min</strong><small>Cozinha / Embalagem</small></div>
+        </div>
+        <h2>Produtos Mais Vendidos</h2>
+        <table>
+          <thead><tr><th>#</th><th>Produto</th><th>Quantidade</th><th>Faturamento</th></tr></thead>
+          <tbody>
+            ${(report?.bestSellingProducts || []).map((p, idx) => `<tr><td>${idx + 1}</td><td>${esc(p.name)}</td><td>${p.quantity} un</td><td>${esc(fmtBrl(p.revenue))}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        <h2>Vendas por Forma de Pagamento</h2>
+        <table>
+          <thead><tr><th>Forma de Pagamento</th><th>Pedidos</th><th>Total</th></tr></thead>
+          <tbody>
+            ${(report?.paymentMethods || []).map((pm) => `<tr><td>${esc(pm.method)}</td><td>${pm.count}x</td><td>${esc(fmtBrl(pm.total))}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+    } else {
+      const stopsRows = (s?.runs || [])
+        .flatMap((r) =>
+          r.stops.map(
+            (st) =>
+              `<tr><td>${esc(new Date(r.assignedAtUtc).toLocaleString("pt-BR"))}</td><td>${esc(r.courierName)}</td><td>#${esc(st.orderNumberSnapshot)}</td><td>${esc(st.customerNameSnapshot)}</td><td>${esc(st.destinationAddress)}</td><td>${st.legDistanceKm} km</td><td>${esc(fmtBrl(st.commission))}</td><td>${esc(st.status)}</td></tr>`
+          )
+        )
+        .join("");
+
+      bodyHtml = `
+        <h1>Relatório de Entregas & Acerto de Motoboys — ${esc(storeTradeName)}</h1>
+        <p class="sub">Período: <strong>${esc(periodLabel)}</strong> • Entregador: <strong>${esc(selectedCourier ? selectedCourier.fullName : "Todos os Motoqueiros")}</strong> • Status: <strong>${esc(runStatus || "Todos")}</strong></p>
+        <div class="kpis">
+          <div class="kpi"><span>Total de Entregas</span><strong>${s?.totalDeliveries ?? 0}</strong></div>
+          <div class="kpi"><span>Quilometragem Total</span><strong>${s?.totalDistanceKm ?? 0} km</strong></div>
+          <div class="kpi"><span>Fretes a Pagar</span><strong>${esc(fmtBrl(s?.totalFreightPayable ?? 0))}</strong></div>
+          <div class="kpi"><span>Dinheiro Recolhido</span><strong>${esc(fmtBrl(s?.cashCollected ?? 0))}</strong></div>
+          <div class="kpi"><span>Saldo Final do Acerto</span><strong>${esc(fmtBrl(s?.settlementBalance ?? 0))}</strong></div>
+        </div>
+        <h2>Listagem de Corridas e Paradas</h2>
+        <table>
+          <thead><tr><th>Data / Hora</th><th>Motoqueiro</th><th>Pedido</th><th>Cliente</th><th>Destino</th><th>Distância</th><th>Frete</th><th>Status</th></tr></thead>
+          <tbody>${stopsRows || `<tr><td colspan="8" style="text-align:center">Sem corridas no período filtrado.</td></tr>`}</tbody>
+        </table>
+        <div class="sign">
+          <div>Assinatura do Entregador: ______________________________________</div>
+          <div>${esc(storeTradeName)} — Caixa / Responsável: _________________________</div>
+        </div>
+      `;
+    }
+
+    popup.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório — ${esc(storeTradeName)}</title><style>
+      @page { size: A4; margin: 14mm; }
+      body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      h2 { font-size: 13px; margin: 16px 0 6px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+      .sub { font-size: 11px; color: #475569; margin: 0 0 14px; }
+      .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+      .kpi { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; }
+      .kpi span { display: block; font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+      .kpi strong { display: block; font-size: 15px; margin-top: 2px; }
+      .kpi small { font-size: 10px; color: #64748b; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+      th { background: #f8fafc; font-weight: bold; }
+      .sign { display: flex; justify-content: space-between; margin-top: 28px; padding-top: 16px; border-top: 1px solid #cbd5e1; font-size: 11px; }
+      @media print { button { display: none; } }
+    </style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);};</script></body></html>`);
+    popup.document.close();
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setSubTab("sales")}
-            style={subTab === "sales" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold ${
-              subTab === "sales" ? "" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <BarChart3 className="h-4 w-4" /> Faturamento & Vendas Gerais
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubTab("settlement")}
-            style={subTab === "settlement" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold ${
-              subTab === "settlement" ? "" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <Bike className="h-4 w-4" /> Relatório de Entregas & Motoboys
-          </button>
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSubTab("sales")}
+              style={subTab === "sales" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold ${
+                subTab === "sales" ? "" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <BarChart3 className="h-4 w-4" /> Faturamento & Vendas Gerais
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab("settlement")}
+              style={subTab === "settlement" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold ${
+                subTab === "settlement" ? "" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Bike className="h-4 w-4" /> Relatório de Entregas & Motoboys
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setWaFeedback(null);
+                setWaModalOpen((v) => !v);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> Enviar p/ WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintCleanPdf}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white hover:opacity-90"
+            >
+              <Printer className="h-3.5 w-3.5" /> Baixar / Imprimir PDF
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Barra unificada de Filtros de Datas (+ Filtros Motoboys quando ativo) */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
+          <span className="inline-flex items-center gap-1 font-extrabold text-slate-700">
+            <Calendar className="h-3.5 w-3.5 text-slate-500" /> Período:
+          </span>
           <select
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
+            value={datePreset}
+            onChange={(e) => setDatePreset(e.target.value as "1" | "7" | "15" | "30" | "custom")}
+            aria-label="Selecionar período do relatório"
+            className="rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-800"
           >
             <option value="1">Hoje (Dia)</option>
             <option value="7">Últimos 7 dias</option>
             <option value="15">Últimos 15 dias</option>
             <option value="30">Últimos 30 dias</option>
+            <option value="custom">Intervalo Personalizado</option>
           </select>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white hover:opacity-90"
-          >
-            <Printer className="h-3.5 w-3.5" /> Imprimir Relatório PDF
-          </button>
+
+          <label className="inline-flex items-center gap-1 font-semibold text-slate-600">
+            De:
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="rounded-xl border border-slate-200 px-2.5 py-1 font-mono text-xs text-slate-800"
+            />
+          </label>
+          <label className="inline-flex items-center gap-1 font-semibold text-slate-600">
+            Até:
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="rounded-xl border border-slate-200 px-2.5 py-1 font-mono text-xs text-slate-800"
+            />
+          </label>
+
+          {subTab === "settlement" && (
+            <>
+              <select
+                value={courierId}
+                onChange={(e) => setCourierId(e.target.value)}
+                aria-label="Filtrar por motoqueiro"
+                className="rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-800"
+              >
+                <option value="">Todos os Motoqueiros</option>
+                {(s?.couriers || []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.fullName} ({c.vehicleType})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={runStatus}
+                onChange={(e) => setRunStatus(e.target.value)}
+                aria-label="Filtrar por status da entrega"
+                className="rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-800"
+              >
+                <option value="">Todos os Status</option>
+                <option value="Assigned">Atribuída (Assigned)</option>
+                <option value="InTransit">Em Rota (InTransit)</option>
+                <option value="Completed">Concluída (Completed)</option>
+                <option value="Cancelled">Cancelada</option>
+              </select>
+            </>
+          )}
         </div>
+
+        {waModalOpen && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-extrabold text-emerald-950">📲 Enviar Relatório por WhatsApp</p>
+              <button
+                type="button"
+                onClick={() => setWaModalOpen(false)}
+                className="text-[11px] font-bold text-slate-500 hover:underline"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={waTargetMode}
+                onChange={(e) => setWaTargetMode(e.target.value as "store" | "courier" | "custom")}
+                className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 font-bold text-slate-800"
+              >
+                <option value="store">
+                  WhatsApp da Loja ({report?.storeWhatsAppPhone || "Não cadastrado"})
+                </option>
+                {selectedCourier && (
+                  <option value="courier">
+                    WhatsApp de {selectedCourier.fullName} ({selectedCourier.phone || "Informar abaixo"})
+                  </option>
+                )}
+                <option value="custom">Outro Número de WhatsApp</option>
+              </select>
+
+              {(waTargetMode === "custom" || (waTargetMode === "courier" && !selectedCourier?.phone)) && (
+                <input
+                  value={customWaPhone}
+                  onChange={(e) => setCustomWaPhone(e.target.value)}
+                  placeholder="DDD + Número (ex: 16991098863)"
+                  className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 font-mono"
+                />
+              )}
+
+              <button
+                type="button"
+                onClick={handleSendWhatsAppReport}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-1.5 font-extrabold text-white hover:bg-emerald-800"
+              >
+                <Send className="h-3.5 w-3.5" /> Abrir e Enviar no WhatsApp
+              </button>
+            </div>
+            {waFeedback && <p className="font-bold text-emerald-900">{waFeedback}</p>}
+          </div>
+        )}
+      </div>
+
+      {/* Cabeçalho exclusivo de Impressão direta (caso usuário use Ctrl+P) */}
+      <div className="hidden print:block mb-4 border-b border-slate-300 pb-3">
+        <h1 className="text-lg font-extrabold text-slate-900">
+          {subTab === "sales" ? "Relatório Gerencial de Vendas" : "Acerto de Entregas & Motoboys"} — {storeTradeName}
+        </h1>
+        <p className="text-xs text-slate-600">Período: {periodLabel}</p>
       </div>
 
       {subTab === "sales" && (
@@ -279,24 +598,12 @@ export function AdminReportsAndSettlementPanel({
               <p className="text-xs text-slate-500">Acompanhe total de corridas, KM percorrido, dinheiro recebido e folha de assinatura.</p>
             </div>
             <div className="flex items-center gap-2 print:hidden">
-              <select
-                value={courierId}
-                onChange={(e) => setCourierId(e.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
-              >
-                <option value="">Todos os Motoqueiros</option>
-                {(s?.couriers || []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.fullName} ({c.vehicleType})
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handlePrintCleanPdf}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
               >
-                <Printer className="h-3.5 w-3.5" /> Imprimir Folha de Acerto (PDF)
+                <Printer className="h-3.5 w-3.5" /> Baixar Folha de Acerto (PDF)
               </button>
             </div>
           </div>
