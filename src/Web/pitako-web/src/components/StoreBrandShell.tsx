@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Check, MessageCircle, Power, Radio, Store, UtensilsCrossed, Volume2, VolumeX } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, Check, MessageCircle, Power, Radio, Send, Store, UtensilsCrossed, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, loadSession, resolveMediaUrl } from "@/lib/api";
 import {
@@ -51,6 +52,7 @@ export function StoreBrandShell({
   onStoreStatusChanged?: (isPaused: boolean) => void;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const [loadedTheme, setLoadedTheme] = useState<StoreBrandTheme | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [statusKnown, setStatusKnown] = useState<boolean>(false);
@@ -59,6 +61,31 @@ export function StoreBrandShell({
   const [alarmMuted, setAlarmMuted] = useState<boolean>(false);
   const [opsToken, setOpsToken] = useState<string>("");
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [unreadConversations, setUnreadConversations] = useState<
+    Array<{
+      id: string;
+      customerName: string;
+      customerPhone: string;
+      status: string;
+      unreadCount: number;
+      lastMessagePreview: string;
+      lastInteractionAtUtc: string;
+    }>
+  >([]);
+  const [chatInboxOpen, setChatInboxOpen] = useState(false);
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  const [chatThread, setChatThread] = useState<{
+    id: string;
+    customerName: string;
+    customerPhone: string;
+    status: string;
+    messages: Array<{ id: string; direction: string; contentText: string; sentAtUtc: string }>;
+  } | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [quickReply, setQuickReply] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [chatFeedback, setChatFeedback] = useState<string | null>(null);
+  const chatBoxRef = useRef<HTMLDivElement | null>(null);
   const [pendingWaiterCalls, setPendingWaiterCalls] = useState<
     Array<{ id: string; tableCode: string; callType: string; customerNotes?: string | null; requestedAtUtc: string }>
   >([]);
@@ -104,6 +131,15 @@ export function StoreBrandShell({
       latestOrderCustomer?: string | null;
       totalInboundChatMessages: number;
       unreadChatCount: number;
+      unreadConversations?: Array<{
+        id: string;
+        customerName: string;
+        customerPhone: string;
+        status: string;
+        unreadCount: number;
+        lastMessagePreview: string;
+        lastInteractionAtUtc: string;
+      }>;
       latestInboundMessageId?: string | null;
       latestInboundCustomer?: string | null;
       latestInboundSnippet?: string | null;
@@ -121,6 +157,7 @@ export function StoreBrandShell({
     setPendingOrdersCount(d.pendingOrdersCount);
     setReceivedOrdersCount(d.receivedOrdersCount ?? 0);
     setUnreadChatCount(d.unreadChatCount);
+    if (Array.isArray(d.unreadConversations)) setUnreadConversations(d.unreadConversations);
     setPendingWaiterCalls(d.pendingWaiterCalls || []);
 
     const waiterIdsStr = (d.pendingWaiterCalls || []).map((w) => w.id).join(",");
@@ -182,6 +219,87 @@ export function StoreBrandShell({
     await apiFetch(`/api/v1/dining/waiter-calls/${id}/complete`, { method: "POST" }, session.accessToken);
     void pollLiveAlerts();
   }
+
+  const openConversationThread = useCallback(async (convId: string) => {
+    const session = loadSession();
+    if (!session) return;
+    setSelectedConvId(convId);
+    setChatLoading(true);
+    setChatFeedback(null);
+    try {
+      const res = await apiFetch<{
+        conversations?: Array<{
+          id: string;
+          customerName: string;
+          customerPhone: string;
+          status: string;
+          messages: Array<{ id: string; direction: string; contentText: string; sentAtUtc: string }>;
+        }>;
+      }>("/api/v1/whatsapp/dashboard", {}, session.accessToken);
+      if (res.ok && res.data?.conversations) {
+        const match = res.data.conversations.find((c) => c.id === convId);
+        if (match) setChatThread(match);
+      }
+    } finally {
+      setChatLoading(false);
+    }
+  }, []);
+
+  async function handleQuickReplySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedConvId || !quickReply.trim() || sendingReply) return;
+    const session = loadSession();
+    if (!session) return;
+    setSendingReply(true);
+    setChatFeedback(null);
+    try {
+      const res = await apiFetch(
+        `/api/v1/whatsapp/conversations/${selectedConvId}/reply`,
+        { method: "POST", body: JSON.stringify({ messageText: quickReply.trim() }) },
+        session.accessToken
+      );
+      if (res.ok) {
+        setQuickReply("");
+        setChatFeedback("Resposta enviada!");
+        await Promise.all([openConversationThread(selectedConvId), pollLiveAlerts()]);
+      } else {
+        setChatFeedback(res.errorMessage || "Erro ao enviar resposta.");
+      }
+    } finally {
+      setSendingReply(false);
+    }
+  }
+
+  async function handleQuickResolve(convId: string) {
+    const session = loadSession();
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/whatsapp/conversations/${convId}/resolve`, { method: "POST" }, session.accessToken);
+    if (res.ok) {
+      setChatFeedback("Conversa resolvida!");
+      await Promise.all([openConversationThread(convId), pollLiveAlerts()]);
+    }
+  }
+
+  function openFullChatTab(convId?: string) {
+    setChatInboxOpen(false);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pitako:open-chat", { detail: { conversationId: convId } }));
+      if (!window.location.pathname.startsWith("/admin")) {
+        router.push(convId ? `/admin?tab=chat&conv=${convId}` : "/admin?tab=chat");
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!chatInboxOpen) return;
+    const handleOutside = (ev: MouseEvent) => {
+      if (chatBoxRef.current && !chatBoxRef.current.contains(ev.target as Node)) {
+        setChatInboxOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [chatInboxOpen]);
 
   const loadHeaderStatus = useCallback(async () => {
     const session = loadSession();
@@ -387,18 +505,182 @@ export function StoreBrandShell({
                 </span>
               )}
 
-              <Link
-                href="/admin"
-                title="Mensagens de clientes no Chat"
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-white transition hover:bg-white/25"
-              >
-                <MessageCircle className="h-4 w-4" />
-                {unreadChatCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-extrabold text-slate-900">
-                    {unreadChatCount}
-                  </span>
+              <div ref={chatBoxRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextOpen = !chatInboxOpen;
+                    setChatInboxOpen(nextOpen);
+                    if (nextOpen) {
+                      void pollLiveAlerts();
+                      if (selectedConvId) void openConversationThread(selectedConvId);
+                    }
+                  }}
+                  title="Notificações e mensagens de clientes"
+                  aria-label="Abrir notificações de mensagens de clientes"
+                  className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-white transition ${
+                    unreadChatCount > 0 ? "animate-pulse bg-emerald-500 text-white hover:bg-emerald-400" : "bg-white/15 hover:bg-white/25"
+                  }`}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {unreadChatCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white shadow">
+                      {unreadChatCount}
+                    </span>
+                  )}
+                </button>
+
+                {chatInboxOpen && (
+                  <div className="absolute right-0 top-10 z-50 w-96 max-w-[92vw] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4 text-emerald-600" />
+                        <span className="text-xs font-extrabold text-slate-900">Mensagens de Clientes</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                            unreadChatCount > 0 ? "bg-rose-100 text-rose-800" : "bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {unreadChatCount > 0 ? `${unreadChatCount} nova(s)` : "Em dia"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openFullChatTab(selectedConvId || unreadConversations[0]?.id)}
+                          className="text-[11px] font-bold text-indigo-700 hover:underline"
+                        >
+                          Abrir Chat
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChatInboxOpen(false)}
+                          aria-label="Fechar mensagens"
+                          className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {!selectedConvId ? (
+                      <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto">
+                        {unreadConversations.length === 0 ? (
+                          <div className="p-6 text-center text-xs text-slate-500">
+                            Nenhuma mensagem de cliente recebida ainda. Quando algum cliente mandar mensagem no cardápio ou WhatsApp, ela aparece aqui para você responder!
+                          </div>
+                        ) : (
+                          unreadConversations.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => void openConversationThread(c.id)}
+                              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-xs font-extrabold text-slate-900">{c.customerName}</span>
+                                  {c.unreadCount > 0 && (
+                                    <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-extrabold text-white">
+                                      {c.unreadCount}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500">{c.customerPhone}</p>
+                                <p className="mt-1 line-clamp-2 text-xs text-slate-700">{c.lastMessagePreview}</p>
+                              </div>
+                              <span className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-bold text-white">
+                                Responder
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedConvId(null);
+                              setChatThread(null);
+                              setChatFeedback(null);
+                            }}
+                            className="font-bold text-slate-600 hover:text-slate-900"
+                          >
+                            ← Conversas
+                          </button>
+                          <div className="min-w-0 truncate px-2 text-center">
+                            <span className="font-extrabold text-slate-900">
+                              {chatThread?.customerName || unreadConversations.find((u) => u.id === selectedConvId)?.customerName || "Cliente"}
+                            </span>
+                          </div>
+                          {chatThread && chatThread.status !== "Resolved" ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleQuickResolve(chatThread.id)}
+                              className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              Resolver
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">{chatThread?.status || ""}</span>
+                          )}
+                        </div>
+
+                        <div className="max-h-60 space-y-2 overflow-y-auto bg-slate-50 p-3 text-xs">
+                          {chatLoading ? (
+                            <p className="py-4 text-center text-slate-500">Carregando mensagens...</p>
+                          ) : !chatThread || chatThread.messages.length === 0 ? (
+                            <p className="py-4 text-center text-slate-500">Sem mensagens nesta conversa.</p>
+                          ) : (
+                            chatThread.messages.map((m) => {
+                              const isInbound = m.direction === "Inbound";
+                              return (
+                                <div
+                                  key={m.id}
+                                  className={`max-w-[85%] rounded-xl px-3 py-2 ${
+                                    isInbound
+                                      ? "mr-auto border border-slate-200 bg-white text-slate-900"
+                                      : "ml-auto bg-emerald-600 text-white"
+                                  }`}
+                                >
+                                  <p>{m.contentText}</p>
+                                  <p className={`mt-1 text-[9px] ${isInbound ? "text-slate-400" : "text-emerald-100"}`}>
+                                    {new Date(m.sentAtUtc).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {chatFeedback && (
+                          <div className="border-t border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">
+                            {chatFeedback}
+                          </div>
+                        )}
+
+                        <form onSubmit={handleQuickReplySubmit} className="flex gap-2 border-t border-slate-200 bg-white p-2.5">
+                          <input
+                            value={quickReply}
+                            onChange={(e) => setQuickReply(e.target.value)}
+                            placeholder="Responder para o cliente..."
+                            className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-1.5 text-xs focus:border-emerald-500 focus:outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={sendingReply || !quickReply.trim()}
+                            className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            <Send className="h-3.5 w-3.5" /> Enviar
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
                 )}
-              </Link>
+              </div>
 
               <nav className="flex flex-wrap items-center gap-1.5 text-sm">
                 {navItems.map((item) => (
@@ -452,9 +734,27 @@ export function StoreBrandShell({
           <div className="min-w-0 flex-1">
             <p className="font-extrabold">{liveToast.title}</p>
             <p className="mt-0.5 text-slate-300">{liveToast.detail}</p>
-            <Link href={liveToast.href} className="mt-1.5 inline-block font-bold text-amber-300 underline">
-              Visualizar agora
-            </Link>
+            {liveToast.kind === "chat" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLiveToast(null);
+                  setChatInboxOpen(true);
+                  if (unreadConversations[0]?.id) {
+                    void openConversationThread(unreadConversations[0].id);
+                  } else {
+                    openFullChatTab();
+                  }
+                }}
+                className="mt-1.5 inline-block font-bold text-amber-300 underline"
+              >
+                Responder agora
+              </button>
+            ) : (
+              <Link href={liveToast.href} className="mt-1.5 inline-block font-bold text-amber-300 underline">
+                Visualizar agora
+              </Link>
+            )}
           </div>
           <button type="button" onClick={() => setLiveToast(null)} className="text-slate-400 hover:text-white">
             ×

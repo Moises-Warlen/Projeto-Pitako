@@ -97,8 +97,18 @@ export default function AdminStorePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlTab = searchParams.get("tab") as AdminTabKey | null;
+      const urlConv = searchParams.get("conv");
       const savedTab = window.sessionStorage.getItem(ADMIN_TAB_KEY) as AdminTabKey | null;
-      if (savedTab) setTab(savedTab);
+      if (urlTab) {
+        setTab(urlTab);
+        window.sessionStorage.setItem(ADMIN_TAB_KEY, urlTab);
+      } else if (savedTab) {
+        setTab(savedTab);
+      }
+      if (urlConv) setChatConvId(urlConv);
+
       const rawToast = window.sessionStorage.getItem(ADMIN_TOAST_KEY);
       if (rawToast) {
         const parsed = JSON.parse(rawToast) as { message?: string; expiresAt?: number };
@@ -114,6 +124,17 @@ export default function AdminStorePage() {
     } catch {
       // Ignora JSON inválido
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (ev: Event) => {
+      const custom = ev as CustomEvent<{ conversationId?: string }>;
+      changeTab("chat");
+      if (custom.detail?.conversationId) setChatConvId(custom.detail.conversationId);
+    };
+    window.addEventListener("pitako:open-chat", handler);
+    return () => window.removeEventListener("pitako:open-chat", handler);
   }, []);
 
   useEffect(() => {
@@ -133,6 +154,7 @@ export default function AdminStorePage() {
   const [techSheetSummaries, setTechSheetSummaries] = useState<TechnicalSheetSummaryItem[]>([]);
   const [pdfSheetModal, setPdfSheetModal] = useState<TechnicalSheetSummaryItem | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | null>(null);
+  const [chatConvId, setChatConvId] = useState<string | null>(null);
   const [coupons, setCoupons] = useState<AdminCouponDto[]>([]);
   const [team, setTeam] = useState<Array<{ id: string; fullName: string; normalizedEmail: string; role: string }>>([]);
 
@@ -397,6 +419,7 @@ export default function AdminStorePage() {
           token={token}
           storeTradeName={theme.tradeName}
           prefillMessage={chatPrefill}
+          initialConversationId={chatConvId}
           onNotify={notifyAdmin}
         />
       )}

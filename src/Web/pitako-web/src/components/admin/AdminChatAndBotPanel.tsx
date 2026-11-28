@@ -83,15 +83,17 @@ export function AdminCustomerChatPanel({
   token,
   storeTradeName,
   prefillMessage,
+  initialConversationId,
   onNotify
 }: {
   token: string;
   storeTradeName: string;
   prefillMessage?: string | null;
+  initialConversationId?: string | null;
   onNotify: (msg: string) => void;
 }) {
   const [data, setData] = useState<WhatsAppDashboardDto | null>(null);
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>(initialConversationId || "");
   const [agentName, setAgentName] = useState(storeTradeName);
   const [replyText, setReplyText] = useState(prefillMessage || "");
   const [sending, setSending] = useState(false);
@@ -100,6 +102,10 @@ export function AdminCustomerChatPanel({
   useEffect(() => {
     if (prefillMessage) setReplyText(prefillMessage);
   }, [prefillMessage]);
+
+  useEffect(() => {
+    if (initialConversationId) setSelectedId(initialConversationId);
+  }, [initialConversationId]);
 
   const loadData = useCallback(async () => {
     if (!token) return;

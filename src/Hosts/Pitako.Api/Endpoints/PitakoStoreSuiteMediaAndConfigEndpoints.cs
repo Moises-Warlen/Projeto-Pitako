@@ -551,9 +551,25 @@ public static partial class PitakoStoreSuiteEndpoints
                 .OrderByDescending(x => x.Msg.SentAtUtc)
                 .ToList();
             var newestInbound = inboundMessages.FirstOrDefault();
-            var waitingHumanCount = convs.Count(c =>
-                c.Status == WhatsAppConversationStatus.WaitingHuman ||
-                c.Messages.OrderByDescending(m => m.SentAtUtc).FirstOrDefault()?.Direction == WhatsAppMessageDirection.Inbound);
+            var unreadChatCount = convs.Sum(c =>
+                c.UnreadCount > 0
+                    ? c.UnreadCount
+                    : (c.Status == WhatsAppConversationStatus.WaitingHuman ? 1 : 0));
+            var unreadConversations = convs
+                .OrderByDescending(c => c.UnreadCount > 0 || c.Status == WhatsAppConversationStatus.WaitingHuman ? 1 : 0)
+                .ThenByDescending(c => c.LastInteractionAtUtc)
+                .Take(8)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.CustomerName,
+                    c.CustomerPhone,
+                    status = c.Status.ToString(),
+                    unreadCount = c.UnreadCount > 0 ? c.UnreadCount : (c.Status == WhatsAppConversationStatus.WaitingHuman ? 1 : 0),
+                    c.LastMessagePreview,
+                    c.LastInteractionAtUtc
+                })
+                .ToList();
 
             var pendingWaiterCalls = await waiterRepo.ListPendingAsync(ct);
 
@@ -567,7 +583,8 @@ public static partial class PitakoStoreSuiteEndpoints
                 latestOrderCustomer = newestOrder?.CustomerName,
                 latestOrderPlacedAtUtc = newestOrder?.PlacedAtUtc,
                 totalInboundChatMessages = inboundMessages.Count,
-                unreadChatCount = waitingHumanCount,
+                unreadChatCount,
+                unreadConversations,
                 latestInboundMessageId = newestInbound?.Msg.Id,
                 latestInboundCustomer = newestInbound?.Conv.CustomerName,
                 latestInboundSnippet = newestInbound?.Msg.ContentText,
