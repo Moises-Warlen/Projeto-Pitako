@@ -20,6 +20,7 @@ export interface WhatsAppDashboardDto {
   chatAgentName: string;
   aiEnabled: boolean;
   hasGeminiApiKey: boolean;
+  hasGlobalAiKey?: boolean;
   geminiApiKeyMasked?: string | null;
   metrics: {
     messagesReceived: number;
@@ -84,6 +85,8 @@ export interface WhatsAppDashboardDto {
   } | null;
   training?: {
     assistantPersona: string;
+    employeeRoleTitle?: string;
+    employeeDirectives?: string;
     welcomeGreeting: string;
     storeKnowledgeNotes: string;
     faqs: Array<{ id: string; questionTitle: string; keywordsCsv: string; answerText: string; isActive: boolean }>;
@@ -382,6 +385,8 @@ export function AdminWhatsAppBotPanel({
   // Treinamento do Bot & IA
   const trainingSectionRef = useRef<HTMLDivElement | null>(null);
   const [botPersona, setBotPersona] = useState("Amigável e Acolhedor");
+  const [botRoleTitle, setBotRoleTitle] = useState("Atendente Virtual");
+  const [botDirectives, setBotDirectives] = useState("");
   const [botGreeting, setBotGreeting] = useState("");
   const [botNotes, setBotNotes] = useState("");
   const [botFaqs, setBotFaqs] = useState<Array<{ id: string; questionTitle: string; keywordsCsv: string; answerText: string; isActive: boolean }>>([]);
@@ -389,8 +394,8 @@ export function AdminWhatsAppBotPanel({
   const [newFaqKeywords, setNewFaqKeywords] = useState("");
   const [newFaqAnswer, setNewFaqAnswer] = useState("");
   const [savingTraining, setSavingTraining] = useState(false);
-  const [simQuestion, setSimQuestion] = useState("Qual a taxa de entrega e formas de pagamento?");
-  const [simResult, setSimResult] = useState<{ replyText: string; matchedFaqTitle?: string | null; usedTraining: boolean } | null>(null);
+  const [simQuestion, setSimQuestion] = useState("Quais tamanhos e sabores vocês têm?");
+  const [simResult, setSimResult] = useState<{ replyText: string; matchedFaqTitle?: string | null; usedTraining: boolean; usedExternalLlm?: boolean; aiEngineLabel?: string } | null>(null);
   const [fbSearch, setFbSearch] = useState("");
   const [fbStatusFilter, setFbStatusFilter] = useState<"all" | "unresolved" | "Analyzing" | "Resolved">("all");
   const [fbPage, setFbPage] = useState(1);
@@ -429,6 +434,8 @@ export function AdminWhatsAppBotPanel({
       }
       if (res.data.training) {
         setBotPersona(res.data.training.assistantPersona || "Amigável e Acolhedor");
+        setBotRoleTitle(res.data.training.employeeRoleTitle || "Atendente Virtual");
+        setBotDirectives(res.data.training.employeeDirectives || "");
         setBotGreeting(res.data.training.welcomeGreeting || "");
         setBotNotes(res.data.training.storeKnowledgeNotes || "");
         setBotFaqs(res.data.training.faqs || []);
@@ -500,6 +507,8 @@ export function AdminWhatsAppBotPanel({
           method: "PUT",
           body: JSON.stringify({
             assistantPersona: botPersona,
+            employeeRoleTitle: botRoleTitle,
+            employeeDirectives: botDirectives,
             welcomeGreeting: botGreeting,
             storeKnowledgeNotes: botNotes,
             faqs: nextFaqs
@@ -523,7 +532,7 @@ export function AdminWhatsAppBotPanel({
     if (!simQuestion.trim()) return;
     setSimulatingBot(true);
     try {
-      const res = await apiFetch<{ replyText: string; matchedFaqTitle?: string | null; usedTraining: boolean }>(
+      const res = await apiFetch<{ replyText: string; matchedFaqTitle?: string | null; usedTraining: boolean; usedExternalLlm?: boolean; aiEngineLabel?: string }>(
         "/api/v1/whatsapp/training/test",
         { method: "POST", body: JSON.stringify({ question: simQuestion.trim() }) },
         token
@@ -762,7 +771,12 @@ export function AdminWhatsAppBotPanel({
 
           <div className="mt-3">
             <label className="text-[11px] font-bold text-slate-600">
-              Chave API Google Gemini (Opcional, motor local já ativo) {data?.geminiApiKeyMasked && `• Atual: ${data.geminiApiKeyMasked}`}
+              Chave API IA (Google Gemini <code>AIza...</code> ou ChatGPT OpenAI <code>sk-...</code>)
+              {data?.geminiApiKeyMasked
+                ? ` • Chave Loja: ${data.geminiApiKeyMasked}`
+                : data?.hasGlobalAiKey
+                  ? " • Chave Global da Plataforma Ativa"
+                  : " • Opcional (Motor Local Cardápio Completo ativo)"}
             </label>
             <div className="mt-1 flex gap-2">
               <input
@@ -770,7 +784,7 @@ export function AdminWhatsAppBotPanel({
                 autoComplete="off"
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
-                placeholder="Cole uma nova AIza... para atualizar"
+                placeholder="Cole AIza... (Gemini) ou sk-... (OpenAI)"
                 className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs"
               />
               <button
@@ -863,7 +877,20 @@ export function AdminWhatsAppBotPanel({
 
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-3 text-xs">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block font-bold text-slate-700">
+                Cargo / Atuação como Funcionário
+                <select
+                  value={botRoleTitle}
+                  onChange={(e) => setBotRoleTitle(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2"
+                >
+                  <option value="Atendente Virtual">Atendente Virtual</option>
+                  <option value="Vendedor / Consultor de Cardápio">Vendedor / Consultor</option>
+                  <option value="Garçom Digital">Garçom Digital</option>
+                  <option value="Atendente Balcão & Delivery">Balcão & Delivery</option>
+                </select>
+              </label>
               <label className="block font-bold text-slate-700">
                 Tom / Personalidade do Bot
                 <select
@@ -882,11 +909,21 @@ export function AdminWhatsAppBotPanel({
                 <input
                   value={botGreeting}
                   onChange={(e) => setBotGreeting(e.target.value)}
-                  placeholder={`Ex: Seja bem-vindo(a) à ${storeTradeName}! Em que posso ajudar hoje?`}
+                  placeholder={`Ex: Seja bem-vindo(a) à ${storeTradeName}!`}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
                 />
               </label>
             </div>
+
+            <label className="block font-bold text-slate-700">
+              Instruções de Atuação como Funcionário (O que perguntar, sugerir e como conduzir vendas)
+              <input
+                value={botDirectives}
+                onChange={(e) => setBotDirectives(e.target.value)}
+                placeholder="Ex: Pergunte sempre o tamanho, ofereça Nutella ou Morango extra e confirme pagamento PIX ou Cartão."
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              />
+            </label>
 
             <label className="block font-bold text-slate-700">
               Conhecimento Geral da Loja (Regras, Taxas, Bairros, Diferenciais)
@@ -925,6 +962,11 @@ export function AdminWhatsAppBotPanel({
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800">
                       Resposta do Bot
                     </span>
+                    {simResult.aiEngineLabel && (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">
+                        {simResult.aiEngineLabel}
+                      </span>
+                    )}
                     {simResult.matchedFaqTitle && (
                       <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
                         FAQ ativada: {simResult.matchedFaqTitle}

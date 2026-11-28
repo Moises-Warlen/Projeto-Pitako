@@ -147,6 +147,7 @@ public static partial class PitakoStoreSuiteEndpoints
             IGlobalSettingRepository settingRepo,
             ITenantRepository tenantRepo,
             ISecurityAuditRepository auditRepo,
+            IConfiguration configuration,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -194,6 +195,7 @@ public static partial class PitakoStoreSuiteEndpoints
                 chatAgentName = ops.ChatAgentName,
                 aiEnabled = channel?.AutoReplyMode != WhatsAppAutoReplyMode.TraditionalBotOnly && botState.AiEnabled,
                 hasGeminiApiKey = !string.IsNullOrWhiteSpace(botState.GeminiApiKeyMasked),
+                hasGlobalAiKey = await PitakoBotTrainingHelper.HasGlobalAiKeyAsync(settingRepo, configuration, ct),
                 geminiApiKeyMasked = botState.GeminiApiKeyMasked,
                 metrics = new
                 {
@@ -347,7 +349,9 @@ public static partial class PitakoStoreSuiteEndpoints
                 req.AssistantPersona ?? "Amigável e Acolhedor",
                 req.WelcomeGreeting ?? string.Empty,
                 req.StoreKnowledgeNotes ?? string.Empty,
-                (req.Faqs ?? []).Select(f => new BotTrainingFaqEntry(f.Id, f.QuestionTitle, f.KeywordsCsv, f.AnswerText, f.IsActive)).ToList());
+                (req.Faqs ?? []).Select(f => new BotTrainingFaqEntry(f.Id, f.QuestionTitle, f.KeywordsCsv, f.AnswerText, f.IsActive)).ToList(),
+                req.EmployeeRoleTitle ?? "Atendente Virtual",
+                req.EmployeeDirectives ?? string.Empty);
 
             await PitakoBotTrainingHelper.SaveTrainingAsync(settingRepo, tenantId, bundle, clock.UtcNow, ct);
             var saved = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenantId, ct);
@@ -359,9 +363,15 @@ public static partial class PitakoStoreSuiteEndpoints
             ApiSecurityGuard guard,
             ITenantRepository tenantRepo,
             IStoreVisualIdentityRepository identityRepo,
+            ICategoryRepository categoryRepo,
             IProductRepository productRepo,
+            IModifierGroupRepository modifierRepo,
+            IDeliveryPolicyRepository deliveryPolicyRepo,
+            IOrderRepository orderRepo,
             ICouponRepository couponRepo,
             IGlobalSettingRepository settingRepo,
+            IWhatsAppSecretProtector protector,
+            IConfiguration configuration,
             IClock clock,
             HttpContext http,
             CancellationToken ct) =>
@@ -381,20 +391,40 @@ public static partial class PitakoStoreSuiteEndpoints
             var identity = await identityRepo.FindByTenantIdForPublicViewAsync(tenantId, ct);
             var pub = identity?.GetPublishedView();
             var opStatus = StoreOperatingHoursHelper.Evaluate(pub?.OperatingHoursJson, pub?.IsTemporarilyPaused ?? false, pub?.PauseReason, clock.UtcNow);
+            var allCategories = await categoryRepo.ListOrderedAsync(ct);
             var allProducts = (await productRepo.ListAllOrderedAsync(ct)).Where(p => p.Status == CatalogItemStatus.Active).ToList();
+            var allModifiers = await modifierRepo.ListAllAsync(ct);
+            var deliveryPolicy = await deliveryPolicyRepo.FindEffectivePolicyAsync(null, ct);
             var activeCoupons = (await couponRepo.ListAllAsync(ct)).Where(c => c.IsActive).ToList();
+            var latestOrder = (await orderRepo.ListRecentAllAsync(10, ct)).FirstOrDefault();
 
-            var (replyText, matchedFaqTitle, usedTraining) = PitakoBotTrainingHelper.GenerateSmartBotReply(
+            var aiResult = await PitakoBotTrainingHelper.GenerateAiEmployeeReplyAsync(
                 req.Question,
                 tenant,
                 opStatus.IsOpenNow,
                 opStatus.DetailText,
+                allCategories,
                 allProducts,
+                allModifiers,
+                deliveryPolicy,
                 activeCoupons,
+                latestOrder,
                 training,
-                clock.UtcNow);
+                settingRepo,
+                protector,
+                configuration,
+                [],
+                clock.UtcNow,
+                ct);
 
-            return Results.Ok(new { replyText, matchedFaqTitle, usedTraining });
+            return Results.Ok(new
+            {
+                replyText = aiResult.ReplyText,
+                matchedFaqTitle = aiResult.MatchedFaqTitle,
+                usedTraining = aiResult.UsedTraining,
+                usedExternalLlm = aiResult.UsedExternalLlm,
+                aiEngineLabel = aiResult.AiEngineLabel
+            });
         });
 
         wa.MapPut("/weekly-schedule", async (
@@ -594,7 +624,10 @@ public static partial class PitakoStoreSuiteEndpoints
             var botState = await LoadBotOpsStateAsync(settingRepo, tenantId, ct);
             botState.AiEnabled = req.AiEnabled;
             if (!string.IsNullOrWhiteSpace(req.GeminiApiKey) && !req.GeminiApiKey.Contains('*', StringComparison.Ordinal))
+            {
                 botState.GeminiApiKeyMasked = MaskSecret(req.GeminiApiKey.Trim());
+                await PitakoBotTrainingHelper.SaveEncryptedAiKeyAsync(settingRepo, protector, tenantId, req.GeminiApiKey.Trim(), clock.UtcNow, ct);
+            }
             await SaveBotOpsStateAsync(settingRepo, tenantId, botState, clock.UtcNow, ct);
 
             return Results.Ok(new { updated = true, existing.Id, existing.IsActive, botState.AiEnabled, botState.GeminiApiKeyMasked });
@@ -765,8 +798,14 @@ public static partial class PitakoStoreSuiteEndpoints
             IWhatsAppConversationRepository convRepo,
             IGlobalSettingRepository settingRepo,
             IStoreVisualIdentityRepository identityRepo,
+            ICategoryRepository categoryRepo,
             IProductRepository productRepo,
+            IModifierGroupRepository modifierRepo,
+            IDeliveryPolicyRepository deliveryPolicyRepo,
+            IOrderRepository orderRepo,
             ICouponRepository couponRepo,
+            IWhatsAppSecretProtector protector,
+            IConfiguration configuration,
             ISecurityAuditRepository auditRepo,
             SecurityDbContext secDb,
             IClock clock,
@@ -892,23 +931,44 @@ public static partial class PitakoStoreSuiteEndpoints
             }
             else if (botState.AiEnabled && channel.IsActive && channel.AutoReplyMode != WhatsAppAutoReplyMode.HumanOnly)
             {
+                var allCategories = await categoryRepo.ListOrderedAsync(ct);
                 var allProducts = (await productRepo.ListAllOrderedAsync(ct))
                     .Where(p => p.Status == CatalogItemStatus.Active)
                     .ToList();
+                var allModifiers = await modifierRepo.ListAllAsync(ct);
+                var deliveryPolicy = await deliveryPolicyRepo.FindEffectivePolicyAsync(null, ct);
                 var activeCoupons = (await couponRepo.ListAllAsync(ct)).Where(c => c.IsActive).ToList();
                 var training = await PitakoBotTrainingHelper.LoadTrainingAsync(settingRepo, tenant.Id, ct);
+                var recentOrders = await orderRepo.ListRecentAllAsync(40, ct);
+                var customerLastOrder = !string.IsNullOrWhiteSpace(cleanPhone)
+                    ? recentOrders.FirstOrDefault(o => !string.IsNullOrWhiteSpace(o.CustomerPhone) && NormalizeDigits(o.CustomerPhone) == cleanPhone)
+                    : null;
+                var historyLines = conv.Messages
+                    .OrderBy(m => m.SentAtUtc)
+                    .TakeLast(6)
+                    .Select(m => $"{(m.Direction == WhatsAppMessageDirection.Inbound ? "Cliente" : "Atendente")}: {m.ContentText}")
+                    .ToList();
 
-                var (replyText, _, _) = PitakoBotTrainingHelper.GenerateSmartBotReply(
+                var aiResult = await PitakoBotTrainingHelper.GenerateAiEmployeeReplyAsync(
                     textTrimmed,
                     tenant,
                     opStatus.IsOpenNow,
                     opStatus.DetailText,
+                    allCategories,
                     allProducts,
+                    allModifiers,
+                    deliveryPolicy,
                     activeCoupons,
+                    customerLastOrder,
                     training,
-                    clock.UtcNow);
+                    settingRepo,
+                    protector,
+                    configuration,
+                    historyLines,
+                    clock.UtcNow,
+                    ct);
 
-                conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, replyText, true, null, true, clock.UtcNow);
+                conv.RecordOutbound(WhatsAppMessageDirection.OutboundAiGrounded, null, aiResult.ReplyText, true, null, true, clock.UtcNow);
             }
 
             await convRepo.SaveChangesAsync(ct);
@@ -1949,7 +2009,7 @@ public static partial class PitakoStoreSuiteEndpoints
     public sealed record BotFeedbackEntry(Guid Id, string CustomerPhone, string MessageText, DateTimeOffset CreatedAtUtc);
     public sealed record CreatePrinterProfileReq(string? PrinterCode, string DisplayName, string Sector, string? ConnectionKind, string EndpointOrPort, int PaperWidthMm = 80, bool SetAsPrimary = true);
     public sealed record ConfirmQrReq(string? DisplayPhoneNumber = null);
-    public sealed record SaveBotTrainingReq(string? AssistantPersona, string? WelcomeGreeting, string? StoreKnowledgeNotes, IReadOnlyList<BotTrainingFaqReq>? Faqs);
+    public sealed record SaveBotTrainingReq(string? AssistantPersona, string? WelcomeGreeting, string? StoreKnowledgeNotes, IReadOnlyList<BotTrainingFaqReq>? Faqs, string? EmployeeRoleTitle = null, string? EmployeeDirectives = null);
     public sealed record BotTrainingFaqReq(Guid Id, string QuestionTitle, string KeywordsCsv, string AnswerText, bool IsActive = true);
     public sealed record TestBotTrainingReq(string Question);
     public sealed record UpdateWeeklyScheduleReq(bool Enabled, string DayOfWeek, string Time);

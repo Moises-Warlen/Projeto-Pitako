@@ -788,6 +788,59 @@ public static class PitakoV1Endpoints
             return ToHttp(await ops.GetOverviewIndicatorsAsync(user!, ct));
         });
 
+        master.MapGet("/ai-settings", async (
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IConfiguration configuration,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (_, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+
+            var masked = (await settingRepo.FindByKeyAsync(PitakoBotTrainingHelper.GlobalAiMaskedSettingKey, ct))?.Value;
+            var hasEnv = !string.IsNullOrWhiteSpace(configuration["PITAKO_AI_API_KEY"] ?? configuration["GEMINI_API_KEY"] ?? configuration["OPENAI_API_KEY"]);
+            return Results.Ok(new
+            {
+                hasGlobalAiKey = !string.IsNullOrWhiteSpace(masked) || hasEnv,
+                maskedKey = !string.IsNullOrWhiteSpace(masked) ? masked : (hasEnv ? "Variável de Ambiente" : null)
+            });
+        });
+
+        master.MapPut("/ai-settings", async (
+            SaveGlobalAiSettingsReq req,
+            ApiSecurityGuard guard,
+            IGlobalSettingRepository settingRepo,
+            IWhatsAppSecretProtector protector,
+            IClock clock,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, err) = await guard.RequireAuthenticatedUserAsync(http, UserScope.Saas, ct: ct);
+            if (err is not null) return err;
+
+            var actorGuard = MasterActorGuard.EnsureMasterPermission(user!, PermissionAction.Edit);
+            if (actorGuard.IsFailure)
+                return ApiSecurityGuard.ProblemFromError(actorGuard.Error);
+
+            var raw = (req.ApiKey ?? string.Empty).Trim();
+            var now = clock.UtcNow;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                await MasterAiSettingHelper.UpsertGlobalAsync(settingRepo, PitakoBotTrainingHelper.GlobalAiSecretSettingKey, string.Empty, "Chave Global IA PITAKO", now, ct);
+                await MasterAiSettingHelper.UpsertGlobalAsync(settingRepo, PitakoBotTrainingHelper.GlobalAiMaskedSettingKey, string.Empty, "Chave Global IA Mascarada", now, ct);
+                await settingRepo.SaveChangesAsync(ct);
+                return Results.Ok(new { saved = true, hasGlobalAiKey = false, maskedKey = (string?)null });
+            }
+
+            var masked = raw.Length <= 8 ? "****" : $"{raw[..4]}****{raw[^4..]}";
+            var encrypted = protector.Protect(raw);
+            await MasterAiSettingHelper.UpsertGlobalAsync(settingRepo, PitakoBotTrainingHelper.GlobalAiSecretSettingKey, encrypted, "Chave Global IA PITAKO", now, ct);
+            await MasterAiSettingHelper.UpsertGlobalAsync(settingRepo, PitakoBotTrainingHelper.GlobalAiMaskedSettingKey, masked, "Chave Global IA Mascarada", now, ct);
+            await settingRepo.SaveChangesAsync(ct);
+            return Results.Ok(new { saved = true, hasGlobalAiKey = true, maskedKey = masked });
+        });
+
         master.MapPost("/billing/sweep-delinquency", async (
             int? gracePeriodDays,
             ApiSecurityGuard guard,
@@ -2197,6 +2250,32 @@ public sealed record CreateCustomerSubReq(string CustomerName, string DocumentNu
 public sealed record UpdateMasterCustomerReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, CustomerAccountStatus Status, Guid? PlanId = null);
 public sealed record UpdateEstablishmentMasterReq(string LegalName, string TradeName, string Slug, string Cnpj, string SegmentCode, TenantStatus Status);
 public sealed record UpsertSegmentReq(string Code, string DisplayName, bool SupportsAcaiBuilder, bool SupportsWeightScale, bool SupportsTableService, bool SupportsFractionalItems, bool SupportsPizzaBuilder = false, bool SupportsBurgerBuilder = false, bool SupportsSnackBuilder = false);
+public sealed record SaveGlobalAiSettingsReq(string? ApiKey = null);
+
+internal static class MasterAiSettingHelper
+{
+    internal static async Task UpsertGlobalAsync(
+        IGlobalSettingRepository repo,
+        string key,
+        string value,
+        string description,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var rec = await repo.FindByKeyAsync(key, ct);
+        if (rec is null)
+        {
+            var c = new Pitako.Modules.MasterPanel.Domain.GlobalPlatformSetting(Guid.NewGuid(), key, value, description, false);
+            c.SetCreatedAudit(now);
+            await repo.AddAsync(c, ct);
+        }
+        else
+        {
+            rec.UpdateValue(value, description);
+            rec.SetUpdatedAudit(now);
+        }
+    }
+}
 
 internal static class MasterSegmentCatalogStore
 {

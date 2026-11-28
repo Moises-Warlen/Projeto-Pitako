@@ -254,6 +254,8 @@ export default function MasterPanelPage() {
   const [isUnlimited, setIsUnlimited] = useState(true);
   const [maxStores, setMaxStores] = useState("1");
   const [selectedModules, setSelectedModules] = useState<string[]>(ALL_MODULES.map((m) => m.code));
+  const [globalAiKeyInput, setGlobalAiKeyInput] = useState("");
+  const [globalAiMasked, setGlobalAiMasked] = useState<string | null>(null);
 
   async function refreshAll() {
     const session = loadSession();
@@ -262,13 +264,18 @@ export default function MasterPanelPage() {
       return;
     }
 
-    const [plansRes, custRes, indRes, smtpRes, outboxRes] = await Promise.all([
+    const [plansRes, custRes, indRes, smtpRes, outboxRes, aiRes] = await Promise.all([
       apiFetch<PlanItem[]>("/api/v1/master/plans", {}, session.accessToken),
       apiFetch<MasterOverviewResponse>("/api/v1/master/customers", {}, session.accessToken),
       apiFetch<MasterIndicatorsDto>("/api/v1/master/overview-indicators", {}, session.accessToken),
       apiFetch<{ host: string; port: number; useSsl: boolean; username: string; fromEmail: string; fromName: string; publicWebBaseUrl: string }>("/api/v1/master/email-settings", {}, session.accessToken),
-      apiFetch<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>("/api/v1/master/email-outbox", {}, session.accessToken)
+      apiFetch<Array<{ id: string; sentAtUtc: string; toEmail: string; subject: string; bodyText: string; kind: string; deliveryStatus: string }>>("/api/v1/master/email-outbox", {}, session.accessToken),
+      apiFetch<{ hasGlobalAiKey: boolean; maskedKey?: string | null }>("/api/v1/master/ai-settings", {}, session.accessToken)
     ]);
+
+    if (aiRes.ok && aiRes.data) {
+      setGlobalAiMasked(aiRes.data.maskedKey || null);
+    }
 
     if (indRes.ok && indRes.data) {
       setIndicators(indRes.data);
@@ -955,7 +962,7 @@ export default function MasterPanelPage() {
           { key: "segments", label: `2. Modalidades (${overview.segments.length})` },
           { key: "customers", label: `3. Clientes / Donos (${overview.customers.length})` },
           { key: "plans", label: `4. Planos & Módulos (${plans.length})` },
-          { key: "emails", label: `5. E-mail & Envios (${emailOutbox.length})` }
+          { key: "emails", label: `5. E-mail & IA Global (${emailOutbox.length})` }
         ].map((t) => (
           <button
             key={t.key}
@@ -1500,6 +1507,48 @@ export default function MasterPanelPage() {
                 {submittingForm ? "Processando..." : "Salvar SMTP"}
               </button>
             </form>
+
+            <div className="mt-6 border-t border-zinc-800 pt-5">
+              <h3 className="mb-1 text-sm font-bold text-white">IA Global (Gemini / ChatGPT para Todas as Lojas)</h3>
+              <p className="mb-3 text-[11px] text-zinc-400">
+                Defina uma chave padrão para todas as lojas existentes e futuras usarem como Funcionário IA lendo todo o cardápio. Cada loja também pode usar a própria chave.
+                {globalAiMasked && <span className="ml-1 font-bold text-emerald-400">Ativa: {globalAiMasked}</span>}
+              </p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await withSubmitLock(async () => {
+                    const session = loadSession();
+                    if (!session) return;
+                    const res = await apiFetch<{ maskedKey?: string | null; hasGlobalAiKey: boolean }>(
+                      "/api/v1/master/ai-settings",
+                      { method: "PUT", body: JSON.stringify({ apiKey: globalAiKeyInput.trim() }) },
+                      session.accessToken
+                    );
+                    if (res.ok && res.data) {
+                      setGlobalAiMasked(res.data.maskedKey || null);
+                      setGlobalAiKeyInput("");
+                      notifyAction(res.data.hasGlobalAiKey ? "Chave Global de IA salva para todas as lojas!" : "Chave Global de IA removida.");
+                    } else {
+                      notifyAction(res.errorMessage || "Erro ao salvar chave IA global.", "error");
+                    }
+                  });
+                }}
+                className="flex flex-wrap gap-2 text-xs"
+              >
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={globalAiKeyInput}
+                  onChange={(e) => setGlobalAiKeyInput(e.target.value)}
+                  placeholder="Cole AIza... (Gemini) ou sk-... (OpenAI)"
+                  className="flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                />
+                <button type="submit" disabled={submittingForm} className="rounded-lg bg-emerald-600 px-3.5 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  Salvar IA
+                </button>
+              </form>
+            </div>
           </section>
         </div>
       )}
