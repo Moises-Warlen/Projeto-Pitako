@@ -74,6 +74,7 @@ public sealed class StoreStarterProvisioner(
     private sealed record KitIngredientUse(string SupplyKey, decimal Qty, string Unit);
     private sealed record KitProductDef(string LineName, string Name, string SizeLabel, string Description, decimal Price, decimal PackagingCost, string Tags, bool Featured, KitIngredientUse[] Recipe);
     private sealed record KitComboDef(string Name, string Description, decimal DiscountPercent, string[] ProductNames);
+    private sealed record KitPromoDef(string Name, string Description, decimal DiscountPercent, string[] ProductNames);
 
     private sealed record SegmentWorkbookKit(
         string PrimaryColor,
@@ -82,7 +83,8 @@ public sealed class StoreStarterProvisioner(
         string DefaultSlogan,
         KitSupplyDef[] Supplies,
         KitProductDef[] Products,
-        KitComboDef[] Combos);
+        KitComboDef[] Combos,
+        KitPromoDef[] Promotions);
 
     public async Task ProvisionCompleteNewStoreAsync(Tenant tenant, CancellationToken ct = default)
     {
@@ -197,7 +199,7 @@ public sealed class StoreStarterProvisioner(
         // 4. Totem Autoatendimento
         if ((await totemRepo.ListAllAsync(ct)).Count == 0)
         {
-            await totemService.RegisterTerminalAsync(actor, "TOTEM-01", "Totem Salão Principal", TotemFulfillmentChoice.CounterPickup, false, false, 120, null, ct);
+            await totemService.RegisterTerminalAsync(actor, "TOTEM-01", "Totem Salão Principal", TotemFulfillmentChoice.CounterPickup, false, false, 128, null, ct);
         }
 
         // 5. Política de Frete & Entregador Padrão
@@ -386,6 +388,34 @@ public sealed class StoreStarterProvisioner(
         }
         if (combosCreated > 0) await comboRepo.SaveChangesAsync(ct);
 
+        if (kit.Promotions.Length > 0)
+        {
+            var existingPromos = (await promotionRepo.ListAllAsync(ct))
+                .Select(pr => pr.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var pDef in kit.Promotions)
+            {
+                if (existingPromos.Contains(pDef.Name)) continue;
+                var targets = pDef.ProductNames
+                    .Where(n => existingProducts.ContainsKey(n))
+                    .Select(n => (PromotionTargetType.Product, existingProducts[n].Id))
+                    .ToList();
+                if (targets.Count == 0) continue;
+
+                await catalogService.CreatePromotionAsync(
+                    actor,
+                    pDef.Name,
+                    PromotionDiscountType.Percentage,
+                    pDef.DiscountPercent,
+                    clock.UtcNow.AddDays(-1),
+                    clock.UtcNow.AddYears(2),
+                    targets,
+                    true,
+                    ct);
+            }
+        }
+
         return new KitImportSummary(suppliesCreated, productsCreated, sheetsCreated, combosCreated);
     }
 
@@ -441,6 +471,7 @@ public sealed class StoreStarterProvisioner(
         if (raw.Contains("hamburg") || raw.Contains("burger")) return "hamburgueria";
         if (raw.Contains("pastel")) return "pastelaria";
         if (raw.Contains("sorvet") || raw.Contains("gelat")) return "sorveteria";
+        if (raw.Contains("lanche")) return "lanchonete";
         if (raw.Contains("rotiss")) return "rotisseria";
         if (raw.Contains("marmit")) return "marmitex";
         return raw;
@@ -453,6 +484,7 @@ public sealed class StoreStarterProvisioner(
         {
             "pizzaria" => PizzariaKit(),
             "hamburgueria" => HamburgueriaKit(),
+            "lanchonete" => LanchoneteKit(),
             "adega" => AdegaKit(),
             "sorveteria" => SorveteriaKit(),
             "padaria" => PadariaKit(),
@@ -460,7 +492,7 @@ public sealed class StoreStarterProvisioner(
             "pastelaria" => PastelariaKit(),
             "rotisseria" => RotisseriaKit(),
             "marmitex" => MarmitexKit(),
-            "restaurante" or "lanchonete" => RestauranteKit(),
+            "restaurante" => RestauranteKit(),
             "acaiteria" => AcaiteriaKit(),
             _ => UniversalKit()
         };
@@ -470,190 +502,216 @@ public sealed class StoreStarterProvisioner(
         "#7F1D1D", "#FFF7ED", "#F59E0B",
         "Pizzas artesanais com fermentação lenta e ingredientes selecionados.",
         [
-            new("massa", "Farinha de trigo tipo 1 (5kg)", 22m, 5000m, "g", "Massas"),
-            new("molho", "Molho de tomate pelati (2kg)", 19m, 2000m, "g", "Molhos"),
-            new("mucarela", "Queijo muçarela fatiado (4kg)", 136m, 4000m, "g", "Queijos"),
-            new("catupiry", "Requeijão Catupiry original (1,5kg)", 46m, 1500m, "g", "Queijos"),
-            new("calabresa", "Linguiça calabresa fatiada (2,5kg)", 55m, 2500m, "g", "Frios"),
-            new("frango", "Peito de frango desfiado (1kg)", 24m, 1000m, "g", "Carnes"),
-            new("bacon", "Bacon defumado em cubos (1kg)", 34m, 1000m, "g", "Carnes"),
-            new("refri2l", "Refrigerante 2 Litros", 7.20m, 1m, "unidade", "Bebidas"),
+            new("massa", "Farinha de trigo / massa pizza (5kg)", 22m, 5000m, "g", "Massas"),
+            new("molho", "Molho de tomate da casa (2kg)", 19m, 2000m, "g", "Molhos"),
+            new("mucarela", "Queijo mussarela fatiado (4kg)", 136m, 4000m, "g", "Queijos"),
+            new("calabresa", "Calabresa fatiada (2,5kg)", 55m, 2500m, "g", "Frios"),
+            new("presunto", "Presunto cozido (2kg)", 44m, 2000m, "g", "Frios"),
+            new("quatroqueijos", "Mix provolone, parmesão e gorgonzola (1kg)", 48m, 1000m, "g", "Queijos"),
+            new("refri2l", "Refrigerante 2 Litros (6 un)", 43.20m, 6m, "unidade", "Bebidas"),
         ],
         [
-            new("Tradicionais", "Muçarela", "35 cm", "Massa artesanal, molho pelati, muçarela derretida e orégano.", 44.90m, 2.50m, "pizza,tradicional", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 320, "g")]),
-            new("Tradicionais", "Calabresa Acebolada", "35 cm", "Massa artesanal, muçarela, calabresa fatiada e azeitonas.", 46.90m, 2.50m, "pizza,tradicional", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 220, "g"), new("calabresa", 200, "g")]),
-            new("Especiais", "Frango com Catupiry", "35 cm", "Frango desfiado temperado e cobertura de Catupiry original.", 52.90m, 2.50m, "pizza,especial", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 180, "g"), new("frango", 220, "g"), new("catupiry", 150, "g")]),
-            new("Especiais", "Bacon Crocante", "35 cm", "Molho de tomate, muçarela e bacon dourado crocante.", 52.90m, 2.50m, "pizza,especial", false, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 240, "g"), new("bacon", 180, "g")]),
-            new("Bebidas", "Refrigerante 2 Litros", "2000 ml", "Garrafa 2L bem gelada.", 13.00m, 0.30m, "bebida", false, [new("refri2l", 1, "unidade")]),
+            new("Pizzas tradicionais", "Pizza mussarela 8 fatias", "8 fatias", "Pizza de mussarela com molho da casa.", 30.00m, 2.50m, "pizza,tradicional", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 350, "g")]),
+            new("Pizzas tradicionais", "Pizza calabresa 8 fatias", "8 fatias", "Pizza de calabresa com cebola.", 32.90m, 2.50m, "pizza,tradicional", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 200, "g"), new("calabresa", 250, "g")]),
+            new("Pizzas especiais", "Pizza portuguesa 8 fatias", "8 fatias", "Pizza portuguesa tradicional.", 38.90m, 2.80m, "pizza,especial", true, [new("massa", 350, "g"), new("molho", 80, "g"), new("mucarela", 220, "g"), new("presunto", 160, "g")]),
+            new("Pizzas especiais", "Pizza quatro queijos 8 fatias", "8 fatias", "Mussarela, provolone, parmesão e gorgonzola.", 43.90m, 2.80m, "pizza,especial", true, [new("massa", 350, "g"), new("mucarela", 200, "g"), new("quatroqueijos", 200, "g")]),
+            new("Pizzas individuais", "Pizza brotinho", "Brotinho", "Pizza individual de mussarela.", 14.90m, 1.00m, "pizza,brotinho", false, [new("massa", 150, "g"), new("molho", 40, "g"), new("mucarela", 140, "g")]),
+            new("Bebidas", "Refrigerante 2 Litros", "2 L", "Garrafa 2 L bem gelada.", 13.00m, 0.30m, "bebida", false, [new("refri2l", 1, "unidade")]),
         ],
-        [new("Combo Casal (Grande + Refri 2L)", "Calabresa Acebolada 35cm + Refrigerante 2 Litros.", 0.10m, ["Calabresa Acebolada", "Refrigerante 2 Litros"])]);
+        [new("Combo família", "Pizza grande + refrigerante 2 L.", 0.12m, ["Pizza mussarela 8 fatias", "Refrigerante 2 Litros"])],
+        [new("Noite da pizza", "Pizza calabresa com desconto promocional.", 25m, ["Pizza calabresa 8 fatias"])]);
 
     private static SegmentWorkbookKit HamburgueriaKit() => new(
         "#18181B", "#FAFAFA", "#EA580C",
-        "Smash burgers prensados na hora e artesanais de 160g.",
+        "Smash burgers prensados na hora e artesanais suculentos.",
         [
-            new("pao", "Pão brioche selado (12 un)", 16.80m, 12m, "unidade", "Pães"),
-            new("carne100", "Blend bovino artesanal (1kg)", 32m, 1000m, "g", "Carnes"),
-            new("cheddar", "Queijo cheddar fatiado (96 un)", 48m, 96m, "unidade", "Queijos"),
+            new("pao", "Pão de hambúrguer brioche (12 un)", 16.80m, 12m, "unidade", "Pães"),
+            new("carne120", "Hambúrguer bovino artesanal (1kg)", 32m, 1000m, "g", "Carnes"),
+            new("cheddar", "Queijo cheddar/prato fatiado (96 un)", 48m, 96m, "unidade", "Queijos"),
             new("bacon", "Bacon fatiado crocante (1kg)", 36m, 1000m, "g", "Frios"),
             new("batata", "Batata palito pré-frita (2kg)", 28m, 2000m, "g", "Guarnições"),
             new("lata", "Refrigerante lata 350ml (12 un)", 34.80m, 12m, "unidade", "Bebidas"),
         ],
         [
-            new("Linha Smash", "Smash Salad", "100g", "Pão brioche selado, smash burger 100g, queijo cheddar, alface e maionese verde.", 18.90m, 1.50m, "smash,burger", true, [new("pao", 1, "unidade"), new("carne100", 100, "g"), new("cheddar", 1, "unidade")]),
-            new("Linha Smash", "Duplo Smash Cheddar", "200g", "2 smash burgers 100g com crosta, dobro de cheddar e molho especial.", 23.90m, 1.50m, "smash,duplo", true, [new("pao", 1, "unidade"), new("carne100", 200, "g"), new("cheddar", 2, "unidade")]),
-            new("Artesanais 160g", "Clássico Artesanal 160g", "160g", "Pão brioche, hambúrguer 160g suculento, queijo e bacon.", 27.90m, 1.80m, "artesanal", true, [new("pao", 1, "unidade"), new("carne100", 160, "g"), new("cheddar", 2, "unidade"), new("bacon", 30, "g")]),
-            new("Acompanhamentos", "Batata Frita Individual", "180g", "Porção crocante de batata palito.", 11.90m, 0.90m, "fritas", false, [new("batata", 180, "g")]),
-            new("Bebidas", "Refrigerante Lata 350ml", "350ml", "Lata gelada.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
+            new("Hambúrgueres", "Hambúrguer clássico", "120 g", "Pão, carne 120 g, queijo e molho da casa.", 14.90m, 1.50m, "burger,classico", true, [new("pao", 1, "unidade"), new("carne120", 120, "g"), new("cheddar", 1, "unidade")]),
+            new("Hambúrgueres", "Cheeseburger bacon", "150 g", "Carne, queijo derretido e bacon.", 19.90m, 1.70m, "burger,bacon", true, [new("pao", 1, "unidade"), new("carne120", 150, "g"), new("cheddar", 2, "unidade"), new("bacon", 35, "g")]),
+            new("Hambúrgueres", "X-salada", "120 g", "Clássico com alface, tomate e maionese.", 15.90m, 1.50m, "burger,salada", true, [new("pao", 1, "unidade"), new("carne120", 120, "g"), new("cheddar", 1, "unidade")]),
+            new("Porções", "Batata frita 300 g", "300 g", "Porção crocante de batatas.", 9.90m, 1.00m, "porcao,batata", false, [new("batata", 300, "g")]),
+            new("Bebidas", "Refrigerante lata 350 ml", "350 ml", "Lata bem gelada.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
         ],
-        [new("Combo Smash Individual", "Smash Salad + Batata Frita + Refrigerante Lata.", 0.10m, ["Smash Salad", "Batata Frita Individual", "Refrigerante Lata 350ml"])]);
+        [new("Combo clássico", "Hambúrguer clássico, batata e refrigerante.", 0.15m, ["Hambúrguer clássico", "Batata frita 300 g", "Refrigerante lata 350 ml"])],
+        [new("Combo burger em dobro", "Dois hambúrgueres clássicos por preço especial.", 25m, ["Hambúrguer clássico"])]);
+
+    private static SegmentWorkbookKit LanchoneteKit() => new(
+        "#0F766E", "#F0FDFA", "#F59E0B",
+        "Lanches quentinhos na chapa, hot dogs e sucos naturais na hora.",
+        [
+            new("paoforma", "Pão de forma tradicional (500g)", 8.50m, 500m, "g", "Pães"),
+            new("salsicha", "Salsicha hot dog (1kg)", 18m, 1000m, "g", "Carnes"),
+            new("rosbife", "Rosbife fatiado temperado (1kg)", 46m, 1000m, "g", "Frios"),
+            new("mucarela", "Queijo muçarela e presunto (2kg)", 64m, 2000m, "g", "Frios"),
+            new("polpa", "Polpa de fruta natural (1kg)", 18m, 1000m, "g", "Bebidas"),
+        ],
+        [
+            new("Lanches", "Misto quente", "Unidade", "Pão tostado com presunto e queijo.", 6.90m, 0.50m, "lanche,misto", true, [new("paoforma", 60, "g"), new("mucarela", 60, "g")]),
+            new("Lanches", "Cachorro-quente", "Unidade", "Hot dog tradicional com molho e batata palha.", 7.90m, 0.70m, "lanche,hotdog", true, [new("paoforma", 70, "g"), new("salsicha", 90, "g")]),
+            new("Lanches", "Bauru", "Unidade", "Sanduíche quente com queijo e tomate.", 11.90m, 0.80m, "lanche,bauru", true, [new("paoforma", 80, "g"), new("rosbife", 80, "g"), new("mucarela", 45, "g")]),
+            new("Bebidas", "Suco natural 400 ml", "400 ml", "Suco natural preparado na hora.", 5.90m, 0.60m, "bebida,suco", false, [new("polpa", 100, "g")]),
+        ],
+        [new("Combo lanche", "Misto quente com suco 300 ml.", 0.12m, ["Misto quente", "Suco natural 400 ml"])],
+        [new("Combo intervalo", "Cachorro-quente e suco com preço especial.", 25m, ["Cachorro-quente", "Suco natural 400 ml"])]);
 
     private static SegmentWorkbookKit AdegaKit() => new(
         "#0F172A", "#F8FAFC", "#8B5CF6",
-        "Copões 700ml, combos de destilados e cervejas trincando.",
+        "Bebidas geladas, conveniência, kits e entrega rápida.",
         [
-            new("redlabel", "Whisky Red Label (1000ml)", 89m, 1000m, "ml", "Destilados"),
-            new("jack", "Whisky Jack Daniel's (1000ml)", 145m, 1000m, "ml", "Destilados"),
-            new("baly", "Energético Baly 2L (12000ml)", 48m, 12000m, "ml", "Energéticos"),
-            new("redbull", "Energético Red Bull 250ml (24un)", 168m, 24m, "unidade", "Energéticos"),
-            new("gelosabor", "Gelo de Sabor (30un)", 45m, 30m, "unidade", "Gelos"),
-            new("heinekenln", "Pack Heineken Long Neck (6un)", 37.80m, 6m, "unidade", "Cervejas"),
+            new("agua500", "Água mineral 500 ml (12 un)", 13.20m, 12m, "unidade", "Águas"),
+            new("lata", "Refrigerante lata 350 ml (12 un)", 38.40m, 12m, "unidade", "Refrigerantes"),
+            new("suco1l", "Suco integral 1 L (6 un)", 45m, 6m, "unidade", "Sucos"),
+            new("gelo5", "Gelo filtrado pacote 5 kg (5 un)", 25m, 5m, "unidade", "Conveniência"),
         ],
         [
-            new("Copões 700ml", "Copão Red Label + Baly", "700 ml", "Dose 80ml Whisky Red Label, Baly gelado e 1 gelo de sabor.", 22.90m, 0.80m, "copao,whisky", true, [new("redlabel", 80, "ml"), new("baly", 300, "ml"), new("gelosabor", 1, "unidade")]),
-            new("Copões 700ml", "Copão Jack Daniel's + Red Bull", "700 ml", "Dose 80ml Jack Daniel's e 1 lata Red Bull 250ml.", 32.90m, 0.80m, "copao,jack", true, [new("jack", 80, "ml"), new("redbull", 1, "unidade")]),
-            new("Cervejas Geladas", "Pack Heineken Long Neck (6 un)", "1980 ml", "Pack com 6 long necks geladas.", 49.90m, 0.50m, "cerveja", true, [new("heinekenln", 6, "unidade")]),
+            new("Águas", "Água mineral 500 ml", "500 ml", "Água mineral gelada.", 2.50m, 0.30m, "agua,bebida", false, [new("agua500", 1, "unidade")]),
+            new("Refrigerantes", "Refrigerante lata 350 ml", "350 ml", "Refrigerante em lata 350 ml.", 5.90m, 0.30m, "refri,lata", true, [new("lata", 1, "unidade")]),
+            new("Sucos", "Suco integral 1 L", "1 L", "Suco integral de fruta 1 litro.", 12.90m, 0.50m, "suco,integral", true, [new("suco1l", 1, "unidade")]),
+            new("Conveniência", "Gelo pacote 5 kg", "5 kg", "Pacote de gelo filtrado.", 8.90m, 0.30m, "gelo,conveniencia", false, [new("gelo5", 1, "unidade")]),
         ],
-        [new("Combo Esquenta (2 Copões Red Label)", "2 Copões Red Label + Baly com gelo sabor.", 0.10m, ["Copão Red Label + Baly", "Copão Red Label + Baly"])]);
+        [new("Kit resenha sem álcool", "Kit com refrigerantes, águas e gelo.", 0.10m, ["Refrigerante lata 350 ml", "Água mineral 500 ml", "Gelo pacote 5 kg"])],
+        [new("Combo gelado econômico", "Oferta de refrigerante com gelo.", 25m, ["Refrigerante lata 350 ml", "Gelo pacote 5 kg"])]);
 
     private static SegmentWorkbookKit SorveteriaKit() => new(
         "#BE185D", "#FDF2F8", "#F59E0B",
-        "Sorvetes cremosos, potes térmicos e milk-shakes batidos na hora.",
+        "Sorvetes cremosos, casquinhas, potes viagem e milk-shakes batidos na hora.",
         [
-            new("sorvtrad", "Sorvete massa tradicional (6000g)", 68m, 6000m, "g", "Massas"),
-            new("sorvesp", "Sorvete trufado especial (6000g)", 86m, 6000m, "g", "Massas"),
-            new("nutella", "Creme Nutella original (3000g)", 129m, 3000m, "g", "Cremes"),
-            new("calda", "Calda quente chocolate/morango (1300g)", 19.50m, 1300m, "g", "Caldas"),
+            new("sorvtrad", "Sorvete massa artesanal (6000g)", 85m, 6000m, "g", "Massas"),
+            new("casquinha", "Casquinha crocante (50 un)", 25m, 50m, "unidade", "Complementos"),
+            new("cobertura", "Cobertura chocolate/morango (1300g)", 22m, 1300m, "g", "Caldas"),
             new("leite", "Leite integral UHT (12000ml)", 54m, 12000m, "ml", "Leites"),
         ],
         [
-            new("Taças e Copos", "Sundae Clássico 300ml", "300 ml", "2 bolas de sorvete, calda quente e castanha.", 15.90m, 1.10m, "sorvete,sundae", true, [new("sorvtrad", 180, "g"), new("calda", 30, "g")]),
-            new("Milk-Shakes", "Milk-Shake Nutella Oreo 400ml", "400 ml", "Sorvete especial batido com Nutella e leite.", 21.90m, 1.20m, "milkshake", true, [new("sorvesp", 250, "g"), new("nutella", 35, "g"), new("leite", 60, "ml")]),
-            new("Potes Viagem", "Pote Térmico 1 Litro", "1000 ml", "Pote térmico de 1L (600g) com até 3 sabores.", 34.90m, 1.80m, "pote", true, [new("sorvesp", 600, "g")]),
+            new("Sorvetes", "Casquinha 1 bola", "100 g", "Uma bola de sorvete na casquinha.", 4.90m, 0.30m, "sorvete,casquinha", true, [new("sorvtrad", 100, "g"), new("casquinha", 1, "unidade")]),
+            new("Sorvetes", "Copo 300 ml", "300 ml", "Sorvete no copo com cobertura.", 9.90m, 0.70m, "sorvete,copo", true, [new("sorvtrad", 250, "g"), new("cobertura", 30, "g")]),
+            new("Milk-shakes", "Milk-shake 400 ml", "400 ml", "Milk-shake cremoso.", 9.90m, 0.90m, "milkshake", true, [new("sorvtrad", 200, "g"), new("leite", 120, "ml"), new("cobertura", 30, "g")]),
+            new("Potes para viagem", "Pote de sorvete 1,5 L", "1,5 L", "Pote de sorvete para compartilhar.", 20.90m, 1.00m, "pote,sorvete", false, [new("sorvtrad", 900, "g")]),
         ],
-        [new("Combo Milk-Shake + Sundae", "1 Milk-Shake Nutella Oreo + 1 Sundae Clássico.", 0.10m, ["Milk-Shake Nutella Oreo 400ml", "Sundae Clássico 300ml"])]);
+        [new("Combo família", "Dois copos de 300 ml e uma cobertura extra.", 0.10m, ["Copo 300 ml", "Copo 300 ml"])],
+        [new("Quarta do milk-shake", "Milk-shake 400 ml com preço especial.", 25m, ["Milk-shake 400 ml"])]);
 
     private static SegmentWorkbookKit PadariaKit() => new(
         "#78350F", "#FFFBEB", "#D97706",
-        "Pães quentinhos, salgados assados e cafeteria artesanal.",
+        "Pães franceses quentinhos, pão de queijo, salgados assados e cafeteria.",
         [
             new("farinha", "Farinha panificação (25kg)", 85m, 25000m, "g", "Panificação"),
-            new("mucarela", "Queijo muçarela fatiado (4kg)", 136m, 4000m, "g", "Frios"),
-            new("presunto", "Presunto cozido (3,5kg)", 73.50m, 3500m, "g", "Frios"),
-            new("frango", "Peito frango desfiado (1kg)", 24m, 1000m, "g", "Salgados"),
-            new("cafe", "Café gourmet grãos/pó (1kg)", 44m, 1000m, "g", "Cafeteria"),
+            new("polvilho", "Polvilho e queijo pão de queijo (5kg)", 72m, 5000m, "g", "Salgados"),
+            new("presuntoqueijo", "Presunto e queijo fatiados (4kg)", 128m, 4000m, "g", "Frios"),
+            new("cafe", "Café gourmet pó/grãos (1kg)", 44m, 1000m, "g", "Cafeteria"),
             new("leite", "Leite integral UHT (12000ml)", 54m, 12000m, "ml", "Cafeteria"),
         ],
         [
-            new("Pães", "Pão Francês Quentinho (6 un)", "330 g", "Pacote com 6 pães crocantes assados na hora.", 6.50m, 0.25m, "pao,padaria", true, [new("farinha", 240, "g")]),
-            new("Lanches na Chapa", "Misto Quente Caprichado", "180 g", "Pão tostado com presunto e muçarela.", 11.90m, 0.50m, "misto,chapa", true, [new("farinha", 60, "g"), new("presunto", 50, "g"), new("mucarela", 50, "g")]),
-            new("Salgados", "Coxinha Frango com Catupiry", "140 g", "Massa cremosa recheada com frango desfiado.", 8.50m, 0.40m, "salgado,coxinha", true, [new("farinha", 50, "g"), new("frango", 60, "g")]),
-            new("Cafeteria", "Café com Leite Cremoso 240ml", "240 ml", "Café coado com leite vaporizado.", 7.50m, 0.60m, "cafe", false, [new("cafe", 15, "g"), new("leite", 160, "ml")]),
+            new("Pães", "Pão francês 50 g", "50 g", "Pão francês assado diariamente.", 0.90m, 0.05m, "pao,padaria", true, [new("farinha", 50, "g")]),
+            new("Salgados", "Pão de queijo unidade", "Unidade", "Pão de queijo quentinho.", 1.90m, 0.10m, "salgado,pao-de-queijo", true, [new("polvilho", 60, "g")]),
+            new("Bolos", "Bolo simples - fatia", "Fatia", "Fatia de bolo caseiro.", 3.90m, 0.30m, "bolo,fatia", false, [new("farinha", 60, "g")]),
+            new("Salgados", "Croissant presunto e queijo", "Unidade", "Croissant assado e recheado.", 7.50m, 0.50m, "salgado,croissant", true, [new("farinha", 70, "g"), new("presuntoqueijo", 60, "g")]),
+            new("Bebidas", "Café com leite 200 ml", "200 ml", "Café com leite.", 2.50m, 0.20m, "cafe,bebida", false, [new("cafe", 12, "g"), new("leite", 140, "ml")]),
         ],
-        [new("Combo Café da Manhã", "Misto Quente Caprichado + Café com Leite Cremoso 240ml.", 0.10m, ["Misto Quente Caprichado", "Café com Leite Cremoso 240ml"])]);
+        [new("Café da manhã individual", "Café com leite, pão francês e pão de queijo.", 0.10m, ["Café com leite 200 ml", "Pão francês 50 g", "Pão de queijo unidade"])],
+        [new("Oferta do balcão", "Três pães de queijo com preço especial.", 25m, ["Pão de queijo unidade"])]);
 
     private static SegmentWorkbookKit DoceriaKit() => new(
         "#831843", "#FFF1F2", "#EC4899",
-        "Bolos no pote, copos da felicidade e brigadeiros gourmet.",
+        "Brigadeiros gourmet, brownies, bolos caseiros e pudins artesanais.",
         [
             new("leitecond", "Leite condensado integral (2,5kg)", 29m, 2500m, "g", "Lácteos"),
-            new("cremeleite", "Creme de leite UHT (1kg)", 14.50m, 1000m, "g", "Lácteos"),
-            new("ninho", "Leite Ninho em pó (800g)", 38m, 800m, "g", "Lácteos"),
-            new("chocnobre", "Chocolate nobre (1kg)", 48m, 1000m, "g", "Chocolates"),
-            new("nutella", "Creme Nutella original (3kg)", 129m, 3000m, "g", "Chocolates"),
-            new("morango", "Morango fresco selecionado (1,2kg)", 28m, 1200m, "g", "Frutas"),
+            new("chocnobre", "Chocolate nobre meio amargo (1kg)", 48m, 1000m, "g", "Chocolates"),
+            new("farinha", "Farinha e açúcar confeiteiro (2kg)", 14m, 2000m, "g", "Secos"),
+            new("ovos", "Ovos frescos selecionados (30 un)", 24m, 30m, "unidade", "Frios"),
         ],
         [
-            new("Bolos no Pote", "Bolo no Pote Ninho c/ Morango 250ml", "250 ml", "Massa fofinha, creme de Leite Ninho e morangos frescos.", 14.90m, 1.30m, "bolo,pote", true, [new("leitecond", 80, "g"), new("cremeleite", 40, "g"), new("ninho", 25, "g"), new("morango", 45, "g")]),
-            new("Bolos no Pote", "Bolo no Pote Brigadeiro Belga 250ml", "250 ml", "Massa de cacau e brigadeiro belga cremoso.", 14.90m, 1.30m, "bolo,brigadeiro", true, [new("leitecond", 90, "g"), new("cremeleite", 40, "g"), new("chocnobre", 25, "g")]),
-            new("Copo da Felicidade", "Copo Felicidade Kinder / Nutella 300ml", "300 ml", "Camadas de creme de Ninho, Nutella pura e morangos.", 21.90m, 1.50m, "copo,nutella", true, [new("leitecond", 80, "g"), new("ninho", 25, "g"), new("nutella", 35, "g"), new("morango", 45, "g")]),
+            new("Doces unitários", "Brigadeiro gourmet", "Unidade", "Brigadeiro artesanal de chocolate.", 2.90m, 0.25m, "doce,brigadeiro", true, [new("leitecond", 20, "g"), new("chocnobre", 8, "g")]),
+            new("Brownies", "Brownie tradicional", "Unidade", "Brownie macio de chocolate.", 6.50m, 0.50m, "doce,brownie", true, [new("chocnobre", 35, "g"), new("farinha", 25, "g")]),
+            new("Bolos e tortas", "Fatia de bolo de cenoura", "Fatia", "Bolo de cenoura com cobertura de chocolate.", 7.90m, 0.60m, "bolo,cenoura", true, [new("farinha", 55, "g"), new("ovos", 1, "unidade"), new("chocnobre", 25, "g")]),
+            new("Sobremesas", "Pudim individual", "Unidade", "Pudim com calda de caramelo.", 5.90m, 0.50m, "sobremesa,pudim", false, [new("leitecond", 80, "g"), new("ovos", 1, "unidade")]),
         ],
-        [new("Combo Doce Casal", "Bolo no Pote Ninho c/ Morango + Bolo no Pote Brigadeiro Belga.", 0.10m, ["Bolo no Pote Ninho c/ Morango 250ml", "Bolo no Pote Brigadeiro Belga 250ml"])]);
+        [new("Caixa festa 6 doces", "Caixa com seis doces sortidos.", 0.10m, ["Brigadeiro gourmet", "Brigadeiro gourmet", "Brigadeiro gourmet"])],
+        [new("Doce da semana", "Brownie com valor promocional.", 25m, ["Brownie tradicional"])]);
 
     private static SegmentWorkbookKit PastelariaKit() => new(
         "#9A3412", "#FFFBEB", "#EAB308",
-        "Pastéis artesanais de 20cm recheados e fritos na hora.",
+        "Pastéis crocantes fritos na hora e caldo de cana gelado.",
         [
             new("massapastel", "Massa fresca de pastel (2kg)", 22m, 2000m, "g", "Massas"),
             new("carnemoida", "Carne moída refogada (1kg)", 34m, 1000m, "g", "Recheios"),
             new("mucarela", "Queijo muçarela ralado (4kg)", 136m, 4000m, "g", "Recheios"),
-            new("frango", "Peito frango desfiado (1kg)", 25m, 1000m, "g", "Recheios"),
-            new("catupiry", "Catupiry original (1,5kg)", 44m, 1500m, "g", "Recheios"),
-            new("lata", "Refrigerante lata / Caldo (12 un)", 34.80m, 12m, "unidade", "Bebidas"),
+            new("caldocana", "Caldo de cana fresco (5000ml)", 18m, 5000m, "ml", "Bebidas"),
         ],
         [
-            new("Tradicionais 20cm", "Pastel de Carne Tradicional", "20 cm", "Massa crocante recheada com carne moída temperada.", 12.90m, 0.55m, "pastel,carne", true, [new("massapastel", 90, "g"), new("carnemoida", 130, "g")]),
-            new("Tradicionais 20cm", "Pastel de Queijo Muçarela", "20 cm", "Muito queijo muçarela derretido e orégano.", 12.90m, 0.55m, "pastel,queijo", true, [new("massapastel", 90, "g"), new("mucarela", 130, "g")]),
-            new("Especiais 20cm", "Pastel Frango com Catupiry", "20 cm", "Frango desfiado temperado com Catupiry original.", 15.90m, 0.55m, "pastel,frango", true, [new("massapastel", 90, "g"), new("frango", 110, "g"), new("catupiry", 60, "g")]),
-            new("Bebidas", "Refrigerante Lata 350ml", "350 ml", "Lata bem gelada.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
+            new("Pastéis", "Pastel de queijo", "80 g recheio", "Pastel crocante recheado com queijo.", 5.90m, 0.50m, "pastel,queijo", true, [new("massapastel", 80, "g"), new("mucarela", 80, "g")]),
+            new("Pastéis", "Pastel de carne", "80 g recheio", "Pastel com carne moída temperada.", 6.90m, 0.50m, "pastel,carne", true, [new("massapastel", 80, "g"), new("carnemoida", 80, "g")]),
+            new("Pastéis", "Pastel pizza", "Unidade", "Pastel com recheio sabor pizza.", 7.50m, 0.50m, "pastel,pizza", true, [new("massapastel", 80, "g"), new("mucarela", 65, "g")]),
+            new("Bebidas", "Caldo de cana 500 ml", "500 ml", "Caldo de cana gelado.", 4.50m, 0.50m, "bebida,caldo", false, [new("caldocana", 500, "ml")]),
         ],
-        [new("Combo Lanche Pastel", "1 Pastel de Carne + 1 Pastel de Queijo + Refri Lata.", 0.10m, ["Pastel de Carne Tradicional", "Pastel de Queijo Muçarela", "Refrigerante Lata 350ml"])]);
-
-    private static SegmentWorkbookKit RotisseriaKit() => new(
-        "#92400E", "#FFFBEB", "#D97706",
-        "Assados na brasa, carnes especiais, maionese caseira e guarnições frescas.",
-        [
-            new("frango", "Frango inteiro resfriado (2,2kg)", 24m, 2200m, "g", "Carnes"),
-            new("costela", "Costela bovina janela (1kg)", 34m, 1000m, "g", "Carnes"),
-            new("batata", "Batata inglesa selecionada (1kg)", 6.50m, 1000m, "g", "Guarnições"),
-            new("maionese", "Maionese artesanal temperada (1kg)", 18m, 1000m, "g", "Guarnições"),
-            new("farofa", "Farofa temperada especial (1kg)", 15m, 1000m, "g", "Guarnições"),
-            new("lata", "Refrigerante lata / 2L (6 un)", 45m, 6m, "unidade", "Bebidas"),
-        ],
-        [
-            new("Assados Especiais", "Frango Assado Recheado Tradicional", "1,4 kg", "Frango inteiro assado lentamente com tempero de ervas da casa.", 49.90m, 1.80m, "rotisseria,frango", true, [new("frango", 1600, "g")]),
-            new("Assados Especiais", "Costela Bovina Assada na Brasa (500g)", "500 g", "Costela bovina macia assada por 6 horas no bafo.", 44.90m, 1.40m, "rotisseria,costela", true, [new("costela", 650, "g")]),
-            new("Guarnições", "Maionese Caseira de Batata 400g", "400 g", "Maionese tradicional de rotisseria com batata, cenoura e ervas.", 14.90m, 0.70m, "guarnicao,maionese", true, [new("batata", 260, "g"), new("maionese", 140, "g")]),
-            new("Guarnições", "Farofa Crocante da Casa 250g", "250 g", "Farofa artesanal amanteigada com bacon e cebolinha.", 10.90m, 0.55m, "guarnicao,farofa", false, [new("farofa", 250, "g")]),
-        ],
-        [new("Combo Domingo Família", "Frango Assado Recheado + Maionese Caseira 400g + Farofa 250g.", 0.10m, ["Frango Assado Recheado Tradicional", "Maionese Caseira de Batata 400g", "Farofa Crocante da Casa 250g"])]);
-
-    private static SegmentWorkbookKit MarmitexKit() => new(
-        "#B45309", "#FFFBEB", "#16A34A",
-        "Marmitex caseiras quentinhas com cardápio variado e entrega rápida.",
-        [
-            new("arroz", "Arroz branco tipo 1 (5kg)", 26m, 5000m, "g", "Grãos"),
-            new("feijao", "Feijão carioca selecionado (2kg)", 16m, 2000m, "g", "Grãos"),
-            new("bife", "Contrafilé em bifes (1kg)", 44m, 1000m, "g", "Misturas"),
-            new("frango", "Peito de frango em filés (1kg)", 21m, 1000m, "g", "Misturas"),
-            new("farofa", "Farofa caseira temperada (1kg)", 14m, 1000m, "g", "Acompanhamentos"),
-            new("lata", "Refrigerante lata 350ml (12 un)", 34.80m, 12m, "unidade", "Bebidas"),
-        ],
-        [
-            new("Marmitex Tradicional", "Marmitex Média Bife Acebolado 650g", "650 g", "Arroz, feijão, farofa, salada fresca e bife acebolado na chapa.", 22.90m, 1.25m, "marmitex,bife", true, [new("arroz", 220, "g"), new("feijao", 130, "g"), new("bife", 140, "g"), new("farofa", 40, "g")]),
-            new("Marmitex Tradicional", "Marmitex Média Frango Grelhado 650g", "650 g", "Arroz, feijão, legumes salteados e filé de frango grelhado.", 19.90m, 1.25m, "marmitex,frango", true, [new("arroz", 220, "g"), new("feijao", 130, "g"), new("frango", 150, "g"), new("farofa", 40, "g")]),
-            new("Marmitex Grande", "Marmitex Grande Executiva 850g", "850 g", "Porção reforçada com 2 opções de mistura, arroz, feijão e farofa.", 27.90m, 1.45m, "marmitex,grande", true, [new("arroz", 280, "g"), new("feijao", 160, "g"), new("bife", 100, "g"), new("frango", 100, "g")]),
-            new("Bebidas", "Refrigerante Lata 350ml", "350 ml", "Lata bem gelada para acompanhar o almoço.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
-        ],
-        [new("Combo Almoço Marmitex + Refri", "Marmitex Média Frango Grelhado 650g + Refrigerante Lata 350ml.", 0.10m, ["Marmitex Média Frango Grelhado 650g", "Refrigerante Lata 350ml"])]);
+        [new("Combo pastel + caldo", "Pastel de queijo com caldo de cana 300 ml.", 0.10m, ["Pastel de queijo", "Caldo de cana 500 ml"])],
+        [new("Quarta do pastel", "Dois pastéis de queijo com preço especial.", 25m, ["Pastel de queijo"])]);
 
     private static SegmentWorkbookKit RestauranteKit() => new(
         "#065F46", "#ECFDF5", "#F59E0B",
-        "Marmitex executivas e pratos preparados na hora.",
+        "Pratos executivos, parmegiana individual, saladas frescas e sucos naturais.",
         [
             new("arroz", "Arroz agulhinha cozido (11kg)", 29m, 11000m, "g", "Grãos"),
             new("feijao", "Feijão carioca cozido (2,5kg)", 8.50m, 2500m, "g", "Grãos"),
             new("frango", "Peito frango filé (1kg)", 21m, 1000m, "g", "Proteínas"),
             new("bife", "Contrafilé bife limpo (1kg)", 44m, 1000m, "g", "Proteínas"),
             new("salada", "Mix salada fresca (1kg)", 9.50m, 1000m, "g", "Saladas"),
-            new("lata", "Refrigerante lata 350ml (12 un)", 34.80m, 12m, "unidade", "Bebidas"),
+            new("polpa", "Polpa de fruta natural (1kg)", 18m, 1000m, "g", "Bebidas"),
         ],
         [
-            new("Marmitex Almoço", "Marmitex Média Frango Grelhado 600g", "600 g", "Arroz, feijão, filé de frango grelhado e salada.", 18.90m, 1.15m, "marmitex,frango", true, [new("arroz", 200, "g"), new("feijao", 120, "g"), new("frango", 140, "g"), new("salada", 80, "g")]),
-            new("Marmitex Almoço", "Marmitex Média Bife Acebolado 600g", "600 g", "Arroz, feijão, bife acebolado e salada fresca.", 21.90m, 1.15m, "marmitex,bife", true, [new("arroz", 200, "g"), new("feijao", 120, "g"), new("bife", 130, "g"), new("salada", 80, "g")]),
-            new("Bebidas", "Refrigerante Lata 350ml", "350 ml", "Lata bem gelada.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
+            new("Pratos executivos", "Prato feito frango", "450 g", "PF com frango grelhado, arroz, feijão e salada.", 13.90m, 1.50m, "prato,frango", true, [new("frango", 150, "g"), new("arroz", 150, "g"), new("feijao", 100, "g"), new("salada", 50, "g")]),
+            new("Pratos executivos", "Prato feito bife", "450 g", "PF com bife, arroz, feijão e acompanhamento.", 17.90m, 1.50m, "prato,bife", true, [new("bife", 150, "g"), new("arroz", 150, "g"), new("feijao", 100, "g"), new("salada", 50, "g")]),
+            new("Pratos especiais", "Parmegiana individual", "500 g", "Filé à parmegiana com arroz e fritas.", 22.90m, 1.80m, "prato,parmegiana", true, [new("frango", 180, "g"), new("arroz", 180, "g")]),
+            new("Saladas", "Salada completa", "320 g", "Salada fresca com frango.", 12.90m, 1.00m, "salada,leve", false, [new("salada", 180, "g"), new("frango", 120, "g")]),
+            new("Bebidas", "Suco natural 500 ml", "500 ml", "Suco natural preparado na hora.", 6.50m, 0.60m, "bebida,suco", false, [new("polpa", 120, "g")]),
         ],
-        [new("Combo Almoço Frango + Refri", "Marmitex Média Frango Grelhado + Refrigerante Lata.", 0.10m, ["Marmitex Média Frango Grelhado 600g", "Refrigerante Lata 350ml"])]);
+        [new("Combo executivo", "Prato feito de frango com suco 300 ml.", 0.12m, ["Prato feito frango", "Suco natural 500 ml"])],
+        [new("Almoço promocional", "Prato feito de frango em oferta no almoço.", 25m, ["Prato feito frango"])]);
+
+    private static SegmentWorkbookKit RotisseriaKit() => new(
+        "#92400E", "#FFFBEB", "#D97706",
+        "Assados especiais, lasanhas prontas e acompanhamentos artesanais.",
+        [
+            new("frango", "Frango inteiro temperado (2,2kg)", 24m, 2200m, "g", "Carnes"),
+            new("costela", "Costela bovina janela (1kg)", 34m, 1000m, "g", "Carnes"),
+            new("massa", "Massa lasanha + carne + molho (1kg)", 24m, 1000m, "g", "Massas"),
+            new("batata", "Batata, cenoura e maionese (1kg)", 12m, 1000m, "g", "Guarnições"),
+            new("farofa", "Farofa especial temperada (1kg)", 15m, 1000m, "g", "Guarnições"),
+        ],
+        [
+            new("Assados", "Frango assado inteiro", "Inteiro", "Frango assado inteiro temperado.", 29.90m, 1.50m, "rotisseria,frango", true, [new("frango", 1800, "g")]),
+            new("Assados", "Costela assada 500 g", "500 g", "Costela bovina assada - porção 500 g.", 32.90m, 1.50m, "rotisseria,costela", true, [new("costela", 500, "g")]),
+            new("Massas e pratos", "Lasanha bolonhesa 500 g", "500 g", "Lasanha pronta para consumo.", 17.90m, 1.20m, "rotisseria,lasanha", true, [new("massa", 500, "g")]),
+            new("Acompanhamentos", "Maionese de batata 300 g", "300 g", "Salada de batata com maionese.", 7.50m, 0.60m, "acompanhamento,maionese", false, [new("batata", 300, "g")]),
+        ],
+        [new("Combo frango + farofa", "Frango assado com farofa para acompanhar.", 0.10m, ["Frango assado inteiro", "Maionese de batata 300 g"])],
+        [new("Domingo em família", "Frango assado com acompanhamento em oferta.", 25m, ["Frango assado inteiro"])]);
+
+    private static SegmentWorkbookKit MarmitexKit() => new(
+        "#B45309", "#FFFBEB", "#16A34A",
+        "Marmitex caseiras quentinhas com variedade diária e entrega rápida.",
+        [
+            new("arroz", "Arroz branco cozido (5kg)", 26m, 5000m, "g", "Grãos"),
+            new("feijao", "Feijão carioca temperado (2kg)", 16m, 2000m, "g", "Grãos"),
+            new("bife", "Contrafilé em bifes (1kg)", 44m, 1000m, "g", "Misturas"),
+            new("frango", "Peito de frango em filés (1kg)", 21m, 1000m, "g", "Misturas"),
+            new("legumes", "Legumes e ovos frescos (2kg)", 18m, 2000m, "g", "Acompanhamentos"),
+        ],
+        [
+            new("Marmitex", "Marmitex frango P", "P", "Marmita pequena com frango, arroz, feijão e guarnição.", 11.90m, 1.20m, "marmitex,frango", true, [new("frango", 100, "g"), new("arroz", 150, "g"), new("feijao", 100, "g")]),
+            new("Marmitex", "Marmitex frango G", "G", "Marmita grande com frango e salada.", 15.90m, 1.50m, "marmitex,frango", true, [new("frango", 160, "g"), new("arroz", 220, "g"), new("feijao", 140, "g"), new("legumes", 80, "g")]),
+            new("Marmitex", "Marmitex bife G", "G", "Marmita grande com bife e fritas.", 19.90m, 1.50m, "marmitex,bife", true, [new("bife", 150, "g"), new("arroz", 220, "g"), new("feijao", 140, "g")]),
+            new("Pratos especiais", "Marmitex strogonoff", "Média", "Strogonoff de frango com arroz e batata palha.", 16.90m, 1.50m, "marmitex,strogonoff", true, [new("frango", 150, "g"), new("arroz", 200, "g")]),
+            new("Marmitex", "Marmitex vegetariana", "Média", "Opção sem carne com legumes e omelete.", 12.90m, 1.20m, "marmitex,vegetariana", false, [new("legumes", 200, "g"), new("arroz", 180, "g"), new("feijao", 120, "g")]),
+        ],
+        [new("Combo almoço 2 pessoas", "Duas marmitas de frango P e dois sucos.", 0.10m, ["Marmitex frango P", "Marmitex frango P"])],
+        [new("Sexta econômica", "Marmitex frango P com preço especial.", 25m, ["Marmitex frango P"])]);
 
     private static SegmentWorkbookKit AcaiteriaKit() => new(
         "#4C1D95", "#FAF5FF", "#F59E0B",
@@ -678,7 +736,8 @@ public sealed class StoreStarterProvisioner(
             new("Combo Explosão Premium (Oreo + Pistache)", "1 Oreo Supreme + 1 Pistache + 1 Mousse Ninho Trufado.", 0.10m, ["Oreo Supreme", "Pistache", "Mousse Ninho Trufado"]),
             new("Combo Garrafa + Mousse", "1 Açaí na Garrafa – Morango (300 ml) + 1 Mousse de Paçoca (110 ml).", 0.10m, ["Açaí na Garrafa – Morango", "Mousse de Paçoca"]),
             new("Combo Família 1 Litro + 2 Mousses", "1 Açaí Puro 1 Litro + 1 Mousse Ninho Trufado + 1 Mousse de Morango.", 0.12m, ["Açaí Puro com Açúcar (1 Litro)", "Mousse Ninho Trufado", "Mousse de Morango"]),
-        ]);
+        ],
+        []);
 
     private static SegmentWorkbookKit UniversalKit() => new(
         "#1E293B", "#F8FAFC", "#0F766E",
@@ -694,5 +753,6 @@ public sealed class StoreStarterProvisioner(
             new("Linha Principal", "Produto Especial M", "M", "Carro-chefe da casa com ingredientes selecionados.", 24.90m, 1.10m, "especial,m", true, [new("base1", 220, "g"), new("base2", 80, "g"), new("comp1", 30, "g")]),
             new("Bebidas", "Bebida Individual 350ml", "350 ml", "Item gelado de revenda rápida.", 6.50m, 0.15m, "bebida", false, [new("beb1", 1, "unidade")]),
         ],
-        [new("Combo Individual Especial", "Produto Especial M + Bebida Individual.", 0.10m, ["Produto Especial M", "Bebida Individual 350ml"])]);
+        [new("Combo Individual Especial", "Produto Especial M + Bebida Individual.", 0.10m, ["Produto Especial M", "Bebida Individual 350ml"])],
+        []);
 }

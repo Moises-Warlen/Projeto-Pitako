@@ -5,12 +5,14 @@ import {
   Flame,
   Layers,
   MapPin,
+  Menu,
   Percent,
   Phone,
   Search,
   ShoppingBag,
   Sparkles,
-  Tag
+  Tag,
+  X
 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -75,6 +77,7 @@ export default function PublicStorefrontPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [catDrawerOpen, setCatDrawerOpen] = useState(false);
   const [modalProduct, setModalProduct] = useState<MenuProduct | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<SmartCartItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -883,8 +886,8 @@ export default function PublicStorefrontPage() {
         </section>
       )}
 
-      {/* Busca e Navegação por Categorias (Chips) */}
-      <div className="sticky top-0 z-20 -mx-2 mb-6 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-sm backdrop-blur">
+      {/* Busca e Navegação por Categorias (Menu Hambúrguer no mobile / Chips no desktop) */}
+      <div className="sticky top-0 z-20 mb-6 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
@@ -896,7 +899,68 @@ export default function PublicStorefrontPage() {
             />
           </div>
 
-          <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex items-center justify-between gap-2 sm:hidden">
+            <button
+              type="button"
+              onClick={() => setCatDrawerOpen((prev) => !prev)}
+              aria-expanded={catDrawerOpen}
+              aria-label="Abrir menu de categorias"
+              style={{ backgroundColor: "var(--store-primary)" }}
+              className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow-sm"
+            >
+              {catDrawerOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              <span>Categorias</span>
+            </button>
+            <span className="max-w-[190px] truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-800">
+              {activeFilter === "all"
+                ? "Todos"
+                : activeFilter === "best"
+                  ? "Mais Vendidos"
+                  : activeFilter === "new"
+                    ? "Novidades"
+                    : activeFilter === "promo"
+                      ? "Promoções"
+                      : activeFilter === "combos"
+                        ? "Combos"
+                        : menu?.categories.find((c) => c.id === activeFilter)?.name || "Todos"}
+            </span>
+          </div>
+
+          {catDrawerOpen && (
+            <div className="grid grid-cols-1 gap-1.5 border-t border-slate-100 pt-2 sm:hidden">
+              {[
+                { id: "all", label: "Todos" },
+                { id: "best", label: "Mais Vendidos" },
+                ...(newLaunches.length > 0 ? [{ id: "new", label: "Novidades" }] : []),
+                ...(promoProducts.length > 0 ? [{ id: "promo", label: "Promoções" }] : []),
+                ...(menu && menu.combos.length > 0 ? [{ id: "combos", label: "Combos" }] : []),
+                ...(menu?.categories
+                  .filter((c) => c.isScheduledAvailable !== false && menu.products.some((p) => p.categoryId === c.id))
+                  .sort((a, b) => a.displayOrder - b.displayOrder)
+                  .map((c) => ({ id: c.id, label: c.name })) ?? [])
+              ].map((chip) => {
+                const active = activeFilter === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter(chip.id);
+                      setCatDrawerOpen(false);
+                    }}
+                    style={active ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                    className={`rounded-xl border px-3 py-2 text-left text-xs font-bold transition ${
+                      active ? "border-transparent shadow-sm" : "border-slate-200 bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="hidden flex-wrap gap-1.5 sm:flex">
             {[
               { id: "all", label: "Todos" },
               { id: "best", label: "Mais Vendidos" },

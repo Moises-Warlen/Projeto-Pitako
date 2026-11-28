@@ -59,6 +59,9 @@ interface SegmentOption {
   supportsWeightScale: boolean;
   supportsTableService: boolean;
   supportsFractionalItems: boolean;
+  supportsPizzaBuilder?: boolean;
+  supportsBurgerBuilder?: boolean;
+  supportsSnackBuilder?: boolean;
 }
 
 interface MasterOverviewResponse {
@@ -228,6 +231,9 @@ export default function MasterPanelPage() {
   const [segWeight, setSegWeight] = useState(false);
   const [segTables, setSegTables] = useState(true);
   const [segFractional, setSegFractional] = useState(false);
+  const [segPizza, setSegPizza] = useState(false);
+  const [segBurger, setSegBurger] = useState(false);
+  const [segSnack, setSegSnack] = useState(false);
   const segNameInputRef = useRef<HTMLInputElement | null>(null);
 
   // 3. Clientes / Donos (Criar / Editar)
@@ -537,6 +543,9 @@ export default function MasterPanelPage() {
     setSegWeight(seg.supportsWeightScale);
     setSegTables(seg.supportsTableService);
     setSegFractional(seg.supportsFractionalItems);
+    setSegPizza(Boolean(seg.supportsPizzaBuilder));
+    setSegBurger(Boolean(seg.supportsBurgerBuilder));
+    setSegSnack(Boolean(seg.supportsSnackBuilder));
     changeActiveTab("segments");
     setTimeout(() => segNameInputRef.current?.focus(), 40);
   }
@@ -550,6 +559,9 @@ export default function MasterPanelPage() {
     setSegWeight(false);
     setSegTables(true);
     setSegFractional(false);
+    setSegPizza(false);
+    setSegBurger(false);
+    setSegSnack(false);
   }
 
   function startNewSegment() {
@@ -592,7 +604,10 @@ export default function MasterPanelPage() {
           supportsAcaiBuilder: segAcai,
           supportsWeightScale: segWeight,
           supportsTableService: segTables,
-          supportsFractionalItems: segFractional
+          supportsFractionalItems: segFractional,
+          supportsPizzaBuilder: segPizza,
+          supportsBurgerBuilder: segBurger,
+          supportsSnackBuilder: segSnack
         })
       },
       session.accessToken
@@ -1122,7 +1137,10 @@ export default function MasterPanelPage() {
                     <p className="font-bold text-white">{seg.displayName} <span className="text-xs font-normal text-zinc-400">({seg.code})</span></p>
                     <p className="text-xs text-zinc-400">
                       {[
-                        seg.supportsAcaiBuilder ? "Açaí" : null,
+                        seg.supportsAcaiBuilder ? "Montador Açaí" : null,
+                        seg.supportsPizzaBuilder ? "Montador Pizza" : null,
+                        seg.supportsBurgerBuilder ? "Montador Hambúrguer" : null,
+                        seg.supportsSnackBuilder ? "Montador Lanche" : null,
                         seg.supportsWeightScale ? "Balança" : null,
                         seg.supportsTableService ? "Salão/Mesas" : null,
                         seg.supportsFractionalItems ? "Meia-a-Meia" : null
@@ -1178,6 +1196,9 @@ export default function MasterPanelPage() {
                 />
               </div>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segAcai} onChange={(e) => setSegAcai(e.target.checked)} /> Usa Montador de Açaí</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segPizza} onChange={(e) => setSegPizza(e.target.checked)} /> Usa Montador de Pizza</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segBurger} onChange={(e) => setSegBurger(e.target.checked)} /> Usa Montador de Hambúrguer</label>
+              <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segSnack} onChange={(e) => setSegSnack(e.target.checked)} /> Usa Montador de Lanche</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segWeight} onChange={(e) => setSegWeight(e.target.checked)} /> Usa Balança por Quilo</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segTables} onChange={(e) => setSegTables(e.target.checked)} /> Usa Salão / Mesas</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segFractional} onChange={(e) => setSegFractional(e.target.checked)} /> Permite Fracionado (Meia-a-Meia)</label>

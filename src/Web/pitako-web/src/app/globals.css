@@ -8,6 +8,9 @@
   --store-accent: #0f766e;
 }
 
+html,
 body {
+  max-width: 100%;
+  overflow-x: hidden;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }

@@ -3,6 +3,7 @@
 import { Bot, Brain, Check, Clock3, Megaphone, MessageCircle, Plus, Power, QrCode, RefreshCw, Search, Send, Sparkles, Trash2 } from "lucide-react";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { QrCodeMatrix } from "@/components/QrCodeMatrix";
 import { apiFetch } from "@/lib/api";
 
 export interface WhatsAppDashboardDto {
@@ -374,6 +375,8 @@ export function AdminWhatsAppBotPanel({
   // Conexão por QR Code
   const [qrModeOpen, setQrModeOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [qrPayloadText, setQrPayloadText] = useState<string>("");
+  const [qrError, setQrError] = useState<string | null>(null);
   const [qrBusy, setQrBusy] = useState(false);
 
   // Treinamento do Bot & IA
@@ -396,8 +399,10 @@ export function AdminWhatsAppBotPanel({
   const renderQrImage = useCallback(async (payload?: string | null) => {
     if (!payload) {
       setQrDataUrl("");
+      setQrPayloadText("");
       return;
     }
+    setQrPayloadText(payload);
     try {
       const url = await QRCode.toDataURL(payload, { width: 220, margin: 1 });
       setQrDataUrl(url);
@@ -433,6 +438,7 @@ export function AdminWhatsAppBotPanel({
 
   async function handleGenerateQrCode() {
     setQrBusy(true);
+    setQrError(null);
     setQrModeOpen(true);
     try {
       const res = await apiFetch<{ sessionId: string; qrPayload: string; pairingCode: string; status: string }>(
@@ -440,13 +446,19 @@ export function AdminWhatsAppBotPanel({
         { method: "POST" },
         token
       );
-      if (res.ok && res.data) {
+      if (res.ok && res.data?.qrPayload) {
         await renderQrImage(res.data.qrPayload);
-        onNotify(`QR Code gerado (código ${res.data.pairingCode})! Aponte o WhatsApp e clique em Confirmar.`);
+        onNotify(`QR Code gerado (código ${res.data.pairingCode})! Escaneie no WhatsApp e confirme.`);
         await load();
       } else {
-        onNotify(res.errorMessage || "Erro ao gerar QR Code.");
+        const err = res.errorMessage || "Não foi possível gerar o QR Code no momento.";
+        setQrError(err);
+        onNotify(err);
       }
+    } catch {
+      const err = "Falha de comunicação ao gerar o QR Code. Tente novamente.";
+      setQrError(err);
+      onNotify(err);
     } finally {
       setQrBusy(false);
     }
@@ -454,19 +466,26 @@ export function AdminWhatsAppBotPanel({
 
   async function handleConfirmQrPairing() {
     setQrBusy(true);
+    setQrError(null);
     try {
       const res = await apiFetch<{ connected: boolean; displayPhoneNumber: string }>(
         "/api/v1/whatsapp/qr-session/confirm",
-        { method: "POST", body: JSON.stringify({ displayPhoneNumber: phoneInput || null }) },
+        { method: "POST", body: JSON.stringify({}) },
         token
       );
       if (res.ok && res.data) {
         setQrModeOpen(false);
-        onNotify(`WhatsApp conectado via QR Code (${res.data.displayPhoneNumber})!`);
+        onNotify(`WhatsApp conectado via QR Code!`);
         await load();
       } else {
-        onNotify(res.errorMessage || "Erro ao confirmar pareamento QR.");
+        const err = res.errorMessage || "Erro ao confirmar pareamento QR.";
+        setQrError(err);
+        onNotify(err);
       }
+    } catch {
+      const err = "Falha ao confirmar conexão via QR Code. Tente novamente.";
+      setQrError(err);
+      onNotify(err);
     } finally {
       setQrBusy(false);
     }
@@ -593,7 +612,7 @@ export function AdminWhatsAppBotPanel({
           }`}
         >
           <span className={`h-2 w-2 rounded-full ${data?.channel?.isActive ? "bg-emerald-500" : "bg-slate-500"}`} />
-          {data?.channel?.isActive ? `Conectado (${data.channel.displayPhoneNumber})` : "Desconectado"}
+          {data?.channel?.isActive ? "Conectado via QR Code" : "Desconectado"}
         </span>
       </div>
 
@@ -604,7 +623,7 @@ export function AdminWhatsAppBotPanel({
               <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
                 <QrCode className="h-4 w-4 text-slate-600" /> Conexão com o WhatsApp
               </h3>
-              <p className="mt-1 text-xs text-slate-500">Conecte escaneando o QR Code no WhatsApp ou informe o número oficial.</p>
+              <p className="mt-1 text-xs text-slate-500">Conecte exclusivamente escaneando o QR Code no WhatsApp da loja.</p>
             </div>
             <button
               type="button"
@@ -612,19 +631,31 @@ export function AdminWhatsAppBotPanel({
               onClick={() => void handleGenerateQrCode()}
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              <QrCode className="h-3.5 w-3.5" /> {qrBusy ? "Gerando..." : "Conectar via QR Code"}
+              <QrCode className="h-3.5 w-3.5" /> {qrBusy ? "Gerando QR..." : "Conectar via QR Code"}
             </button>
           </div>
 
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
-            {qrModeOpen && qrDataUrl ? (
+            {qrError && (
+              <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                {qrError}
+              </div>
+            )}
+
+            {qrModeOpen && (qrDataUrl || qrPayloadText) ? (
               <div className="space-y-3">
                 <p className="text-xs font-extrabold text-slate-900">Escaneie este QR Code no seu WhatsApp</p>
-                <img
-                  src={qrDataUrl}
-                  alt="QR Code conexão WhatsApp"
-                  className="mx-auto h-44 w-44 rounded-xl border-4 border-white bg-white shadow-md"
-                />
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code conexão WhatsApp"
+                    className="mx-auto h-44 w-44 rounded-xl border-4 border-white bg-white shadow-md"
+                  />
+                ) : (
+                  <div className="mx-auto flex justify-center">
+                    <QrCodeMatrix value={qrPayloadText} size={176} alt="QR Code conexão WhatsApp" />
+                  </div>
+                )}
                 {data?.qrSession?.pairingCode && (
                   <p className="font-mono text-xs font-extrabold text-indigo-700">
                     Código de Pareamento: {data.qrSession.pairingCode}
@@ -660,42 +691,38 @@ export function AdminWhatsAppBotPanel({
                 </div>
               </div>
             ) : data?.channel?.isActive ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <MessageCircle className="mx-auto h-10 w-10 text-emerald-600" />
-                <p className="text-sm font-extrabold text-emerald-700">WhatsApp Conectado!</p>
-                <p className="text-xs text-slate-600">Número ativo: {data.channel.displayPhoneNumber}</p>
+                <p className="text-sm font-extrabold text-emerald-700">WhatsApp Conectado via QR Code!</p>
+                {data.qrSession?.pairingCode && (
+                  <p className="font-mono text-[11px] text-slate-500">Pareamento ativo: {data.qrSession.pairingCode}</p>
+                )}
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={qrBusy}
+                    onClick={() => void handleGenerateQrCode()}
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Gerar Novo QR Code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void updateChannel(false)}
+                    className="inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                  >
+                    <Power className="h-3.5 w-3.5" /> Desconectar
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
                 <QrCode className="mx-auto h-12 w-12 text-slate-400" />
                 <p className="text-xs font-semibold text-slate-600">
-                  Canal desconectado. Clique em <strong>Conectar via QR Code</strong> ou salve o número abaixo.
+                  Canal desconectado. Clique em <strong>Conectar via QR Code</strong> acima para parear o aparelho.
                 </p>
               </div>
             )}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <input
-              value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="+5516991098863"
-              className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => void updateChannel(true)}
-              className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
-            >
-              Conectar / Salvar
-            </button>
-            <button
-              type="button"
-              onClick={() => void updateChannel(false)}
-              className="inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-700"
-            >
-              <Power className="h-3.5 w-3.5" /> Desconectar
-            </button>
           </div>
         </div>
 

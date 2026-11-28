@@ -87,6 +87,17 @@ export function ProductCustomizationModal({
     }
   }, [product, editingItem, attachedGroups]);
 
+  const isMonteDoSeuJeito = Boolean(
+    product &&
+      (product.customTemplateKey === "acaiteria-monte" ||
+        product.name.trim().toLowerCase().includes("monte do seu jeito"))
+  );
+
+  const isMonteInclusosGroup = (g: MenuModifierGroup) =>
+    isMonteDoSeuJeito &&
+    ((g.categoryTag || "").toLowerCase() === "acompanhamentos" ||
+      g.name.toLowerCase().includes("acompanhamentos inclusos"));
+
   const activeVariation = useMemo(
     () => product?.variations.find((v) => v.id === variationId) ?? product?.variations[0] ?? null,
     [product, variationId]
@@ -104,20 +115,25 @@ export function ProductCustomizationModal({
         product.variationRules.find((r) => !r.variationId && r.modifierGroupId === g.id);
 
       let maxSel = override ? override.maxSelections : g.maxSelections;
+      let freeAllow = override ? override.freeAllowance : g.freeAllowance;
       if (g.selectionKind === 6 && activeVariation && activeVariation.maxFlavors > 0) {
         maxSel = override ? Math.min(override.maxSelections, activeVariation.maxFlavors) : activeVariation.maxFlavors;
+      }
+      if (isMonteInclusosGroup(g)) {
+        freeAllow = 3;
+        maxSel = 3;
       }
 
       map.set(g.id, {
         minSelections: override ? override.minSelections : g.minSelections,
         maxSelections: maxSel,
-        freeAllowance: override ? override.freeAllowance : g.freeAllowance,
+        freeAllowance: freeAllow,
         isRequired: override ? override.isRequired : g.isRequired,
         isHidden: override ? override.isHidden : false
       });
     }
     return map;
-  }, [product, attachedGroups, activeVariation]);
+  }, [product, attachedGroups, activeVariation, isMonteDoSeuJeito]);
 
   const groupMetrics = useMemo(() => {
     const metrics = new Map<string, { selectedTotal: number; selectedDistinct: number }>();
@@ -228,8 +244,11 @@ export function ProductCustomizationModal({
     const key = `${group.id}:${option.id}`;
     const current = counts[key] ?? 0;
 
+    const monteInclusosLock = isMonteInclusosGroup(group);
+    const effectiveOptionMax = monteInclusosLock ? 1 : option.maxQuantity;
+
     // Para escolha única (maxSelections === 1), clicar seleciona exclusivamente esta opção
-    if (rule.maxSelections === 1 && option.maxQuantity === 1 && delta > 0) {
+    if (rule.maxSelections === 1 && effectiveOptionMax === 1 && delta > 0) {
       const conflict = findConflictName(option);
       if (conflict) {
         setErrorMsg(`"${option.name}" não pode ser combinado com "${conflict}".`);
@@ -242,7 +261,7 @@ export function ProductCustomizationModal({
       return;
     }
 
-    const nextVal = Math.max(0, Math.min(option.maxQuantity, current + delta));
+    const nextVal = Math.max(0, Math.min(effectiveOptionMax, current + delta));
     if (nextVal === current) return;
 
     if (delta > 0) {
@@ -254,12 +273,16 @@ export function ProductCustomizationModal({
 
       const m = groupMetrics.get(group.id) ?? { selectedTotal: 0, selectedDistinct: 0 };
       const projectedCount =
-        group.countingMode === 1
+        group.countingMode === 1 || monteInclusosLock
           ? m.selectedDistinct + (current === 0 ? 1 : 0)
           : m.selectedTotal + delta;
 
       if (rule.maxSelections > 0 && projectedCount > rule.maxSelections) {
-        setErrorMsg(`"${group.name}" permite no máximo ${rule.maxSelections} escolha(s) neste tamanho.`);
+        setErrorMsg(
+          monteInclusosLock
+            ? `"${group.name}" permite no máximo 3 opções sem custo adicional.`
+            : `"${group.name}" permite no máximo ${rule.maxSelections} escolha(s) neste tamanho.`
+        );
         return;
       }
     }
@@ -483,9 +506,10 @@ export function ProductCustomizationModal({
             const rule = ruleForGroup.get(group.id);
             if (!rule || rule.isHidden) return null;
             const m = groupMetrics.get(group.id) ?? { selectedTotal: 0, selectedDistinct: 0 };
-            const usedCount = group.countingMode === 1 ? m.selectedDistinct : m.selectedTotal;
+            const monteInclusosLock = isMonteInclusosGroup(group);
+            const usedCount = group.countingMode === 1 || monteInclusosLock ? m.selectedDistinct : m.selectedTotal;
             const hasFreePool = rule.freeAllowance > 0;
-            const freeRemaining = Math.max(0, rule.freeAllowance - m.selectedTotal);
+            const freeRemaining = Math.max(0, rule.freeAllowance - usedCount);
             const isSatisfied =
               (!rule.isRequired && rule.minSelections === 0) ||
               usedCount >= Math.max(rule.minSelections, rule.isRequired ? 1 : 0);
@@ -499,14 +523,16 @@ export function ProductCustomizationModal({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-extrabold text-slate-900">
-                        {group.name}: {m.selectedTotal} de {rule.freeAllowance > 0 ? rule.freeAllowance : rule.maxSelections}
+                        {group.name}: {monteInclusosLock ? usedCount : m.selectedTotal} de {rule.freeAllowance > 0 ? rule.freeAllowance : rule.maxSelections}
                       </h3>
                       <p className="text-xs text-slate-500">
-                        {rule.freeAllowance > 0
-                          ? `Selecione até ${rule.freeAllowance} opções sem custo adicional.`
-                          : rule.maxSelections > 0
-                            ? `Máximo ${rule.maxSelections} opções`
-                            : "Opcional"}
+                        {monteInclusosLock
+                          ? "Acompanhamentos Inclusos: até 3 opções sem custo adicional."
+                          : rule.freeAllowance > 0
+                            ? `Selecione até ${rule.freeAllowance} opções sem custo adicional.`
+                            : rule.maxSelections > 0
+                              ? `Máximo ${rule.maxSelections} opções`
+                              : "Opcional"}
                       </p>
                     </div>
                     {hasFreePool && (
@@ -574,9 +600,9 @@ export function ProductCustomizationModal({
                             {opt.additionalPrice > 0 && (
                               <span className={qty > 0 ? "text-white/85" : "text-slate-500"}>+{formatBrl(opt.additionalPrice)}</span>
                             )}
-                            {qty > 1 && <span className="rounded-full bg-white/25 px-1.5 text-[10px]">×{qty}</span>}
+                            {!monteInclusosLock && qty > 1 && <span className="rounded-full bg-white/25 px-1.5 text-[10px]">×{qty}</span>}
                           </button>
-                          {qty > 0 && opt.maxQuantity > 1 && qty < opt.maxQuantity && (!rule.maxSelections || usedCount < rule.maxSelections) && (
+                          {!monteInclusosLock && qty > 0 && opt.maxQuantity > 1 && qty < opt.maxQuantity && (!rule.maxSelections || usedCount < rule.maxSelections) && (
                             <button
                               type="button"
                               onClick={() => updateOptionCount(group, opt, 1)}

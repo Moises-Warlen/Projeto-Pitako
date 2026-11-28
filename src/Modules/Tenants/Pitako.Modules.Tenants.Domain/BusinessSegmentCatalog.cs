@@ -12,7 +12,10 @@ public sealed record BusinessSegmentProfile(
     bool SupportsAcaiBuilder,
     bool SupportsWeightScale,
     bool SupportsTableService,
-    bool SupportsFractionalItems);
+    bool SupportsFractionalItems,
+    bool SupportsPizzaBuilder = false,
+    bool SupportsBurgerBuilder = false,
+    bool SupportsSnackBuilder = false);
 
 public static class BusinessSegmentCatalog
 {
@@ -31,14 +34,14 @@ public static class BusinessSegmentCatalog
 
     private static readonly Dictionary<string, BusinessSegmentProfile> BuiltInProfiles = new(StringComparer.Ordinal)
     {
-        [Pizzaria] = new(Pizzaria, "Pizzaria", false, false, true, true),
+        [Pizzaria] = new(Pizzaria, "Pizzaria", false, false, true, true, SupportsPizzaBuilder: true),
         [Acaiteria] = new(Acaiteria, "Açaíteria", true, true, true, false),
-        [Hamburgueria] = new(Hamburgueria, "Hamburgueria", false, false, true, false),
+        [Hamburgueria] = new(Hamburgueria, "Hamburgueria", false, false, true, false, SupportsBurgerBuilder: true),
         [Padaria] = new(Padaria, "Padaria", false, true, true, false),
         [Sorveteria] = new(Sorveteria, "Sorveteria", true, true, true, false),
         [Restaurante] = new(Restaurante, "Restaurante", false, true, true, false),
         [Adega] = new(Adega, "Adega", false, false, true, false),
-        [Lanchonete] = new(Lanchonete, "Lanchonete", false, false, true, false),
+        [Lanchonete] = new(Lanchonete, "Lanchonete", false, false, true, false, SupportsSnackBuilder: true),
         [Pastelaria] = new(Pastelaria, "Pastelaria", false, false, true, false),
         [Doceria] = new(Doceria, "Doceria", false, true, true, false),
         [Rotisseria] = new(Rotisseria, "Rotisseria", false, true, true, false),

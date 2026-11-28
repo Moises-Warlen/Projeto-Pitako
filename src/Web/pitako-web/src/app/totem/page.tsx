@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, CreditCard, QrCode, RefreshCw, ShoppingBag, Trash2, UtensilsCrossed } from "lucide-react";
+import { CheckCircle2, CreditCard, Menu, QrCode, RefreshCw, ShoppingBag, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { QrCodeMatrix } from "@/components/QrCodeMatrix";
 import { StoreBrandShell, StoreBrandTheme } from "@/components/StoreBrandShell";
@@ -8,6 +8,8 @@ import { ModifierSelectionPayload, ProductCustomizationModal } from "@/component
 import { formatBrl, ProductMediaFrame } from "@/components/storefront/ProductMediaFrame";
 import { apiFetch, loadSession } from "@/lib/api";
 import { MenuProduct, PublicMenuResponse } from "@/types/menu";
+
+const TOTEM_IDLE_SECONDS = 128;
 
 interface TotemSessionDto {
   id: string;
@@ -49,9 +51,10 @@ export default function SelfServiceTotemPage() {
   const [customerName, setCustomerName] = useState("");
   const [fulfillmentChoice, setFulfillmentChoice] = useState<1 | 2>(1);
   const [activeCatId, setActiveCatId] = useState("all");
+  const [catDrawerOpen, setCatDrawerOpen] = useState(false);
   const [modalProduct, setModalProduct] = useState<MenuProduct | null>(null);
   const [paymentChoice, setPaymentChoice] = useState<1 | 2 | 3>(2);
-  const [idleSeconds, setIdleSeconds] = useState(120);
+  const [idleSeconds, setIdleSeconds] = useState(TOTEM_IDLE_SECONDS);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -101,7 +104,7 @@ export default function SelfServiceTotemPage() {
           if (totemSession && !receipt) {
             setTotemSession(null);
           }
-          return 120;
+          return TOTEM_IDLE_SECONDS;
         }
         return s - 1;
       });
@@ -140,7 +143,7 @@ export default function SelfServiceTotemPage() {
     notes?: string;
   }) {
     setErrorMsg(null);
-    setIdleSeconds(120);
+    setIdleSeconds(TOTEM_IDLE_SECONDS);
     const activeSess = await ensureSession();
     if (!activeSess) throw new Error("Sessão do totem indisponível.");
 
@@ -186,16 +189,24 @@ export default function SelfServiceTotemPage() {
   }
 
   const visibleProducts = (menu?.products ?? []).filter((p) => activeCatId === "all" || p.categoryId === activeCatId);
+  const activeCatLabel =
+    activeCatId === "all"
+      ? `Tudo (${menu?.products.length ?? 0})`
+      : menu?.categories.find((c) => c.id === activeCatId)?.name || "Categorias";
 
   return (
-    <StoreBrandShell theme={theme} hideOpsNav>
-      <div onClick={() => setIdleSeconds(120)} className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm text-xs">
+    <StoreBrandShell theme={theme} hideOpsNav hideCnpjInHeader>
+      <div
+        onClick={() => setIdleSeconds(TOTEM_IDLE_SECONDS)}
+        onTouchStart={() => setIdleSeconds(TOTEM_IDLE_SECONDS)}
+        className="mx-auto w-full max-w-6xl space-y-5 overflow-x-hidden"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm text-xs">
           <div className="flex items-center gap-2 font-bold text-slate-700">
-            <UtensilsCrossed className="h-4 w-4" />
+            <UtensilsCrossed className="h-4 w-4 shrink-0" />
             <span>Autoatendimento Touch · Loja: <code>{slug}</code></span>
           </div>
-          <span className="font-mono text-slate-500">Reinício por inatividade: {idleSeconds}s</span>
+          <span className="font-mono font-bold text-slate-600">Reinício por inatividade: {idleSeconds}s</span>
         </div>
 
         {errorMsg && (
@@ -274,27 +285,61 @@ export default function SelfServiceTotemPage() {
 
             {/* Catálogo Direto + Sacola do Totem */}
             <div className="grid gap-6 lg:grid-cols-3">
-              <div className="space-y-4 lg:col-span-2">
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  <button
-                    type="button"
-                    onClick={() => setActiveCatId("all")}
-                    style={activeCatId === "all" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-                    className="shrink-0 rounded-full border bg-white px-4 py-2 text-xs font-bold"
-                  >
-                    Tudo ({menu?.products.length ?? 0})
-                  </button>
-                  {(menu?.categories ?? []).map((c) => (
+              <div className="min-w-0 space-y-4 lg:col-span-2">
+                <div className="relative rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <button
-                      key={c.id}
                       type="button"
-                      onClick={() => setActiveCatId(c.id)}
-                      style={activeCatId === c.id ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
-                      className="shrink-0 rounded-full border bg-white px-4 py-2 text-xs font-bold"
+                      onClick={() => setCatDrawerOpen((prev) => !prev)}
+                      aria-expanded={catDrawerOpen}
+                      aria-label="Abrir menu de categorias"
+                      style={{ backgroundColor: "var(--store-primary)" }}
+                      className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
                     >
-                      {c.name}
+                      {catDrawerOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                      <span>Categorias</span>
                     </button>
-                  ))}
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800">
+                      Exibindo: {activeCatLabel}
+                    </span>
+                  </div>
+
+                  {catDrawerOpen && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 md:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveCatId("all");
+                          setCatDrawerOpen(false);
+                        }}
+                        style={activeCatId === "all" ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                        className={`rounded-xl border px-3.5 py-2.5 text-left text-xs font-bold transition ${
+                          activeCatId === "all" ? "border-transparent shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                        }`}
+                      >
+                        Tudo ({menu?.products.length ?? 0})
+                      </button>
+                      {(menu?.categories ?? []).map((c) => {
+                        const count = (menu?.products ?? []).filter((p) => p.categoryId === c.id).length;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveCatId(c.id);
+                              setCatDrawerOpen(false);
+                            }}
+                            style={activeCatId === c.id ? { backgroundColor: "var(--store-primary)", color: "#fff" } : undefined}
+                            className={`rounded-xl border px-3.5 py-2.5 text-left text-xs font-bold transition ${
+                              activeCatId === c.id ? "border-transparent shadow-sm" : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                            }`}
+                          >
+                            {c.name} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-3.5 sm:grid-cols-2">

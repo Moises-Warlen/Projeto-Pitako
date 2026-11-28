@@ -68,7 +68,8 @@ public sealed class SegmentCatalogTemplateService
             "doceria" => await ApplyDoceriaAsync(tenantId, cancellationToken),
             "rotisseria" => await ApplyRotisseriaAsync(tenantId, cancellationToken),
             "marmitex" => await ApplyMarmitexAsync(tenantId, cancellationToken),
-            "restaurante" or "lanchonete" => await ApplyRestauranteLanchoneteAsync(tenantId, code, cancellationToken),
+            "lanchonete" => await ApplyLanchoneteAsync(tenantId, cancellationToken),
+            "restaurante" => await ApplyRestauranteLanchoneteAsync(tenantId, code, cancellationToken),
             _ => await ApplyGenericFoodAsync(tenantId, code, cancellationToken)
         };
     }
@@ -80,6 +81,7 @@ public sealed class SegmentCatalogTemplateService
         if (s.Contains("acai")) return "acaiteria";
         if (s.Contains("pizza")) return "pizzaria";
         if (s.Contains("hamburg") || s.Contains("burger")) return "hamburgueria";
+        if (s.Contains("lanche")) return "lanchonete";
         if (s.Contains("pastel")) return "pastelaria";
         if (s.Contains("sorvet") || s.Contains("gelat")) return "sorveteria";
         if (s.Contains("rotiss")) return "rotisseria";
@@ -644,27 +646,35 @@ public sealed class SegmentCatalogTemplateService
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyPizzariaAsync(Guid tenantId, CancellationToken ct)
     {
-        var catTrad = Category.Create(tenantId, "Pizzas Artesanais", "Escolha o tamanho, até 3 sabores e borda recheada", null, 1, "pizzaria").Value;
+        var existingProds = await _productRepo.ListAllOrderedAsync(ct);
+        if (existingProds.Any(p => string.Equals(p.CustomTemplateKey, "pizzaria-sabores", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Result.Success(new AppliedSegmentTemplateSummary("pizzaria", 0, 0, 0));
+        }
+
+        var catTrad = Category.Create(tenantId, "Montador de Pizza", "Escolha tamanho/fatias, massa/borda, sabores (inteira ou meio a meio) e adicionais", null, 1, "pizzaria", templateKind: CategoryTemplateKind.BuildYourOwn).Value;
         await _categoryRepo.AddAsync(catTrad, ct);
 
-        var grpSabores = CreateGroup(tenantId, "Escolha os Sabores", ModifierGroupType.Complement, 1, 2, true, 1, ModifierGroupKind.FlavorSelection, 0, OptionCountingMode.ByDistinctOption, "sabores", [
-            ("Calabresa Artesanal", 49.90m, 1, "Molho de tomate italiano, mussarela e calabresa fatiada"),
-            ("Marguerita Especial", 47.90m, 1, "Mussarela de búfala, manjericão fresco e tomate"),
-            ("Frango com Catupiry Original", 54.90m, 1, "Peito de frango desfiado com requeijão cremoso"),
-            ("Quatro Queijos", 56.90m, 1, "Mussarela, provolone, parmesão e gorgonzola"),
-            ("Camarão Gourmet", 69.90m, 1, "Camarões salteados no alho e ervas")
+        var grpMassaBorda = CreateGroup(tenantId, "Massa & Borda Recheada", ModifierGroupType.Addon, 0, 1, false, 2, ModifierGroupKind.RequiredChoice, 0, OptionCountingMode.ByDistinctOption, "bordas", [
+            ("Massa Tradicional", 0m, 1, "Massa artesanal tradicional sem recheio na borda"),
+            ("Massa Fina Crocante", 0m, 1, "Massa aberta bem fininha e crocante"),
+            ("Borda de Catupiry Original", 10.00m, 1, "Borda recheada com Catupiry cremoso"),
+            ("Borda de Cheddar Cremoso", 10.00m, 1, "Borda recheada com cheddar"),
+            ("Borda Vulcão Chocolate", 14.00m, 1, "Borda doce especial")
         ]);
 
-        var grpBordas = CreateGroup(tenantId, "Borda Recheada", ModifierGroupType.Addon, 0, 1, false, 2, ModifierGroupKind.RequiredChoice, 0, OptionCountingMode.ByDistinctOption, "bordas", [
-            ("Borda Tradicional", 0m, 1, "Massa assada sem recheio"),
-            ("Borda de Catupiry", 10.00m, 1, "Recheio cremoso na borda"),
-            ("Borda de Cheddar Cremoso", 10.00m, 1, null),
-            ("Borda Vulcão Chocolate", 14.00m, 1, null)
+        var grpSabores = CreateGroup(tenantId, "Escolha os Sabores", ModifierGroupType.Complement, 1, 2, true, 2, ModifierGroupKind.FlavorSelection, 0, OptionCountingMode.ByDistinctOption, "sabores", [
+            ("Pizza Mussarela", 30.00m, 1, "Molho da casa, mussarela 350 g, tomate e orégano"),
+            ("Pizza Calabresa", 32.90m, 1, "Molho da casa, mussarela, calabresa fatiada e cebola"),
+            ("Pizza Portuguesa", 38.90m, 1, "Mussarela, presunto, ovo, cebola e azeitona"),
+            ("Pizza Quatro Queijos", 43.90m, 1, "Mussarela, provolone, parmesão e gorgonzola"),
+            ("Frango com Catupiry Original", 42.90m, 1, "Peito de frango desfiado com requeijão cremoso")
         ]);
 
         var grpExtras = CreateGroup(tenantId, "Adicionais Extras", ModifierGroupType.Addon, 0, 5, false, 3, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "extras", [
             ("Bacon Crocante Extra", 8.00m, 2, null),
             ("Mussarela Extra", 9.00m, 2, null),
+            ("Catupiry Extra", 8.50m, 2, null),
             ("Rúcula com Tomate Seco", 7.00m, 1, null)
         ]);
 
@@ -674,17 +684,17 @@ public sealed class SegmentCatalogTemplateService
             ("Sem Azeitona", 0m, 1, null)
         ]);
 
+        await _modifierRepo.AddAsync(grpMassaBorda, ct);
         await _modifierRepo.AddAsync(grpSabores, ct);
-        await _modifierRepo.AddAsync(grpBordas, ct);
         await _modifierRepo.AddAsync(grpExtras, ct);
         await _modifierRepo.AddAsync(grpRemover, ct);
 
         var pizza = Product.Create(
             tenantId,
             catTrad.Id,
-            "Pizza Personalizada (Sabores)",
-            Money.Create(47.90m).Value,
-            "Monte sua pizza inteira, meio a meio ou 3 sabores (preço pelo maior sabor).",
+            "Montador de Pizza (Monte a Sua)",
+            Money.Create(30.00m).Value,
+            "Monte sua pizza inteira, meio a meio ou até 3 sabores escolhendo fatias, massa/borda e adicionais.",
             "PIZZA-CUSTOM",
             ProductSaleMode.Unit,
             isFeatured: true,
@@ -692,17 +702,17 @@ public sealed class SegmentCatalogTemplateService
             isNew: false,
             isRecommended: true,
             pricingStrategy: ProductPricingStrategy.FlavorHighestPrice,
-            tagsCsv: "pizzaria,meia-a-meia",
+            tagsCsv: "pizzaria,montador,meia-a-meia",
             preparationMinutes: 30,
             customTemplateKey: "pizzaria-sabores").Value;
 
-        var vBroto = pizza.AddVariation("Broto (4 fatias)", Money.Create(34.90m).Value, "PZ-BROTO", 1, "Até 1 sabor · 4 fatias", 4m, "fatias", 1).Value;
-        var vMedia = pizza.AddVariation("Média (6 fatias)", Money.Create(47.90m).Value, "PZ-MEDIA", 2, "Até 2 sabores · 6 fatias", 6m, "fatias", 2).Value;
-        var vGrande = pizza.AddVariation("Grande (8 fatias)", Money.Create(54.90m).Value, "PZ-GRANDE", 3, "Até 2 sabores · 8 fatias", 8m, "fatias", 2).Value;
-        var vGigante = pizza.AddVariation("Gigante (12 fatias)", Money.Create(69.90m).Value, "PZ-GIG", 4, "Até 3 sabores · 12 fatias", 12m, "fatias", 3).Value;
+        var vBroto = pizza.AddVariation("Broto (4 fatias)", Money.Create(14.90m).Value, "PZ-BROTO", 1, "Até 1 sabor · 4 fatias", 4m, "fatias", 1).Value;
+        var vMedia = pizza.AddVariation("Média (6 fatias)", Money.Create(26.90m).Value, "PZ-MEDIA", 2, "Até 2 sabores · 6 fatias", 6m, "fatias", 2).Value;
+        var vGrande = pizza.AddVariation("Grande (8 fatias)", Money.Create(32.90m).Value, "PZ-GRANDE", 3, "Até 2 sabores (Meia-a-Meia) · 8 fatias", 8m, "fatias", 2).Value;
+        var vGigante = pizza.AddVariation("Gigante (12 fatias)", Money.Create(49.90m).Value, "PZ-GIG", 4, "Até 3 sabores · 12 fatias", 12m, "fatias", 3).Value;
 
-        pizza.AttachModifierGroup(grpSabores.Id, 1);
-        pizza.AttachModifierGroup(grpBordas.Id, 2);
+        pizza.AttachModifierGroup(grpMassaBorda.Id, 1);
+        pizza.AttachModifierGroup(grpSabores.Id, 2);
         pizza.AttachModifierGroup(grpExtras.Id, 3);
         pizza.AttachModifierGroup(grpRemover.Id, 4);
 
@@ -719,34 +729,42 @@ public sealed class SegmentCatalogTemplateService
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyHamburgueriaAsync(Guid tenantId, CancellationToken ct)
     {
-        var catBurgers = Category.Create(tenantId, "Burgers Artesanais", "Escolha pão, carne, ponto, queijos, saladas e acompanhamentos", null, 1, "hamburgueria").Value;
+        var existingProds = await _productRepo.ListAllOrderedAsync(ct);
+        if (existingProds.Any(p => string.Equals(p.CustomTemplateKey, "hamburgueria-burger", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Result.Success(new AppliedSegmentTemplateSummary("hamburgueria", 0, 0, 0));
+        }
+
+        var catBurgers = Category.Create(tenantId, "Montador de Hambúrguer", "Escolha pão, carne, ponto, queijos, adicionais e versão combo", null, 1, "hamburgueria", templateKind: CategoryTemplateKind.BuildYourOwn).Value;
         await _categoryRepo.AddAsync(catBurgers, ct);
 
-        var grpPao = CreateGroup(tenantId, "Escolha do Pão", ModifierGroupType.Complement, 1, 1, true, 1, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "paes", [
+        var grpPao = CreateGroup(tenantId, "1. Escolha do Pão", ModifierGroupType.Complement, 1, 1, true, 1, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "paes", [
             ("Pão Brioche Selado na Manteiga", 0m, 1, null),
-            ("Pão Australiano", 2.00m, 1, null),
-            ("Pão Integral com Gergelim", 1.50m, 1, null)
+            ("Pão Tradicional com Gergelim", 0m, 1, null),
+            ("Pão Australiano", 2.00m, 1, null)
         ]);
-        var grpCarne = CreateGroup(tenantId, "Tipo e Quantidade de Carne", ModifierGroupType.Addon, 1, 3, true, 2, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByTotalQuantity, "carnes", [
-            ("Blend Bovino 160g", 0m, 3, "Adicional de 160g extra além da base"),
+        var grpCarne = CreateGroup(tenantId, "2. Carnes & Hambúrguer", ModifierGroupType.Addon, 1, 3, true, 2, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByTotalQuantity, "carnes", [
+            ("Carne Bovina 120g", 0m, 3, "Hambúrguer tradicional 120g"),
+            ("Blend Artesanal 150g", 3.50m, 3, "Corte bovino suculento 150g"),
             ("Smash Crispy 90g", 0m, 3, null),
             ("Burger Vegetal Futuro", 3.00m, 2, null)
         ]);
-        var grpPonto = CreateGroup(tenantId, "Ponto da Carne", ModifierGroupType.Complement, 1, 1, true, 3, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "ponto", [
+        var grpPonto = CreateGroup(tenantId, "3. Ponto da Carne", ModifierGroupType.Complement, 1, 1, true, 3, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "ponto", [
             ("Ao Ponto (Suculento)", 0m, 1, null),
             ("Mal Passado", 0m, 1, null),
             ("Bem Passado", 0m, 1, null)
         ]);
-        var grpQueijos = CreateGroup(tenantId, "Queijos e Adicionais", ModifierGroupType.Addon, 0, 5, false, 4, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "queijos", [
-            ("Cheddar Inglês", 4.50m, 2, null),
-            ("Mussarela Gratinada", 4.00m, 2, null),
-            ("Bacon Caramelizado", 6.00m, 2, null),
+        var grpQueijos = CreateGroup(tenantId, "4. Queijos & Adicionais", ModifierGroupType.Addon, 0, 6, false, 4, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "queijos", [
+            ("Queijo Cheddar Fatiado", 3.50m, 2, null),
+            ("Queijo Mussarela Derretida", 3.50m, 2, null),
+            ("Bacon Crocante Fatiado", 5.00m, 2, null),
+            ("Ovo na Chapa", 3.00m, 2, null),
             ("Cebola Crispy", 4.00m, 1, null)
         ]);
-        var grpMolhos = CreateGroupWithReplaces(tenantId, "Saladas, Molhos e Substituições", ModifierGroupType.Complement, 0, 4, false, 5, ModifierGroupKind.Substitution, 0, OptionCountingMode.ByDistinctOption, "molhos", [
-            ("Maionese Verde da Casa", 0m, 1, null, null),
-            ("Molho Barbecue Defumado", 0m, 1, null, null),
-            ("Alface e Tomate Frescos", 0m, 1, null, null),
+        var grpMolhos = CreateGroupWithReplaces(tenantId, "5. Saladas, Molhos & Combo", ModifierGroupType.Complement, 0, 5, false, 5, ModifierGroupKind.Substitution, 0, OptionCountingMode.ByDistinctOption, "molhos", [
+            ("Molho da Casa", 0m, 1, null, null),
+            ("Alface, Tomate e Maionese", 0m, 1, null, null),
+            ("Porção Batata Frita 150g + Refri Lata (Combo)", 11.90m, 1, "Transforme em combo completo", null),
             ("Trocar Batata Frita por Onion Rings", 3.50m, 1, "Substituição de acompanhamento", "Batata Frita")
         ]);
 
@@ -759,9 +777,9 @@ public sealed class SegmentCatalogTemplateService
         var burger = Product.Create(
             tenantId,
             catBurgers.Id,
-            "Craft Burger da Casa",
-            Money.Create(28.90m).Value,
-            "Hambúrguer artesanal montado na hora com escolha de pão, carnes, ponto, queijos e molhos.",
+            "Montador de Hambúrguer (Monte o Seu)",
+            Money.Create(14.90m).Value,
+            "Monte seu burger do jeito que preferir escolhendo pão, carne, ponto, queijos, adicionais e opção combo.",
             "BURG-CRAFT",
             ProductSaleMode.Unit,
             true,
@@ -769,11 +787,11 @@ public sealed class SegmentCatalogTemplateService
             true,
             true,
             ProductPricingStrategy.FixedPlusAddons,
-            "hamburgueria,artesanal",
+            "hamburgueria,montador,artesanal",
             18,
             "hamburgueria-burger").Value;
-        burger.AddVariation("Simples (Só o Burger)", Money.Create(28.90m).Value, "BURG-S", 1);
-        burger.AddVariation("Combo (Burger + Fritas + Bebida)", Money.Create(42.90m).Value, "BURG-C", 2);
+        burger.AddVariation("Simples (Só o Burger)", Money.Create(14.90m).Value, "BURG-S", 1, "Pão + Carne 120g + Molho", 220m, "g");
+        burger.AddVariation("Combo Clássico (Burger + Fritas 150g + Refri)", Money.Create(21.90m).Value, "BURG-C", 2, "Acompanha batata 150g + lata 350ml", 520m, "g");
 
         burger.AttachModifierGroup(grpPao.Id, 1);
         burger.AttachModifierGroup(grpCarne.Id, 2);
@@ -785,6 +803,76 @@ public sealed class SegmentCatalogTemplateService
         await _categoryRepo.SaveChangesAsync(ct);
 
         return Result.Success(new AppliedSegmentTemplateSummary("hamburgueria", 1, 1, 5));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyLanchoneteAsync(Guid tenantId, CancellationToken ct)
+    {
+        var existingProds = await _productRepo.ListAllOrderedAsync(ct);
+        if (existingProds.Any(p => string.Equals(p.CustomTemplateKey, "lanchonete-lanche", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Result.Success(new AppliedSegmentTemplateSummary("lanchonete", 0, 0, 0));
+        }
+
+        var cat = Category.Create(tenantId, "Montador de Lanche", "Escolha o pão/base, recheios, molhos e acompanhamentos", null, 1, "lanchonete", templateKind: CategoryTemplateKind.BuildYourOwn).Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpPao = CreateGroup(tenantId, "1. Escolha o Pão / Base", ModifierGroupType.Complement, 1, 1, true, 1, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "paes", [
+            ("Pão de Forma Tostado na Chapa", 0m, 1, null),
+            ("Pão Francês Crocante", 0m, 1, null),
+            ("Pão de Hot Dog Tradicional", 0m, 1, null),
+            ("Baguete Artesanal", 2.50m, 1, null)
+        ]);
+        var grpRecheio = CreateGroup(tenantId, "2. Recheios & Ingredientes", ModifierGroupType.Complement, 1, 3, true, 2, ModifierGroupKind.FreeIncluded, 2, OptionCountingMode.ByDistinctOption, "recheios", [
+            ("Presunto e Queijo Mussarela", 0m, 1, null),
+            ("Rosbife Fatiado com Queijo", 3.00m, 1, null),
+            ("Salsicha Especial com Molho", 0m, 1, null),
+            ("Frango Desfiado Temperado", 2.00m, 1, null),
+            ("Tomate, Orégano e Alface", 0m, 1, null)
+        ]);
+        var grpAdicionais = CreateGroup(tenantId, "3. Adicionais & Acompanhamentos", ModifierGroupType.Addon, 0, 5, false, 3, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "acompanhamentos", [
+            ("Batata Palha Crocante", 2.00m, 2, null),
+            ("Catupiry Cremoso", 3.50m, 2, null),
+            ("Bacon Picado", 4.50m, 2, null),
+            ("Ovo Frito", 2.50m, 2, null),
+            ("Suco Natural 300 ml (Combo)", 5.90m, 1, null)
+        ]);
+        var grpRem = CreateGroup(tenantId, "4. Preferências / Observações", ModifierGroupType.Complement, 0, 3, false, 4, ModifierGroupKind.IngredientRemoval, 3, OptionCountingMode.ByDistinctOption, "remocoes", [
+            ("Sem Tomate", 0m, 1, null),
+            ("Sem Milho/Ervilha", 0m, 1, null),
+            ("Pão Bem Tostado", 0m, 1, null)
+        ]);
+
+        await _modifierRepo.AddAsync(grpPao, ct);
+        await _modifierRepo.AddAsync(grpRecheio, ct);
+        await _modifierRepo.AddAsync(grpAdicionais, ct);
+        await _modifierRepo.AddAsync(grpRem, ct);
+
+        var lanche = Product.Create(
+            tenantId,
+            cat.Id,
+            "Montador de Lanche (Monte o Seu)",
+            Money.Create(7.90m).Value,
+            "Monte seu lanche na chapa ou hot dog escolhendo pão, recheios, adicionais e bebidas.",
+            "LANCH-MONTE",
+            ProductSaleMode.Unit,
+            true,
+            1,
+            true,
+            true,
+            ProductPricingStrategy.FixedPlusAddons,
+            "lanchonete,montador,lanche",
+            12,
+            "lanchonete-lanche").Value;
+        lanche.AddVariation("Lanche Individual", Money.Create(7.90m).Value, "LANCH-IND", 1, "Lanche montado na hora", 220m, "g");
+        lanche.AddVariation("Combo Lanche + Suco 300ml", Money.Create(12.90m).Value, "LANCH-CMB", 2, "Lanche + Suco Natural 300ml", 520m, "ml");
+        lanche.AttachModifierGroup(grpPao.Id, 1);
+        lanche.AttachModifierGroup(grpRecheio.Id, 2);
+        lanche.AttachModifierGroup(grpAdicionais.Id, 3);
+        lanche.AttachModifierGroup(grpRem.Id, 4);
+
+        await _productRepo.AddAsync(lanche, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("lanchonete", 1, 1, 4));
     }
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyPastelariaAsync(Guid tenantId, CancellationToken ct)

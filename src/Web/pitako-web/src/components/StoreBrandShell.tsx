@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Check, LogOut, MessageCircle, Power, Radio, Send, Store, UtensilsCrossed, Volume2, VolumeX, X } from "lucide-react";
+import { Bell, Check, LogOut, Menu, MessageCircle, Power, Radio, Send, Store, UtensilsCrossed, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, clearSession, loadSession, resolveMediaUrl } from "@/lib/api";
 import {
@@ -44,6 +44,7 @@ export function StoreBrandShell({
   activeSection,
   hideOpsNav = false,
   hideTopHeader = false,
+  hideCnpjInHeader = false,
   onStoreStatusChanged,
   children
 }: {
@@ -51,10 +52,12 @@ export function StoreBrandShell({
   activeSection?: string;
   hideOpsNav?: boolean;
   hideTopHeader?: boolean;
+  hideCnpjInHeader?: boolean;
   onStoreStatusChanged?: (isPaused: boolean) => void;
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loadedTheme, setLoadedTheme] = useState<StoreBrandTheme | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [statusKnown, setStatusKnown] = useState<boolean>(false);
@@ -421,33 +424,33 @@ export function StoreBrandShell({
   ];
 
   return (
-    <div style={styleVars} className="min-h-screen bg-slate-50 text-slate-900">
+    <div style={styleVars} className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-900">
       {!hideTopHeader && (
-      <header style={{ backgroundColor: "var(--store-primary)" }} className="text-white shadow print:hidden">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <div className="flex items-center gap-3">
+      <header style={{ backgroundColor: "var(--store-primary)" }} className="w-full text-white shadow print:hidden">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
             {resolveMediaUrl(resolvedTheme.logoUrl) ? (
               <img
                 src={resolveMediaUrl(resolvedTheme.logoUrl)!}
                 alt={`Logo ${resolvedTheme.tradeName}`}
-                className="h-10 w-10 rounded-lg bg-white/10 object-contain p-1"
+                className="h-10 w-10 shrink-0 rounded-lg bg-white/10 object-contain p-1"
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/15">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/15">
                 <Store className="h-5 w-5" />
               </div>
             )}
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-base font-bold leading-tight">{resolvedTheme.tradeName}</p>
+                <p className="truncate text-base font-bold leading-tight">{resolvedTheme.tradeName}</p>
                 {!hideOpsNav && (
-                  <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/95">
+                  <span className="shrink-0 rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/95">
                     GESTOR PRO
                   </span>
                 )}
               </div>
-              {resolvedTheme.formattedCnpj && (
-                <p className="text-xs opacity-80">CNPJ {resolvedTheme.formattedCnpj}</p>
+              {!hideCnpjInHeader && resolvedTheme.formattedCnpj && (
+                <p className="truncate text-xs opacity-80">CNPJ {resolvedTheme.formattedCnpj}</p>
               )}
             </div>
           </div>
@@ -685,7 +688,16 @@ export function StoreBrandShell({
                 )}
               </div>
 
-              <nav className="flex flex-wrap items-center gap-1.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen((prev) => !prev)}
+                aria-label="Abrir menu de navegação"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-white hover:bg-white/25 lg:hidden"
+              >
+                {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              </button>
+
+              <nav className="hidden flex-wrap items-center gap-1.5 text-sm lg:flex">
                 {navItems.map((item) => (
                   <Link
                     key={item.href}
@@ -716,6 +728,39 @@ export function StoreBrandShell({
             </div>
           )}
         </div>
+
+        {!hideOpsNav && mobileNavOpen && (
+          <div className="border-t border-white/15 bg-black/15 px-3 py-3 lg:hidden">
+            <nav className="flex flex-col gap-1.5 text-sm">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className={`rounded-lg px-3 py-2 transition ${
+                    activeSection === item.href
+                      ? "bg-white/25 font-semibold text-white"
+                      : "text-white/90 hover:bg-white/15"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentSession = loadSession();
+                  const targetSlug = currentSession?.storeSlug;
+                  clearSession();
+                  router.push(targetSlug ? `/portal/${targetSlug}` : "/login");
+                }}
+                className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-rose-600"
+              >
+                <LogOut className="h-3.5 w-3.5" /> Sair da Sessão
+              </button>
+            </nav>
+          </div>
+        )}
       </header>
       )}
 
@@ -779,7 +824,7 @@ export function StoreBrandShell({
         </div>
       )}
 
-      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-8">{children}</main>
     </div>
   );
 }

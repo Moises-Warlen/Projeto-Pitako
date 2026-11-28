@@ -2196,7 +2196,7 @@ public sealed record CreateMasterPlanReq(string Code, string Name, decimal Price
 public sealed record CreateCustomerSubReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, Guid PlanId, bool StartWithTrial = false);
 public sealed record UpdateMasterCustomerReq(string CustomerName, string DocumentNumber, string BillingEmail, string? Phone, CustomerAccountStatus Status, Guid? PlanId = null);
 public sealed record UpdateEstablishmentMasterReq(string LegalName, string TradeName, string Slug, string Cnpj, string SegmentCode, TenantStatus Status);
-public sealed record UpsertSegmentReq(string Code, string DisplayName, bool SupportsAcaiBuilder, bool SupportsWeightScale, bool SupportsTableService, bool SupportsFractionalItems);
+public sealed record UpsertSegmentReq(string Code, string DisplayName, bool SupportsAcaiBuilder, bool SupportsWeightScale, bool SupportsTableService, bool SupportsFractionalItems, bool SupportsPizzaBuilder = false, bool SupportsBurgerBuilder = false, bool SupportsSnackBuilder = false);
 
 internal static class MasterSegmentCatalogStore
 {
@@ -2283,7 +2283,10 @@ internal static class MasterSegmentCatalogStore
                 req.SupportsAcaiBuilder,
                 req.SupportsWeightScale,
                 req.SupportsTableService,
-                req.SupportsFractionalItems);
+                req.SupportsFractionalItems,
+                req.SupportsPizzaBuilder,
+                req.SupportsBurgerBuilder,
+                req.SupportsSnackBuilder);
             customList.Add(saved);
 
             var hiddenSetting = await settingRepo.FindByKeyAsync(HiddenKey, ct);

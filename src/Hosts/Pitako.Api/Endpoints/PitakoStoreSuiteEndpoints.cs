@@ -257,15 +257,19 @@ public static partial class PitakoStoreSuiteEndpoints
             var sessionId = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
             var pairingCode = $"{sessionId[..4]}-{sessionId[4..8]}";
             var now = clock.UtcNow;
+            var cleanPhone = NormalizeDigits(tenant?.ContactPhone);
+            var connectText = Uri.EscapeDataString($"Conectar-PITAKO-{tenant?.Slug ?? "loja"}-{pairingCode}");
             var qrState = new WhatsAppQrSessionState
             {
                 SessionId = sessionId,
                 PairingCode = pairingCode,
-                QrPayload = $"https://wa.me/{NormalizeDigits(tenant?.ContactPhone)}?text=Conectar-PITAKO-{tenant?.Slug ?? "loja"}-{pairingCode}",
+                QrPayload = string.IsNullOrWhiteSpace(cleanPhone)
+                    ? $"https://wa.me/?text={connectText}"
+                    : $"https://wa.me/{cleanPhone}?text={connectText}",
                 Status = "WaitingScan",
-                PairedPhone = tenant?.ContactPhone,
+                PairedPhone = string.IsNullOrWhiteSpace(cleanPhone) ? null : $"+{cleanPhone}",
                 CreatedAtUtc = now,
-                ExpiresAtUtc = now.AddSeconds(120)
+                ExpiresAtUtc = now.AddSeconds(180)
             };
 
             await PitakoBotTrainingHelper.SaveQrSessionAsync(settingRepo, tenantId, qrState, now, ct);
@@ -292,7 +296,7 @@ public static partial class PitakoStoreSuiteEndpoints
             var now = clock.UtcNow;
             var channels = await channelRepo.ListAllAsync(ct);
             var existing = channels.FirstOrDefault();
-            var rawPhone = NormalizeDigits(req?.DisplayPhoneNumber ?? existing?.DisplayPhoneNumber ?? tenant?.ContactPhone ?? "5516991098863");
+            var rawPhone = NormalizeDigits(req?.DisplayPhoneNumber ?? existing?.DisplayPhoneNumber ?? tenant?.ContactPhone);
             if (string.IsNullOrWhiteSpace(rawPhone)) rawPhone = "5516991098863";
 
             if (existing is null)
