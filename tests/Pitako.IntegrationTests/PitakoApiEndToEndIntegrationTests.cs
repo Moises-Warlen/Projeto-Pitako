@@ -125,6 +125,13 @@ public sealed class PitakoApiEndToEndIntegrationTests : IAsyncLifetime
         Assert.Contains("11.222.333/0001-81", csv);
 
         // 5. Master CRUD: Modalidades (segments), Planos, Clientes e Lojas (Create -> Edit -> Delete)
+        using var segListReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/master/segments");
+        segListReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
+        var segListJson = await (await _client.SendAsync(segListReq)).Content.ReadFromJsonAsync<JsonElement>();
+        var segCodes = segListJson.EnumerateArray().Select(s => s.GetProperty("code").GetString()).ToList();
+        Assert.Contains("rotisseria", segCodes);
+        Assert.Contains("marmitex", segCodes);
+
         var createSegReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/master/segments");
         createSegReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", masterToken);
         createSegReq.Content = JsonContent.Create(new

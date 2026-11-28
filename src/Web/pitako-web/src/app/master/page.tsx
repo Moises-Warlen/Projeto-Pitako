@@ -223,10 +223,12 @@ export default function MasterPanelPage() {
   const [editingSegCode, setEditingSegCode] = useState<string | null>(null);
   const [segCode, setSegCode] = useState("");
   const [segName, setSegName] = useState("");
+  const [segCodeTouched, setSegCodeTouched] = useState(false);
   const [segAcai, setSegAcai] = useState(false);
   const [segWeight, setSegWeight] = useState(false);
   const [segTables, setSegTables] = useState(true);
   const [segFractional, setSegFractional] = useState(false);
+  const segNameInputRef = useRef<HTMLInputElement | null>(null);
 
   // 3. Clientes / Donos (Criar / Editar)
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -516,25 +518,44 @@ export default function MasterPanelPage() {
   }
 
   // --- Ações Modalidades ---
+  function slugifySegmentCode(value: string): string {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
   function startEditSegment(seg: SegmentOption) {
     setEditingSegCode(seg.code);
     setSegCode(seg.code);
     setSegName(seg.displayName);
+    setSegCodeTouched(true);
     setSegAcai(seg.supportsAcaiBuilder);
     setSegWeight(seg.supportsWeightScale);
     setSegTables(seg.supportsTableService);
     setSegFractional(seg.supportsFractionalItems);
     changeActiveTab("segments");
+    setTimeout(() => segNameInputRef.current?.focus(), 40);
   }
 
   function resetSegmentForm() {
     setEditingSegCode(null);
     setSegCode("");
     setSegName("");
+    setSegCodeTouched(false);
     setSegAcai(false);
     setSegWeight(false);
     setSegTables(true);
     setSegFractional(false);
+  }
+
+  function startNewSegment() {
+    resetSegmentForm();
+    changeActiveTab("segments");
+    setTimeout(() => segNameInputRef.current?.focus(), 40);
   }
 
   async function handleSubmitSegment(e: React.FormEvent) {
@@ -1074,36 +1095,88 @@ export default function MasterPanelPage() {
       {activeTab === "segments" && (
         <div className="grid gap-8 lg:grid-cols-3">
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:col-span-2">
-            <h2 className="mb-4 text-lg font-semibold text-white">Modalidades / Segmentos Disponíveis</h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Modalidades / Segmentos Disponíveis ({overview.segments.length})</h2>
+                <p className="text-xs text-zinc-400">Disponíveis para todas as lojas cadastradas e novas lojas. Crie novas modalidades ou remova as que não deseja oferecer.</p>
+              </div>
+              <button
+                type="button"
+                onClick={startNewSegment}
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-red-700"
+              >
+                + Nova Modalidade
+              </button>
+            </div>
             <div className="space-y-3">
               {overview.segments.map((seg) => (
-                <div key={seg.code} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                <div
+                  key={seg.code}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-4 transition-colors ${
+                    editingSegCode === seg.code
+                      ? "border-red-500 bg-zinc-900/90"
+                      : "border-zinc-800 bg-zinc-950"
+                  }`}
+                >
                   <div>
                     <p className="font-bold text-white">{seg.displayName} <span className="text-xs font-normal text-zinc-400">({seg.code})</span></p>
                     <p className="text-xs text-zinc-400">
-                      {seg.supportsAcaiBuilder ? "Açaí · " : ""}
-                      {seg.supportsWeightScale ? "Balança · " : ""}
-                      {seg.supportsTableService ? "Salão/Mesas · " : ""}
-                      {seg.supportsFractionalItems ? "Meia-a-Meia" : ""}
+                      {[
+                        seg.supportsAcaiBuilder ? "Açaí" : null,
+                        seg.supportsWeightScale ? "Balança" : null,
+                        seg.supportsTableService ? "Salão/Mesas" : null,
+                        seg.supportsFractionalItems ? "Meia-a-Meia" : null
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Cardápio Padrão"}
                     </p>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => startEditSegment(seg)} className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800">Editar</button>
-                    <button type="button" onClick={() => handleDeleteSegment(seg)} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800">Excluir</button>
+                    <button type="button" onClick={() => handleDeleteSegment(seg)} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800">Remover</button>
                   </div>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <section className="order-first h-fit rounded-xl border border-zinc-800 bg-zinc-900 p-5 lg:order-last lg:sticky lg:top-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">{editingSegCode ? "Editar Modalidade" : "Nova Modalidade"}</h2>
               {editingSegCode && <button type="button" onClick={resetSegmentForm} className="text-xs text-zinc-400 underline">Cancelar</button>}
             </div>
             <form onSubmit={handleSubmitSegment} className="space-y-3 text-sm">
-              <input value={segCode} onChange={(e) => setSegCode(e.target.value)} disabled={!!editingSegCode} required placeholder="Código (ex: sushi)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white disabled:opacity-50" />
-              <input value={segName} onChange={(e) => setSegName(e.target.value)} required placeholder="Nome (ex: Sushi Bar)" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+              <div>
+                <label className="mb-1 block text-xs text-zinc-400">Nome da Modalidade</label>
+                <input
+                  ref={segNameInputRef}
+                  value={segName}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSegName(next);
+                    if (!editingSegCode && !segCodeTouched) {
+                      setSegCode(slugifySegmentCode(next));
+                    }
+                  }}
+                  required
+                  placeholder="Ex: Rotisseria, Marmitex, Sushi Bar..."
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-zinc-400">Código único (slug)</label>
+                <input
+                  value={segCode}
+                  onChange={(e) => {
+                    setSegCodeTouched(true);
+                    setSegCode(e.target.value);
+                  }}
+                  disabled={!!editingSegCode}
+                  required
+                  placeholder="Ex: rotisseria, marmitex, sushi"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white disabled:opacity-50"
+                />
+              </div>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segAcai} onChange={(e) => setSegAcai(e.target.checked)} /> Usa Montador de Açaí</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segWeight} onChange={(e) => setSegWeight(e.target.checked)} /> Usa Balança por Quilo</label>
               <label className="flex items-center gap-2 text-xs text-zinc-200"><input type="checkbox" checked={segTables} onChange={(e) => setSegTables(e.target.checked)} /> Usa Salão / Mesas</label>

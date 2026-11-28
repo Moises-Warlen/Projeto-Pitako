@@ -441,6 +441,8 @@ public sealed class StoreStarterProvisioner(
         if (raw.Contains("hamburg") || raw.Contains("burger")) return "hamburgueria";
         if (raw.Contains("pastel")) return "pastelaria";
         if (raw.Contains("sorvet") || raw.Contains("gelat")) return "sorveteria";
+        if (raw.Contains("rotiss")) return "rotisseria";
+        if (raw.Contains("marmit")) return "marmitex";
         return raw;
     }
 
@@ -456,6 +458,8 @@ public sealed class StoreStarterProvisioner(
             "padaria" => PadariaKit(),
             "doceria" => DoceriaKit(),
             "pastelaria" => PastelariaKit(),
+            "rotisseria" => RotisseriaKit(),
+            "marmitex" => MarmitexKit(),
             "restaurante" or "lanchonete" => RestauranteKit(),
             "acaiteria" => AcaiteriaKit(),
             _ => UniversalKit()
@@ -594,6 +598,44 @@ public sealed class StoreStarterProvisioner(
             new("Bebidas", "Refrigerante Lata 350ml", "350 ml", "Lata bem gelada.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
         ],
         [new("Combo Lanche Pastel", "1 Pastel de Carne + 1 Pastel de Queijo + Refri Lata.", 0.10m, ["Pastel de Carne Tradicional", "Pastel de Queijo Muçarela", "Refrigerante Lata 350ml"])]);
+
+    private static SegmentWorkbookKit RotisseriaKit() => new(
+        "#92400E", "#FFFBEB", "#D97706",
+        "Assados na brasa, carnes especiais, maionese caseira e guarnições frescas.",
+        [
+            new("frango", "Frango inteiro resfriado (2,2kg)", 24m, 2200m, "g", "Carnes"),
+            new("costela", "Costela bovina janela (1kg)", 34m, 1000m, "g", "Carnes"),
+            new("batata", "Batata inglesa selecionada (1kg)", 6.50m, 1000m, "g", "Guarnições"),
+            new("maionese", "Maionese artesanal temperada (1kg)", 18m, 1000m, "g", "Guarnições"),
+            new("farofa", "Farofa temperada especial (1kg)", 15m, 1000m, "g", "Guarnições"),
+            new("lata", "Refrigerante lata / 2L (6 un)", 45m, 6m, "unidade", "Bebidas"),
+        ],
+        [
+            new("Assados Especiais", "Frango Assado Recheado Tradicional", "1,4 kg", "Frango inteiro assado lentamente com tempero de ervas da casa.", 49.90m, 1.80m, "rotisseria,frango", true, [new("frango", 1600, "g")]),
+            new("Assados Especiais", "Costela Bovina Assada na Brasa (500g)", "500 g", "Costela bovina macia assada por 6 horas no bafo.", 44.90m, 1.40m, "rotisseria,costela", true, [new("costela", 650, "g")]),
+            new("Guarnições", "Maionese Caseira de Batata 400g", "400 g", "Maionese tradicional de rotisseria com batata, cenoura e ervas.", 14.90m, 0.70m, "guarnicao,maionese", true, [new("batata", 260, "g"), new("maionese", 140, "g")]),
+            new("Guarnições", "Farofa Crocante da Casa 250g", "250 g", "Farofa artesanal amanteigada com bacon e cebolinha.", 10.90m, 0.55m, "guarnicao,farofa", false, [new("farofa", 250, "g")]),
+        ],
+        [new("Combo Domingo Família", "Frango Assado Recheado + Maionese Caseira 400g + Farofa 250g.", 0.10m, ["Frango Assado Recheado Tradicional", "Maionese Caseira de Batata 400g", "Farofa Crocante da Casa 250g"])]);
+
+    private static SegmentWorkbookKit MarmitexKit() => new(
+        "#B45309", "#FFFBEB", "#16A34A",
+        "Marmitex caseiras quentinhas com cardápio variado e entrega rápida.",
+        [
+            new("arroz", "Arroz branco tipo 1 (5kg)", 26m, 5000m, "g", "Grãos"),
+            new("feijao", "Feijão carioca selecionado (2kg)", 16m, 2000m, "g", "Grãos"),
+            new("bife", "Contrafilé em bifes (1kg)", 44m, 1000m, "g", "Misturas"),
+            new("frango", "Peito de frango em filés (1kg)", 21m, 1000m, "g", "Misturas"),
+            new("farofa", "Farofa caseira temperada (1kg)", 14m, 1000m, "g", "Acompanhamentos"),
+            new("lata", "Refrigerante lata 350ml (12 un)", 34.80m, 12m, "unidade", "Bebidas"),
+        ],
+        [
+            new("Marmitex Tradicional", "Marmitex Média Bife Acebolado 650g", "650 g", "Arroz, feijão, farofa, salada fresca e bife acebolado na chapa.", 22.90m, 1.25m, "marmitex,bife", true, [new("arroz", 220, "g"), new("feijao", 130, "g"), new("bife", 140, "g"), new("farofa", 40, "g")]),
+            new("Marmitex Tradicional", "Marmitex Média Frango Grelhado 650g", "650 g", "Arroz, feijão, legumes salteados e filé de frango grelhado.", 19.90m, 1.25m, "marmitex,frango", true, [new("arroz", 220, "g"), new("feijao", 130, "g"), new("frango", 150, "g"), new("farofa", 40, "g")]),
+            new("Marmitex Grande", "Marmitex Grande Executiva 850g", "850 g", "Porção reforçada com 2 opções de mistura, arroz, feijão e farofa.", 27.90m, 1.45m, "marmitex,grande", true, [new("arroz", 280, "g"), new("feijao", 160, "g"), new("bife", 100, "g"), new("frango", 100, "g")]),
+            new("Bebidas", "Refrigerante Lata 350ml", "350 ml", "Lata bem gelada para acompanhar o almoço.", 6.50m, 0.15m, "bebida", false, [new("lata", 1, "unidade")]),
+        ],
+        [new("Combo Almoço Marmitex + Refri", "Marmitex Média Frango Grelhado 650g + Refrigerante Lata 350ml.", 0.10m, ["Marmitex Média Frango Grelhado 650g", "Refrigerante Lata 350ml"])]);
 
     private static SegmentWorkbookKit RestauranteKit() => new(
         "#065F46", "#ECFDF5", "#F59E0B",

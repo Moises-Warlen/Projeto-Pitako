@@ -26,6 +26,8 @@ public static class BusinessSegmentCatalog
     public const string Lanchonete = "lanchonete";
     public const string Pastelaria = "pastelaria";
     public const string Doceria = "doceria";
+    public const string Rotisseria = "rotisseria";
+    public const string Marmitex = "marmitex";
 
     private static readonly Dictionary<string, BusinessSegmentProfile> BuiltInProfiles = new(StringComparer.Ordinal)
     {
@@ -38,7 +40,9 @@ public static class BusinessSegmentCatalog
         [Adega] = new(Adega, "Adega", false, false, true, false),
         [Lanchonete] = new(Lanchonete, "Lanchonete", false, false, true, false),
         [Pastelaria] = new(Pastelaria, "Pastelaria", false, false, true, false),
-        [Doceria] = new(Doceria, "Doceria", false, true, true, false)
+        [Doceria] = new(Doceria, "Doceria", false, true, true, false),
+        [Rotisseria] = new(Rotisseria, "Rotisseria", false, true, true, false),
+        [Marmitex] = new(Marmitex, "Marmitex", false, true, true, false)
     };
 
     public static IReadOnlyCollection<BusinessSegmentProfile> AllBuiltIn => BuiltInProfiles.Values;

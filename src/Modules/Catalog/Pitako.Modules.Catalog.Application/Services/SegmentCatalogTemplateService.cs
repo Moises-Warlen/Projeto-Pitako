@@ -66,6 +66,8 @@ public sealed class SegmentCatalogTemplateService
             "adega" => await ApplyAdegaAsync(tenantId, cancellationToken),
             "padaria" => await ApplyPadariaAsync(tenantId, cancellationToken),
             "doceria" => await ApplyDoceriaAsync(tenantId, cancellationToken),
+            "rotisseria" => await ApplyRotisseriaAsync(tenantId, cancellationToken),
+            "marmitex" => await ApplyMarmitexAsync(tenantId, cancellationToken),
             "restaurante" or "lanchonete" => await ApplyRestauranteLanchoneteAsync(tenantId, code, cancellationToken),
             _ => await ApplyGenericFoodAsync(tenantId, code, cancellationToken)
         };
@@ -80,6 +82,8 @@ public sealed class SegmentCatalogTemplateService
         if (s.Contains("hamburg") || s.Contains("burger")) return "hamburgueria";
         if (s.Contains("pastel")) return "pastelaria";
         if (s.Contains("sorvet") || s.Contains("gelat")) return "sorveteria";
+        if (s.Contains("rotiss")) return "rotisseria";
+        if (s.Contains("marmit")) return "marmitex";
         return s;
     }
 
@@ -980,6 +984,78 @@ public sealed class SegmentCatalogTemplateService
         await _productRepo.AddAsync(copo, ct);
         await _categoryRepo.SaveChangesAsync(ct);
         return Result.Success(new AppliedSegmentTemplateSummary("doceria", 1, 1, 1));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyRotisseriaAsync(Guid tenantId, CancellationToken ct)
+    {
+        var cat = Category.Create(tenantId, "Assados, Carnes & Guarnições", "Carnes assadas no espeto ou forno, salpicão, maionese e acompanhamentos", null, 1, "rotisseria").Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpTempero = CreateGroup(tenantId, "Ponto & Molho do Assado", ModifierGroupType.Complement, 0, 2, false, 1, ModifierGroupKind.FreeIncluded, 1, OptionCountingMode.ByDistinctOption, "temperos", [
+            ("Ao ponto tradicional", 0m, 1, null),
+            ("Com molho de ervas finas", 0m, 1, null),
+            ("Bem passado crocante", 0m, 1, null)
+        ]);
+        var grpGuarn = CreateGroup(tenantId, "Guarnições & Porções Extras", ModifierGroupType.Addon, 0, 5, false, 2, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "acompanhamentos", [
+            ("Farofa Temperada com Bacon 250g", 9.90m, 2, null),
+            ("Maionese Caseira de Batata 300g", 12.90m, 2, null),
+            ("Batatas Assadas Rústicas 350g", 14.90m, 2, null)
+        ]);
+        await _modifierRepo.AddAsync(grpTempero, ct);
+        await _modifierRepo.AddAsync(grpGuarn, ct);
+
+        var frango = Product.Create(tenantId, cat.Id, "Frango Assado Recheado Tradicional", Money.Create(49.90m).Value, "Frango inteiro assado lentamente com tempero da casa e pele dourada.", "ROT-FRANGO", ProductSaleMode.Unit, true, 1, false, true, ProductPricingStrategy.FixedPlusAddons, "rotisseria,assados", 25, "rotisseria").Value;
+        frango.AddVariation("Inteiro Tradicional", Money.Create(49.90m).Value, "ROT-FR-INT", 1, "Serve 3 a 4 pessoas", 1400m, "g");
+        frango.AddVariation("Com Farofa e Batatas", Money.Create(64.90m).Value, "ROT-FR-COMP", 2, "Frango + farofa + batatas", 1850m, "g");
+        frango.AttachModifierGroup(grpTempero.Id, 1);
+        frango.AttachModifierGroup(grpGuarn.Id, 2);
+
+        await _productRepo.AddAsync(frango, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("rotisseria", 1, 1, 2));
+    }
+
+    private async Task<Result<AppliedSegmentTemplateSummary>> ApplyMarmitexAsync(Guid tenantId, CancellationToken ct)
+    {
+        var cat = Category.Create(tenantId, "Marmitex & Pratos do Dia", "Monte sua marmitex escolhendo tamanho, mistura e acompanhamentos", null, 1, "marmitex").Value;
+        await _categoryRepo.AddAsync(cat, ct);
+
+        var grpMistura = CreateGroup(tenantId, "Escolha a Mistura Principal", ModifierGroupType.Complement, 1, 2, true, 1, ModifierGroupKind.RequiredChoice, 1, OptionCountingMode.ByDistinctOption, "proteinas", [
+            ("Bife Acebolado na Chapa", 0m, 1, null),
+            ("Filé de Frango Grelhado", 0m, 1, null),
+            ("Bisteca Suína Acebolada", 0m, 1, null),
+            ("Carne de Panela Desfiada", 2.00m, 1, null)
+        ]);
+        var grpAcomp = CreateGroup(tenantId, "Acompanhamentos da Marmitex", ModifierGroupType.Complement, 1, 4, true, 2, ModifierGroupKind.FreeIncluded, 4, OptionCountingMode.ByDistinctOption, "acompanhamentos", [
+            ("Arroz Branco Soltinho", 0m, 1, null),
+            ("Feijão Carioca Temperado", 0m, 1, null),
+            ("Macarrão ao Sugo", 0m, 1, null),
+            ("Farofa Caseira", 0m, 1, null),
+            ("Salada Alface e Tomate (separada)", 0m, 1, null)
+        ]);
+        var grpExtras = CreateGroup(tenantId, "Mistura Extra & Adicionais", ModifierGroupType.Addon, 0, 3, false, 3, ModifierGroupKind.PaidAddon, 0, OptionCountingMode.ByTotalQuantity, "extras", [
+            ("Ovo Frito na Manteiga", 3.50m, 2, null),
+            ("Linguiça Toscana Assada", 6.50m, 2, null),
+            ("Porção Extra de Batata Frita", 8.00m, 2, null)
+        ]);
+        await _modifierRepo.AddAsync(grpMistura, ct);
+        await _modifierRepo.AddAsync(grpAcomp, ct);
+        await _modifierRepo.AddAsync(grpExtras, ct);
+
+        var marmitex = Product.Create(tenantId, cat.Id, "Marmitex Tradicional Montada", Money.Create(22.90m).Value, "Refeição caseira completa preparada na hora em embalagem térmica.", "MARM-01", ProductSaleMode.Unit, true, 1, false, true, ProductPricingStrategy.FixedPlusAddons, "marmitex,almoco", 15, "marmitex").Value;
+        var vP = marmitex.AddVariation("Pequena (P)", Money.Create(18.90m).Value, "MARM-P", 1, "500 g", 500m, "g").Value;
+        var vM = marmitex.AddVariation("Média (M)", Money.Create(22.90m).Value, "MARM-M", 2, "650 g", 650m, "g").Value;
+        var vG = marmitex.AddVariation("Grande (G)", Money.Create(27.90m).Value, "MARM-G", 3, "850 g", 850m, "g").Value;
+        marmitex.AttachModifierGroup(grpMistura.Id, 1);
+        marmitex.AttachModifierGroup(grpAcomp.Id, 2);
+        marmitex.AttachModifierGroup(grpExtras.Id, 3);
+        marmitex.SetVariationRule(vP.Id, grpMistura.Id, 1, 1, 1, true);
+        marmitex.SetVariationRule(vM.Id, grpMistura.Id, 1, 1, 1, true);
+        marmitex.SetVariationRule(vG.Id, grpMistura.Id, 1, 2, 2, true);
+
+        await _productRepo.AddAsync(marmitex, ct);
+        await _categoryRepo.SaveChangesAsync(ct);
+        return Result.Success(new AppliedSegmentTemplateSummary("marmitex", 1, 1, 3));
     }
 
     private async Task<Result<AppliedSegmentTemplateSummary>> ApplyGenericFoodAsync(Guid tenantId, string code, CancellationToken ct) =>
